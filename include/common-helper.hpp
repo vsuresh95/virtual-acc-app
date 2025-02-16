@@ -22,10 +22,4 @@ extern "C" {
 #define FLT_VALID_FLAG_OFFSET 6
 #define FLT_READY_FLAG_OFFSET 8
 
-typedef enum {
-	TASK_FFT = 0,
-	TASK_FIR = 1,
-	TASK_FFI = 2
-} TaskID;
-
 #endif // __COMMON_HELPER_H__

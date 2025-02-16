@@ -8,8 +8,8 @@ VamWorker::VamWorker(VAMReqIntf *req_intf_param)
 
 void VamWorker::run() {
     // populate the list of physical accelerators in the system
-    PhysicalAccel *accel_list = (PhysicalAccel *) malloc (20 * sizeof(PhysicalAccel));
-    probe_accel(accel_list);
+    // PhysicalAccel *accel_list = (PhysicalAccel *) malloc (20 * sizeof(PhysicalAccel));
+    probe_accel();
 
     // probe the available accels using *stratus*
     // create a physical-virtual accelerator mapping (use some sort of map)
@@ -32,7 +32,7 @@ void VamWorker::put_accel(VAMReqIntf *vam_intf) {
 	std::atomic_flag_clear(&(vam_intf->rsp_empty));
 }
 
-void VamWorker::probe_accel(PhysicalAccel *accel_list) {
+void VamWorker::probe_accel() {
     // Open the devices directory to search for accels
     DIR *dir = opendir("/dev");
     if (!dir) {
@@ -42,10 +42,24 @@ void VamWorker::probe_accel(PhysicalAccel *accel_list) {
 
     // Search for all stratus accelerators and fill into accel_list
     struct dirent *entry;
+
+    unsigned device_id = 0;
     while ((entry = readdir(dir)) != NULL) {
         if (fnmatch("*_stratus.*", entry->d_name, FNM_NOESCAPE) == 0) {
             // Print out debug message
             printf("Discovered %s\n", entry->d_name);
+
+            auto device = std::make_unique<PhysicalAccel>();
+            device->accel_id = device_id++;
+            device->is_allocated = false;
+
+            // This must check a registry of accelerator definitions stored elsewhere
+            // That accelerator definition should map accelerator name to capability
+            // and other details like IOCTL code, and access info (like register names).
+            // This accelerator definition must be a generic class that is extended.
+
+            PhysicalAccel* rawPtr = device.get();
+            accel_list[device_id] = std::move(device);
         }
     }
 

@@ -1,0 +1,4 @@
+esp-build
+*.o
+.vscode
+*.exe

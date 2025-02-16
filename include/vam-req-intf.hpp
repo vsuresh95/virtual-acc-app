@@ -14,6 +14,9 @@ class VAMReqIntf {
             volatile std::atomic_flag rsp_empty;
             VAMcode rsp_code;
 
+            // App-specific virtual instance parameters
+            void *accel_handle;
+
             VAMReqIntf() {};
 };
 

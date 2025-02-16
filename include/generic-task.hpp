@@ -3,6 +3,7 @@
 
 #include <vam-req-intf.hpp>
 #include <common-helper.hpp>
+#include <gen-accel-defs.hpp>
 
 class GenericTask {
     
@@ -15,13 +16,15 @@ class GenericTask {
             unsigned out_words;
             unsigned acc_len;
             unsigned mem_size;
-            void *mem;
+            void *hw_buf;
 
 			// Offsets for synchronization flags
-			unsigned ConsRdyFlag;
-			unsigned ConsVldFlag;
-			unsigned ProdRdyFlag;
-			unsigned ProdVldFlag;
+			unsigned ConsRdyOffset;
+			unsigned ConsVldOffset;
+			unsigned ProdRdyOffset;
+			unsigned ProdVldOffset;
+            unsigned InputOffset;
+            unsigned OutputOffset;
 
 			// VAM interface for requesting accel allocations
 			VAMReqIntf *req_intf;
