@@ -34,7 +34,7 @@ void VamWorker::put_accel(VAMReqIntf *vam_intf) {
 
 void VamWorker::probe_accel() {
     // Open the devices directory to search for accels
-    DIR *dir = opendir("/dev");
+    DIR *dir = opendir("/dev/");
     if (!dir) {
         perror("Failed to open directory");
         exit(1);
@@ -49,17 +49,35 @@ void VamWorker::probe_accel() {
             // Print out debug message
             printf("Discovered %s\n", entry->d_name);
 
-            auto device = std::make_unique<PhysicalAccel>();
-            device->accel_id = device_id++;
-            device->is_allocated = false;
+            PhysicalAccel accel_temp;
+            accel_temp.accel_id = device_id++;
+            accel_temp.is_allocated = false;
+            accel_temp.thread_id = 1024;
+            accel_temp.devname = entry->d_name;
+            accel_temp.hw_buf = NULL;
 
-            // This must check a registry of accelerator definitions stored elsewhere
-            // That accelerator definition should map accelerator name to capability
-            // and other details like IOCTL code, and access info (like register names).
-            // This accelerator definition must be a generic class that is extended.
+            if (fnmatch("audio_fft*", entry->d_name, FNM_NOESCAPE) == 0) {
+                accel_temp.capab = AUDIO_FFT;
+                accel_temp.ioctl_req = AUDIO_FFT_STRATUS_IOC_ACCESS;
+            } else if (fnmatch("audio_fir*", entry->d_name, FNM_NOESCAPE) == 0) {
+                accel_temp.capab = AUDIO_FIR;
+                accel_temp.ioctl_req = AUDIO_FIR_STRATUS_IOC_ACCESS;
+            } else if (fnmatch("audio_ffi*", entry->d_name, FNM_NOESCAPE) == 0) {
+                accel_temp.capab = AUDIO_FFI;
+                accel_temp.ioctl_req = AUDIO_FFI_STRATUS_IOC_ACCESS;
+            } else {
+                printf("[ERROR] Device does not match any supported accelerators.\n");
+            }
 
-            PhysicalAccel* rawPtr = device.get();
-            accel_list[device_id] = std::move(device);
+            char full_path[128];
+            snprintf(full_path, 128, "/dev/%s", entry->d_name);
+            accel_temp.fd = open(full_path, O_RDWR, 0);
+            if (accel_temp.fd < 0) {
+                fprintf(stderr, "Error: cannot open %s", full_path);
+                exit(EXIT_FAILURE);
+            }
+
+            accel_list.push_back (accel_temp);
         }
     }
 

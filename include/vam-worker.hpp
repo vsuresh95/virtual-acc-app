@@ -29,7 +29,9 @@ class VamWorker {
                 {AUDIO_FFI, {true, {AUDIO_FFT, AUDIO_FIR, AUDIO_FFT}}},
             };
 
-            std::unordered_map<int, std::unique_ptr<PhysicalAccel>> accel_list;
+            std::vector<PhysicalAccel> accel_list;
+
+            // std::unordered_map<int, std::unique_ptr<PhysicalAccel>> accel_list;
 
             // Wait for virtual accelerator allocation requests and allocate
             void put_accel (VAMReqIntf *vam_intf);
