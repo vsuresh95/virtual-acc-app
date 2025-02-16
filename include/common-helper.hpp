@@ -22,4 +22,34 @@ extern "C" {
 #define FLT_VALID_FLAG_OFFSET 6
 #define FLT_READY_FLAG_OFFSET 8
 
+// Capabilities available to the application
+typedef enum {
+	AUDIO_FFT = 0,
+	AUDIO_FIR = 1,
+	AUDIO_FFI = 2
+} Capability;
+
+// Definition of a virtual instance that will be requested by
+// user application. Pointer to this will be added to physical to
+// virtual accelerator monitor in VAM.
+typedef struct {
+    unsigned thread_id;
+    Capability capab;
+
+    // Generic memory parameters (for working set of task)
+    unsigned in_words;
+    unsigned out_words;
+    unsigned acc_len;
+    unsigned mem_size;
+    void *hw_buf;
+
+    // ASI parameters
+    unsigned ConsRdyOffset;
+    unsigned ConsVldOffset;
+    unsigned ProdRdyOffset;
+    unsigned ProdVldOffset;
+    unsigned InputOffset;
+    unsigned OutputOffset;
+} VirtualInst;
+
 #endif // __COMMON_HELPER_H__

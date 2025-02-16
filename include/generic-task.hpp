@@ -3,7 +3,6 @@
 
 #include <vam-req-intf.hpp>
 #include <common-helper.hpp>
-#include <gen-accel-defs.hpp>
 
 class GenericTask {
     

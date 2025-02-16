@@ -2,11 +2,11 @@
 #define __VAM_HELPER_H__
 
 #include <common-helper.hpp>
-#include <gen-accel-defs.hpp>
 
 #include <unordered_map>
 #include <map>
 #include <memory>
+#include <vector>
 
 // This captures the defintion for composable capabilities
 // However, this does not cover the case where composable
