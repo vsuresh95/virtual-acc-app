@@ -3,11 +3,6 @@
 
 #include <common-helper.hpp>
 
-#define NUM_AUDIO_THREADS 2
-#define NUM_DEVICES 3
-
-typedef uint64_t token_t;
-
 typedef struct AudioInst : public VirtualInst {
     // Audio-specific configuration parameters
 	unsigned logn_samples;

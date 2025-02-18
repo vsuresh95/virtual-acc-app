@@ -31,16 +31,19 @@ class VamWorker {
 
             std::vector<PhysicalAccel> accel_list;
 
-            // std::unordered_map<int, std::unique_ptr<PhysicalAccel>> accel_list;
-
-            // Wait for virtual accelerator allocation requests and allocate
-            void put_accel (VAMReqIntf *vam_intf);
+            std::unordered_map<PhysicalAccel *, VirtualInst *> phy_to_virt_mapping;
+            std::unordered_map<VirtualInst *, PhysicalAccel *> virt_to_phy_mapping;
 
             // Probe the ESP system for available physical accelerators
-            void probe_accel ();
+            void probe_accel();
+
+            // Probe the ESP system for available physical accelerators
+            VAMcode search_accel(void* generic_handle);
+
+            void configure_accel(void* generic_handle);
 
             // Main run method -- which runs forever
-            void run ();
+            void run();
 };
 
 

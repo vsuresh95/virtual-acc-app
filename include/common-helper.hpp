@@ -9,6 +9,8 @@ extern "C" {
 #include <esp.h>
 #include <esp_accelerator.h>
 
+extern contig_handle_t* lookup_handle(void *buf, enum contig_alloc_policy *policy);
+
 #ifdef __cplusplus
 }
 #endif

@@ -4,6 +4,11 @@
 #include <generic-task.hpp>
 #include <audio-helper.hpp>
 
+#define NUM_AUDIO_THREADS 2
+#define NUM_DEVICES 3
+
+typedef uint64_t token_t;
+
 class AudioTask : public GenericTask {
 
 	public:

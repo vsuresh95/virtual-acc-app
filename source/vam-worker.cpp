@@ -1,4 +1,5 @@
 #include "vam-worker.hpp"
+#include <vam-accel-defs.hpp>
 
 VamWorker::VamWorker(VAMReqIntf *req_intf_param) 
     : req_intf {req_intf_param}
@@ -11,25 +12,28 @@ void VamWorker::run() {
     // PhysicalAccel *accel_list = (PhysicalAccel *) malloc (20 * sizeof(PhysicalAccel));
     probe_accel();
 
-    // probe the available accels using *stratus*
-    // create a physical-virtual accelerator mapping (use some sort of map)
-    // create some mechanism for ffi workers to enqueue accel requests to the vam worker (circular request queue?)
-    // VAM will keep monitoring this circular request queue to see if there are new requests (for now, just monitor this. Later, we must also monitor hardware to see if we need to live migrate.)
-    // worker must send the memory base address and parameters for the workloads (sizes, etc. that will be configured in the registers)
-    // VAM will need to start the accelerator, use the memory base address to initialize the sync. flags and start the accels (what should we configure the accelerators with here?)
-    // VAM should return a data structure with all the required values (mainly, SM offsets in this case)
-    // create a mechanism for ffi workers to issue de-allocation of virtual accel. Here, vam must also manipulate the map.
-}
+    while (1) {
+        // VAM will keep monitoring the request interface to see if there are new requests 
+        // TODO: for now, just monitor this. Later, we must also monitor hardware to see if we need to live migrate.)
 
-void VamWorker::put_accel(VAMReqIntf *vam_intf) {
-	// Check if the req is non-empty
-	while(std::atomic_flag_test_and_set(&(vam_intf->req_empty)) != false);
+        // Check if the req is non-empty
+        while(std::atomic_flag_test_and_set(&(req_intf->req_empty)) != false);
 
-	// register request
-	vam_intf->rsp_code = SUCCESS;
+        // search the available accelerators if any can satisfy the request
+        // TODO: currently, we assume only allocation requests. Support deallocation later.
+        if (search_accel(req_intf->accel_handle) == SUCCESS) {
+            // If yes, configure the accelerator with the parameters in the handle
+            req_intf->rsp_code = SUCCESS;
+            
+            configure_accel(req_intf->accel_handle);
+        } else {
+            // If no, return ERROR
+            req_intf->rsp_code = ERROR;
+        }
 
-	// clear rsp_empty to convey allocation is done
-	std::atomic_flag_clear(&(vam_intf->rsp_empty));
+        // clear rsp_empty to convey allocation is done
+        std::atomic_flag_clear(&(req_intf->rsp_empty));
+    }
 }
 
 void VamWorker::probe_accel() {
@@ -69,8 +73,8 @@ void VamWorker::probe_accel() {
                 printf("[ERROR] Device does not match any supported accelerators.\n");
             }
 
-            char full_path[128];
-            snprintf(full_path, 128, "/dev/%s", entry->d_name);
+            char full_path[384];
+            snprintf(full_path, 384, "/dev/%s", entry->d_name);
             accel_temp.fd = open(full_path, O_RDWR, 0);
             if (accel_temp.fd < 0) {
                 fprintf(stderr, "Error: cannot open %s", full_path);
@@ -82,4 +86,33 @@ void VamWorker::probe_accel() {
     }
 
     closedir(dir);
+}
+
+VAMcode VamWorker::search_accel(void* generic_handle) {
+    VirtualInst *accel_handle = (VirtualInst *) generic_handle;
+
+    Capability capab = accel_handle->capab;
+
+    if (CapabilityRegistry[capab].composable == true) {
+        return ERROR;
+    } else {
+        unsigned id = 0;
+        while(&(accel_list[id]) != NULL) {
+            // Iterate through all hardware devices and check if the capability of the hardware device and
+            // requested instance match, and that the device is not allocated.
+            if (accel_list[id].capab == capab && accel_list[id].is_allocated == false) {
+                // Update the phy->virt and virt->phy mapping between the two instances.
+                phy_to_virt_mapping[&(accel_list[id])] = accel_handle;
+                virt_to_phy_mapping[accel_handle] = &(accel_list[id]);
+
+                // Mark the device as allocated.
+                accel_list[id].is_allocated = true;
+                // Return successful.
+                return SUCCESS;
+            }
+            id++;
+        }
+
+        return ERROR;
+    }
 }
