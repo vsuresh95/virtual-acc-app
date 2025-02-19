@@ -10,14 +10,21 @@ class VAMReqIntf {
 
     public:
             pthread_mutex_t intf_mutex;
-            volatile std::atomic_flag req_empty;
-            volatile std::atomic_flag rsp_empty;
+            pthread_cond_t req_ready;
+            pthread_cond_t req_done;
+            bool task_available;
+            bool task_completed;
             VAMcode rsp_code;
-
             // App-specific virtual instance parameters
             void *accel_handle;
 
-            VAMReqIntf() {};
+            VAMReqIntf() {
+                intf_mutex = PTHREAD_MUTEX_INITIALIZER;
+                req_ready = PTHREAD_COND_INITIALIZER;
+                req_done = PTHREAD_COND_INITIALIZER; 
+                task_available = false;
+                task_completed = false;
+            }
 };
 
 #endif // __VAM_REQ_INTF_H__

@@ -31,7 +31,7 @@ class GenericTask {
 			GenericTask(unsigned , VAMReqIntf *);
 
 			// Allows worker threads to request accelerators from VAM
-			VAMcode get_accel();
+			VAMcode get_accel(VirtualInst *virt_handle);
 
 			// Timer functions
 			uint64_t t_start;

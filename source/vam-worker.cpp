@@ -17,10 +17,14 @@ void VamWorker::run() {
     while (1) {
         // VAM will keep monitoring the request interface to see if there are new requests 
         // TODO: for now, just monitor this. Later, we must also monitor hardware to see if we need to live migrate.)
+        
+        // Wait until a task is submitted
+        pthread_mutex_lock(&(req_intf->intf_mutex));
 
-        // Check if the req is non-empty
-        while(std::atomic_flag_test_and_set(&(req_intf->req_empty)) != false);
-
+        while (!(req_intf->task_available)) {
+            pthread_cond_wait(&(req_intf->req_ready), &(req_intf->intf_mutex));
+        }
+        
         // search the available accelerators if any can satisfy the request
         // TODO: currently, we assume only allocation requests. Support deallocation later.
         if (search_accel(req_intf->accel_handle) == SUCCESS) {
@@ -33,8 +37,13 @@ void VamWorker::run() {
             req_intf->rsp_code = ERROR;
         }
 
-        // clear rsp_empty to convey allocation is done
-        std::atomic_flag_clear(&(req_intf->rsp_empty));
+        // Mark task as complete and free the interface
+        req_intf->task_completed = true;
+        req_intf->task_available = false;
+        
+        // Notify client and release mutex
+        pthread_cond_signal(&(req_intf->req_done));
+        pthread_mutex_unlock(&(req_intf->intf_mutex));
     }
 }
 

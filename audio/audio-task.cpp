@@ -128,9 +128,9 @@ void AudioTask::run() {
 }   
 
 VAMcode AudioTask::get_accel() {
-	req_intf->accel_handle = (void *) accel_handle;
+	VirtualInst *virt_handle = (VirtualInst *) accel_handle;
 
-	return GenericTask::get_accel();
+	return GenericTask::get_accel(virt_handle);
 }
 
 void AudioTask::UpdateSync(unsigned FlagOFfset, token_t UpdateValue) {
