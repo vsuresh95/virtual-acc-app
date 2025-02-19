@@ -8,6 +8,8 @@ VamWorker::VamWorker(VAMReqIntf *req_intf_param)
 }
 
 void VamWorker::run() {
+	printf("[VAM] Hello from VamWorker!\n");
+
     // populate the list of physical accelerators in the system
     // PhysicalAccel *accel_list = (PhysicalAccel *) malloc (20 * sizeof(PhysicalAccel));
     probe_accel();
@@ -47,11 +49,13 @@ void VamWorker::probe_accel() {
     // Search for all stratus accelerators and fill into accel_list
     struct dirent *entry;
 
+    printf("\n[VAM] Performing device probe.\n");
+
     unsigned device_id = 0;
     while ((entry = readdir(dir)) != NULL) {
         if (fnmatch("*_stratus.*", entry->d_name, FNM_NOESCAPE) == 0) {
             // Print out debug message
-            printf("Discovered %s\n", entry->d_name);
+            DEBUG(printf("[VAM] Discovered device %d: %s.\n", device_id, entry->d_name);)
 
             PhysicalAccel accel_temp;
             accel_temp.accel_id = device_id++;
@@ -81,7 +85,7 @@ void VamWorker::probe_accel() {
                 exit(EXIT_FAILURE);
             }
 
-            accel_list.push_back (accel_temp);
+            accel_list.push_back(accel_temp);
         }
     }
 
@@ -93,26 +97,50 @@ VAMcode VamWorker::search_accel(void* generic_handle) {
 
     Capability capab = accel_handle->capab;
 
-    if (CapabilityRegistry[capab].composable == true) {
-        return ERROR;
-    } else {
-        unsigned id = 0;
-        while(&(accel_list[id]) != NULL) {
-            // Iterate through all hardware devices and check if the capability of the hardware device and
-            // requested instance match, and that the device is not allocated.
-            if (accel_list[id].capab == capab && accel_list[id].is_allocated == false) {
-                // Update the phy->virt and virt->phy mapping between the two instances.
-                phy_to_virt_mapping[&(accel_list[id])] = accel_handle;
-                virt_to_phy_mapping[accel_handle] = &(accel_list[id]);
+	printf("[VAM] Received allocation request from thread %d.\n", accel_handle->thread_id);
 
-                // Mark the device as allocated.
-                accel_list[id].is_allocated = true;
-                // Return successful.
-                return SUCCESS;
-            }
-            id++;
+    // Check if there is any hardware device that supports the capability for the requested instance.
+    // For composable capabilities, this must be a monolithic accelerator.
+    unsigned id = 0;
+
+    while(&(accel_list[id]) != NULL) {
+        // Iterate through all hardware devices and check if the capability of the hardware device and
+        // requested instance match, and that the device is not allocated.
+        DEBUG(
+	        printf("\n[VAM] Checking device %d.\n", id);
+            accel_list[id].print();
+        )
+
+        if (accel_list[id].capab == capab && accel_list[id].is_allocated == false) {
+            // Update the phy->virt and virt->phy mapping between the two instances.
+            phy_to_virt_mapping[&(accel_list[id])] = accel_handle;
+            virt_to_phy_mapping[accel_handle] = &(accel_list[id]);
+
+            // Mark the device as allocated.
+            accel_list[id].is_allocated = true;
+	        printf("[VAM] SUCCESS: Allocated device %d!\n", id);
+            // Return successful.
+            return SUCCESS;
         }
-
-        return ERROR;
+        id++;
     }
+
+    // If you do not find a device with the capability, you do two things:
+    // TODO a) for composable capabilities, check for devices that can be composed together
+    //         using the Capability registry. When configuring this, the application would not have specified the 
+    //         intermediate the offsets or how the register configurations needs to split/duplicated.
+    // TODO b) for other capabilities, check whether there are allocated devices that can 
+    //         meet your capability. If yes, you need to pre-empt them (or add extra context to them).
+    //         Shouldn't this also apply to composable capabilities - pre-empt or add context to monolithic accelerators?
+
+    // Check monolithic devices
+    if (CapabilityRegistry[capab].composable == true) {
+
+    }
+    
+    // Check for pre-emption/adding context to already allocated accelerators
+
+    // If you do not find any candidate, respond with error.
+    printf("[VAM] ERROR: Did not find any capable device.");
+    return ERROR;
 }

@@ -6,6 +6,10 @@ CFLAGS=-Wall -fPIC -I./include -O3
 CXXFLAGS=-std=c++17 -Wall -fPIC -I./include -I./portaudio/include -Wno-overloaded-virtual
 LD_LIBS=-lpthread -pthread
 
+ifdef VERBOSE
+CXXFLAGS += -DVERBOSE
+endif
+
 HPP_FILES := $(shell find -L . -name '*.hpp')
 HPP_FILES := $(patsubst ./%,%,$(HPP_FILES))
 
@@ -47,10 +51,13 @@ ESP_INCDIR += -I$(ESP_ROOT)/accelerators/stratus_hls/audio_ffi_stratus/sw/linux/
 CXXFLAGS += $(ESP_INCDIR) $(ESP_LD_LIBS)
 LD_LIBS += $(ESP_LD_FLAGS)
 
+ESP_EXE_DIR = $(ESP_ROOT)/socs/xilinx-vcu118-xcvu9p/soft-build/ariane/sysroot/applications/test/
+
 .PHONY: clean
 
 virtual-app.exe: $(HPP_FILES) $(COMMON_OBJ) $(AUDIO_OBJ) esp-libs
 	$(LD) $(CXXFLAGS) $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)
+	cp $@ ${ESP_EXE_DIR}
 
 %.common.o: source/%.cpp $(HPP_FILES)
 	$(CXX) $(CXXFLAGS) $< -c -o $@

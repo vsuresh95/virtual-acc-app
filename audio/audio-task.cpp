@@ -40,7 +40,7 @@ void AudioTask::flt_twd_init() {
 }
 
 void AudioTask::run() {
-	thread_id = thread_id;
+	printf("[AUDIO thread %d] Hello from AudioTask!\n", thread_id);
 
 	// configure the parameters for this audio worker
 	{
@@ -53,6 +53,7 @@ void AudioTask::run() {
 
 	// set up memory buffers for accel -- single contiguous buffer for mem_size
 	hw_buf = esp_alloc (mem_size);
+	DEBUG(printf("[AUDIO thread %d] Allocated hw_buf of size %d.\n", thread_id, mem_size);)
 	
 	// Set ASI sync flags offsets
 	ConsRdyOffset = 0*acc_len + READY_FLAG_OFFSET;
@@ -74,19 +75,26 @@ void AudioTask::run() {
 	flt_twd_init();
 
 	accel_handle = (AudioInst *) new AudioInst;	
+	handle_sync();
+	DEBUG(
+		printf("\n[AUDIO thread %d] printing accel_handle:\n", thread_id);
+		accel_handle->print();
+	);
 
 	// Submit the request to VAM interface and proceed if the allocation was successful
     VAMcode success = ERROR;
 	do {
-		success = get_accel(accel_handle);
+		success = get_accel();
 	} while (success == ERROR);
+
+	DEBUG(printf("[AUDIO thread %d] Successfully received accel handle.\n", thread_id);)
 
 	unsigned iter_count = 0;
 	uint64_t t_accel;
 	unsigned errors;
 
 	while (1) {
-		printf("Thread %d starting iteration %d\n", thread_id, iter_count);
+		DEBUG(printf("[AUDIO thread %d] Starting iteration %d.\n", thread_id, iter_count);)
 
 		// Wait for FFT (consumer) to be ready.
 		SpinSync(ConsRdyOffset, 1);
@@ -103,16 +111,23 @@ void AudioTask::run() {
 		// Reset flag for next iteration.
 		UpdateSync(ProdVldOffset, 0);
 		t_accel += end_counter();
-		printf("Thread %d accel time = %lu\n", thread_id, t_accel);
+		DEBUG(printf("[AUDIO thread %d] Accel time = %lu.\n", thread_id, t_accel);)
 
 		// Read back output from IFFT
 		errors = validate_buf();
 		// Inform IFFT (producer) - ready for next iteration.
 		UpdateSync(ProdRdyOffset, 1);
+
+		iter_count++;
+		if (iter_count % 100 == 0) {
+			printf("[AUDIO thread %d] Finished iteration %d.\n", thread_id, iter_count);
+		}
 	}
+
+	printf("[AUDIO thread %d] Errors = %d.\n", thread_id, errors);
 }   
 
-VAMcode AudioTask::get_accel(AudioInst *accel_handle) {
+VAMcode AudioTask::get_accel() {
 	req_intf->accel_handle = (void *) accel_handle;
 
 	return GenericTask::get_accel();

@@ -6,6 +6,10 @@ int main(int argc, char **argv) {
 	// Create a new request interface object (that will be passed to the workers)
 	VAMReqIntf *req_intf = new VAMReqIntf;
 
+	printf("\n-------------------------\n");
+	printf("Starting Audio App\n");
+	printf("---------------------------\n");
+
 	// Create a VAM object
 	VamWorker *vam = (VamWorker *) new VamWorker(req_intf);
 
@@ -30,7 +34,7 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	printf("Threads launched for VAM and audio");
+	printf("Threads launched for VAM and audio\n");
 
 	// Trigger start of audio thread 1
 

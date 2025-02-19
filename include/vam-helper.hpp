@@ -52,6 +52,19 @@ typedef struct {
 	int ioctl_req; // IOCTL access code
     void* hw_buf; // Buffer address -- converted to configuous
     int fd; // File descriptor of the device, when open
+
+    void print() {
+        printf("\taccel_id = %d\n", accel_id);
+        switch(capab) {
+            case AUDIO_FFT: printf("\tcapab = AUDIO_FFT\n"); break;
+            case AUDIO_FIR: printf("\tcapab = AUDIO_FIR\n"); break;
+            case AUDIO_FFI: printf("\tcapab = AUDIO_FFI\n"); break;
+        }
+        printf("\tis_allocated = %s\n", (is_allocated ? "TRUE" : "FALSE"));
+        printf("\tthread_id = %d\n", thread_id);
+        printf("\tdevname = %s\n", devname);
+        printf("\thw_buf = %p\n", hw_buf);
+    }
 } PhysicalAccel;
 
 #endif // __VAM_HELPER_H__

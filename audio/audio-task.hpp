@@ -4,7 +4,7 @@
 #include <generic-task.hpp>
 #include <audio-helper.hpp>
 
-#define NUM_AUDIO_THREADS 2
+#define NUM_AUDIO_THREADS 1
 #define NUM_DEVICES 3
 
 typedef uint64_t token_t;
@@ -38,7 +38,7 @@ class AudioTask : public GenericTask {
 			void run();
 
 			// Allows worker threads to request accelerators from VAM
-			VAMcode get_accel(AudioInst *accel_handle);
+			VAMcode get_accel();
 
 			// Generic APIs for interfacing with ASI sync flags
 			void UpdateSync(unsigned FlagOFfset, token_t value);
