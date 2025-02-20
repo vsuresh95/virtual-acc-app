@@ -31,11 +31,14 @@ void VamWorker::configure_accel(void* generic_handle) {
             audio_ffi_desc->esp.start_stop = 1;
             audio_ffi_desc->esp.p2p_store = 0;
             audio_ffi_desc->esp.p2p_nsrcs = 0;
+            audio_ffi_desc->src_offset = 0;
+            audio_ffi_desc->dst_offset = 0;
 
             audio_ffi_desc->logn_samples = audio_handle->logn_samples;
             audio_ffi_desc->do_inverse = audio_handle->do_inverse;
-            audio_ffi_desc->prod_valid_offset = audio_handle->ConsRdyOffset;
-            audio_ffi_desc->prod_ready_offset = audio_handle->ConsVldOffset;
+            audio_ffi_desc->do_shift = audio_handle->do_shift;
+            audio_ffi_desc->prod_valid_offset = audio_handle->ConsVldOffset;
+            audio_ffi_desc->prod_ready_offset = audio_handle->ConsRdyOffset;
             audio_ffi_desc->cons_valid_offset = audio_handle->ProdVldOffset;
             audio_ffi_desc->cons_ready_offset = audio_handle->ProdRdyOffset;
             audio_ffi_desc->flt_prod_valid_offset = audio_handle->FltVldOffset;
@@ -45,7 +48,7 @@ void VamWorker::configure_accel(void* generic_handle) {
             audio_ffi_desc->flt_input_offset = audio_handle->FltInputOffset;
             audio_ffi_desc->twd_input_offset = audio_handle->TwdInputOffset;
 
-            printf("[VAM] Configuring audio_ffi accelerator for thread %d.\n", audio_handle->thread_id);
+            printf("[VAM] Configuring %s for thread %d.\n", accel->devname, audio_handle->thread_id);
 
             if (ioctl(accel->fd, accel->ioctl_req, audio_ffi_desc)) {
                 perror("ioctl");

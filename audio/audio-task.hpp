@@ -4,16 +4,18 @@
 #include <generic-task.hpp>
 #include <audio-helper.hpp>
 
-#define NUM_AUDIO_THREADS 1
+#define NUM_AUDIO_THREADS 2
 #define NUM_DEVICES 3
 
-typedef uint64_t token_t;
+typedef unsigned token_t;
+typedef uint64_t token64_t;
 
 class AudioTask : public GenericTask {
 
 	public:
 			unsigned logn_samples;
 			unsigned do_inverse;
+			unsigned do_shift;
 			unsigned FltRdyOffset;
 			unsigned FltVldOffset;
 			unsigned FltInputOffset;
@@ -48,6 +50,15 @@ class AudioTask : public GenericTask {
 			// Synchronize all parameters from task instance to virtual instance.
 			// Here, all flags are the same name so we can directly assign to the struct.
 			void handle_sync();
+
+			void print_asi_flags() {
+				printf("ConsVldOffset = %d\n", *((token_t *) hw_buf + ConsVldOffset));
+				printf("ConsRdyOffset = %d\n", *((token_t *) hw_buf + ConsRdyOffset));
+				printf("ProdVldOffset = %d\n", *((token_t *) hw_buf + ProdVldOffset));
+				printf("ProdRdyOffset = %d\n", *((token_t *) hw_buf + ProdRdyOffset));
+				printf("FltVldOffset = %d\n", *((token_t *) hw_buf + FltVldOffset));
+				printf("FltRdyOffset = %d\n", *((token_t *) hw_buf + FltRdyOffset));
+			}
 };
 
 #endif /* __AudioTask_H__ */

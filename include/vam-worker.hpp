@@ -4,9 +4,11 @@
 #include <vam-req-intf.hpp>
 #include <vam-helper.hpp>
 
-#include "dirent.h"
-#include "fnmatch.h"
-#include "stdio.h"
+#include <dirent.h>
+#include <fnmatch.h>
+#include <stdio.h>
+#include <cstring>
+#include <thread>
 
 class VamWorker {
 

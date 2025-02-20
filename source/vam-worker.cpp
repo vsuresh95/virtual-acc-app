@@ -17,14 +17,12 @@ void VamWorker::run() {
     while (1) {
         // VAM will keep monitoring the request interface to see if there are new requests 
         // TODO: for now, just monitor this. Later, we must also monitor hardware to see if we need to live migrate.)
-        
-        // Wait until a task is submitted
-        pthread_mutex_lock(&(req_intf->intf_mutex));
 
-        while (!(req_intf->task_available)) {
-            pthread_cond_wait(&(req_intf->req_ready), &(req_intf->intf_mutex));
+        // Wait until a task is submitted by atomically checking if the state is ONGOING
+        while (req_intf->intf_state.load() != ONGOING) {
+            sched_yield();
         }
-        
+
         // search the available accelerators if any can satisfy the request
         // TODO: currently, we assume only allocation requests. Support deallocation later.
         if (search_accel(req_intf->accel_handle) == SUCCESS) {
@@ -37,13 +35,10 @@ void VamWorker::run() {
             req_intf->rsp_code = ERROR;
         }
 
-        // Mark task as complete and free the interface
-        req_intf->task_completed = true;
-        req_intf->task_available = false;
-        
-        // Notify client and release mutex
-        pthread_cond_signal(&(req_intf->req_done));
-        pthread_mutex_unlock(&(req_intf->intf_mutex));
+        // Set the task as done by acquiring the lock
+        req_intf->intf_state.store(DONE);
+
+        DEBUG(printf("[VAM] Completed the processing for request.\n");)
     }
 }
 
@@ -70,7 +65,7 @@ void VamWorker::probe_accel() {
             accel_temp.accel_id = device_id++;
             accel_temp.is_allocated = false;
             accel_temp.thread_id = 1024;
-            accel_temp.devname = entry->d_name;
+            std::strcpy(accel_temp.devname, entry->d_name);
             accel_temp.hw_buf = NULL;
 
             if (fnmatch("audio_fft*", entry->d_name, FNM_NOESCAPE) == 0) {
@@ -108,13 +103,10 @@ VAMcode VamWorker::search_accel(void* generic_handle) {
 
 	printf("[VAM] Received allocation request from thread %d.\n", accel_handle->thread_id);
 
-    // Check if there is any hardware device that supports the capability for the requested instance.
+    // Check if there is any hardware device that supports the capability for the requested instance,
+    // and are not yet allocated.
     // For composable capabilities, this must be a monolithic accelerator.
-    unsigned id = 0;
-
-    while(&(accel_list[id]) != NULL) {
-        // Iterate through all hardware devices and check if the capability of the hardware device and
-        // requested instance match, and that the device is not allocated.
+    for (unsigned id = 0; id < accel_list.size(); id++) {
         DEBUG(
 	        printf("\n[VAM] Checking device %d.\n", id);
             accel_list[id].print();
@@ -131,7 +123,6 @@ VAMcode VamWorker::search_accel(void* generic_handle) {
             // Return successful.
             return SUCCESS;
         }
-        id++;
     }
 
     // If you do not find a device with the capability, you do two things:
@@ -150,6 +141,6 @@ VAMcode VamWorker::search_accel(void* generic_handle) {
     // Check for pre-emption/adding context to already allocated accelerators
 
     // If you do not find any candidate, respond with error.
-    printf("[VAM] ERROR: Did not find any capable device.");
+    printf("[VAM] ERROR: Did not find any capable device.\n");
     return ERROR;
 }

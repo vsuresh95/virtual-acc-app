@@ -10,29 +10,24 @@ GenericTask::GenericTask(unsigned thread_id_param, VAMReqIntf *req_intf_param)
 }
 
 VAMcode GenericTask::get_accel(VirtualInst *virt_handle) {
-	// Try to acquire the mutex on the interface. If not, wait.
-	pthread_mutex_lock(&(req_intf->intf_mutex));
-	
-	// Wait until the interface is free
-	while (req_intf->task_available) {
-		pthread_cond_wait(&(req_intf->req_ready), &(req_intf->intf_mutex));
-	}
+	ReqIntfState expected;
 
-	DEBUG(printf("[GenericTask] Requested virtual instance for %d from VAM.\n", virt_handle->thread_id);)
-        
+	// Atomically check the interface state is IDLE, and if yes, update to ONGOING.
+	do {
+		expected = IDLE;
+	} while (!req_intf->intf_state.compare_exchange_strong(expected, ONGOING));
+	
+	DEBUG(printf("[GenericTask] Requested virtual instance for thread %d from VAM.\n", virt_handle->thread_id);)
+
 	// Submit a new task (this was registered by the upstream task that got the lock)
 	req_intf->accel_handle = virt_handle;
 
-	req_intf->task_available = true;
-	req_intf->task_completed = false;
+	// Atomically check the interface state is DONE, and if yes, update to IDLE.
+	do {
+		expected = DONE;
+	} while (!req_intf->intf_state.compare_exchange_strong(expected, IDLE));
 	
-	// Notify server and wait for completion
-	pthread_cond_signal(&(req_intf->req_ready));
-	while (!(req_intf->task_completed)) {
-		pthread_cond_wait(&(req_intf->req_done), &(req_intf->intf_mutex));
-	}
-	
-	pthread_mutex_unlock(&(req_intf->intf_mutex));
+	DEBUG(printf("[GenericTask] Received virtual instance for thread %d from VAM.\n", virt_handle->thread_id);)
 
 	// For now, the get accel is not returning anything, but eventually you want to return more useful info.
 	return req_intf->rsp_code;
