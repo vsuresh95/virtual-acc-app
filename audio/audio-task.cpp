@@ -80,6 +80,16 @@ void AudioTask::run() {
 		UpdateSync(FltVldOffset, 0);
 		UpdateSync(ProdRdyOffset, 1);
 		UpdateSync(ProdVldOffset, 0);
+
+		// TODO: these variables must be zero-ed upon creation of queue or data structure
+		UpdateSync(acc_len + ConsRdyOffset, 1);
+		UpdateSync(acc_len + ConsVldOffset, 0);
+		UpdateSync(ProdRdyOffset - (2*acc_len), 1);
+		UpdateSync(ProdVldOffset - (2*acc_len), 0);
+		UpdateSync((2*acc_len) + ConsRdyOffset, 1);
+		UpdateSync((2*acc_len) + ConsVldOffset, 0);
+		UpdateSync(ProdRdyOffset - acc_len, 1);
+		UpdateSync(ProdVldOffset - acc_len, 0);
 	}
 
 	// One-time initialization of FIR filters and twiddle factors 
@@ -93,10 +103,10 @@ void AudioTask::run() {
 	);
 
 	// Submit the request to VAM interface and proceed if the allocation was successful
-    VAMcode success = ERROR;
+    VAMcode success = ALLOC_ERROR;
 	do {
 		success = get_accel();
-	} while (success == ERROR);
+	} while (success == ALLOC_ERROR);
 
 	DEBUG(printf("[AUDIO thread %d] Successfully received accel handle.\n", thread_id);)
 
@@ -106,6 +116,24 @@ void AudioTask::run() {
 
 	while (1) {
 		DEBUG(printf("[AUDIO thread %d] Starting iteration %d.\n", thread_id, iter_count);)
+
+		// We should continue with the app allocating the memory and
+		// sending that to VAM to register with the device.
+		// We should instead abstract the prod, cons, ready, valid
+		// as a queue data structure. For audio, you need one queue
+		// for FFT inputs and one for FIR inputs from the software app.
+		// If we are allocating composable accelerators, then VAM must create
+		// new queues for the intermediate data transfers. Note, however,
+		// that the esp_alloc will be done from the app itself for a large
+		// arbitrary size.
+		// 
+		// You don't need acc_len, etc. you need logn_samples for input size.
+		// You need to allocate a queue. The queue will contain
+		// {
+		// valid
+		// ready
+		// data
+		// }
 
 		// Wait for FFT (consumer) to be ready.
 		SpinSync(ConsRdyOffset, 1);
@@ -123,7 +151,7 @@ void AudioTask::run() {
 		// Reset flag for next iteration.
 		UpdateSync(ProdVldOffset, 0);
 		t_accel = end_counter();
-		DEBUG(printf("[AUDIO thread %d] Accel time = %lu.\n", thread_id, iter_count, t_accel);)
+		DEBUG(printf("[AUDIO thread %d] Accel time = %lu.\n", thread_id, t_accel);)
 
 		// Read back output from IFFT
 		errors = validate_buf();

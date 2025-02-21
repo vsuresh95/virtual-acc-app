@@ -21,6 +21,12 @@ extern "C" {
 }
 #endif
 
+// For composable capabilities, we will represent them as 
+// a data flow graph with an adjacency list.
+// Note that this is assumes composability can be represented
+// as a directed acyclic graph.
+using adjacency_list = std::map<Capability, std::vector<Capability>>;
+
 // This captures the defintion for composable capabilities
 // However, this does not cover the case where composable
 // primitives may have similar capability but of different
@@ -28,6 +34,7 @@ extern "C" {
 // this, e.g., GEMM of different sizes for composable GeMM.
 typedef struct {
     bool composable;
+    // adjacency_list comp_list;
     std::vector<Capability> comp_list;
 } CapabilityDef;
 
@@ -48,7 +55,7 @@ typedef struct {
     bool is_allocated; // Is the accelerator currently allocated?
     unsigned thread_id; // If allocated, what is the thread ID it is allocated to?
     // ESP-relevant variables
-    char *devname; // Name of device in file system
+    char devname[384]; // Name of device in file system
 	int ioctl_req; // IOCTL access code
     void* hw_buf; // Buffer address -- converted to configuous
     int fd; // File descriptor of the device, when open
@@ -67,4 +74,9 @@ typedef struct {
     }
 } PhysicalAccel;
 
+// // When allocating composable 
+// typedef struct {
+//     bool composable;
+//     std::vector<Capability> comp_list;
+// } CapabilityDef;
 #endif // __VAM_HELPER_H__

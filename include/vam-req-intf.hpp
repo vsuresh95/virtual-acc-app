@@ -4,7 +4,7 @@
 #include <atomic>
 #include <pthread.h>
 
-typedef enum { SUCCESS = 0, ERROR = 1 } VAMcode;
+typedef enum { ALLOC_SUCCESS = 0, ALLOC_ERROR = 1 } VAMcode;
 
 typedef enum { IDLE = 0, ONGOING = 1, DONE = 2 } ReqIntfState;
 

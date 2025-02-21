@@ -25,16 +25,23 @@ class VamWorker {
 			}
 
     private:
+            // Registry of capabilities, including descriptions for composable ones
+            // std::unordered_map<Capability, std::vector<CapabilityDef>> CapabilityRegistry;
             std::unordered_map<Capability, CapabilityDef> CapabilityRegistry = {
                 {AUDIO_FFT, {false, {}}},
                 {AUDIO_FIR, {false, {}}},
                 {AUDIO_FFI, {true, {AUDIO_FFT, AUDIO_FIR, AUDIO_FFT}}},
             };
 
+            // List of physical devices in the system
             std::vector<PhysicalAccel> accel_list;
 
+            // Mappings between virtual instances and physical devices
             std::unordered_map<PhysicalAccel *, VirtualInst *> phy_to_virt_mapping;
-            std::unordered_map<VirtualInst *, PhysicalAccel *> virt_to_phy_mapping;
+            std::unordered_map<VirtualInst *, std::vector<PhysicalAccel *>> virt_to_phy_mapping;
+
+            // // Probe the ESP system for available physical accelerators
+            // void register_capabilities();
 
             // Probe the ESP system for available physical accelerators
             void probe_accel();
@@ -46,6 +53,9 @@ class VamWorker {
 
             // Main run method -- which runs forever
             void run();
+
+            // TODO: you need a query function in the VAM that applications would use to
+            // get a list of devices available in the system. Like the /etc/cpuinfo app in Linux.
 };
 
 

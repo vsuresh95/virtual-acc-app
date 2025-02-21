@@ -1,5 +1,6 @@
-#include "vam-worker.hpp"
+#include <vam-worker.hpp>
 #include <vam-accel-defs.hpp>
+#include <vam-capabilities.hpp>
 
 VamWorker::VamWorker(VAMReqIntf *req_intf_param) 
     : req_intf {req_intf_param}
@@ -9,6 +10,9 @@ VamWorker::VamWorker(VAMReqIntf *req_intf_param)
 
 void VamWorker::run() {
 	printf("[VAM] Hello from VamWorker!\n");
+
+    // // create a list of capabilties (including graphs for composable capabilities)
+    // register_capabilities();
 
     // populate the list of physical accelerators in the system
     // PhysicalAccel *accel_list = (PhysicalAccel *) malloc (20 * sizeof(PhysicalAccel));
@@ -25,14 +29,14 @@ void VamWorker::run() {
 
         // search the available accelerators if any can satisfy the request
         // TODO: currently, we assume only allocation requests. Support deallocation later.
-        if (search_accel(req_intf->accel_handle) == SUCCESS) {
+        if (search_accel(req_intf->accel_handle) == ALLOC_SUCCESS) {
             // If yes, configure the accelerator with the parameters in the handle
-            req_intf->rsp_code = SUCCESS;
+            req_intf->rsp_code = ALLOC_SUCCESS;
             
             configure_accel(req_intf->accel_handle);
         } else {
-            // If no, return ERROR
-            req_intf->rsp_code = ERROR;
+            // If no, return ALLOC_ERROR
+            req_intf->rsp_code = ALLOC_ERROR;
         }
 
         // Set the task as done by acquiring the lock
@@ -58,15 +62,15 @@ void VamWorker::probe_accel() {
     unsigned device_id = 0;
     while ((entry = readdir(dir)) != NULL) {
         if (fnmatch("*_stratus.*", entry->d_name, FNM_NOESCAPE) == 0) {
-            // Print out debug message
-            DEBUG(printf("[VAM] Discovered device %d: %s.\n", device_id, entry->d_name);)
-
             PhysicalAccel accel_temp;
             accel_temp.accel_id = device_id++;
             accel_temp.is_allocated = false;
             accel_temp.thread_id = 1024;
             std::strcpy(accel_temp.devname, entry->d_name);
             accel_temp.hw_buf = NULL;
+
+            // Print out debug message
+            DEBUG(printf("[VAM] Discovered device %d: %s\n", device_id, accel_temp.devname);)
 
             if (fnmatch("audio_fft*", entry->d_name, FNM_NOESCAPE) == 0) {
                 accel_temp.capab = AUDIO_FFT;
@@ -115,13 +119,14 @@ VAMcode VamWorker::search_accel(void* generic_handle) {
         if (accel_list[id].capab == capab && accel_list[id].is_allocated == false) {
             // Update the phy->virt and virt->phy mapping between the two instances.
             phy_to_virt_mapping[&(accel_list[id])] = accel_handle;
-            virt_to_phy_mapping[accel_handle] = &(accel_list[id]);
+            virt_to_phy_mapping[accel_handle].push_back(&(accel_list[id]));
 
             // Mark the device as allocated.
             accel_list[id].is_allocated = true;
-	        printf("[VAM] SUCCESS: Allocated device %d!\n", id);
+            accel_list[id].thread_id = accel_handle->thread_id;
+	        printf("[VAM] ALLOC_SUCCESS: Allocated device %d!\n", id);
             // Return successful.
-            return SUCCESS;
+            return ALLOC_SUCCESS;
         }
     }
 
@@ -135,12 +140,56 @@ VAMcode VamWorker::search_accel(void* generic_handle) {
 
     // Check monolithic devices
     if (CapabilityRegistry[capab].composable == true) {
+        // Iterate through all the decomposable capabilities
+        // for (const auto& [_capab, consumers] : CapabilityRegistry[capab].comp_list) {
+        std::vector<unsigned> accel_candidates;
+        unsigned num_comp_tasks = CapabilityRegistry[capab].comp_list.size();
 
+        for (auto _capab : CapabilityRegistry[capab].comp_list) {
+            // For each decomposed capability, we will search for the candidate device
+            // TODO: we need to tweak the accelerator search to consider whether the accelerators
+            // are spatially collocated later.
+            for (unsigned id = 0; id < accel_list.size(); id++) {
+                DEBUG(
+                    printf("\n[VAM] Checking composable device %d.\n", id);
+                    accel_list[id].print();
+                )
+
+                if (accel_list[id].capab == _capab && accel_list[id].is_allocated == false) {
+                    accel_candidates.push_back(id);
+                    // Tentatively mark as allocated, assuming we will get all devices.
+                    accel_list[id].is_allocated = true;
+	                DEBUG(printf("[VAM] Tentatively allocated device %d!\n", id);)
+                    break;
+                }
+            }
+        }
+
+        // If the number of candidates matches the number of composable tasks, return success.
+        if (accel_candidates.size() == num_comp_tasks) {
+            for (unsigned id = 0; id < accel_candidates.size(); id++) {
+                // Update the phy->virt and virt->phy mapping between the two instances.
+                phy_to_virt_mapping[&(accel_list[accel_candidates[id]])] = accel_handle;
+                virt_to_phy_mapping[accel_handle].push_back(&(accel_list[accel_candidates[id]]));
+
+                accel_list[accel_candidates[id]].is_allocated = true;
+                accel_list[accel_candidates[id]].thread_id = accel_handle->thread_id;
+                printf("[VAM] ALLOC_SUCCESS: Allocated composable device %d!\n", accel_candidates[accel_candidates[id]]);
+            }
+
+            // Return successful.
+            return ALLOC_SUCCESS;
+        } else {
+            for (unsigned id = 0; id < accel_candidates.size(); id++) {
+                // If we didn't get all the accelerators, release
+                accel_list[id].is_allocated = false;
+            }
+        }
     }
     
     // Check for pre-emption/adding context to already allocated accelerators
 
     // If you do not find any candidate, respond with error.
     printf("[VAM] ERROR: Did not find any capable device.\n");
-    return ERROR;
+    return ALLOC_ERROR;
 }
