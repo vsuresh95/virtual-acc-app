@@ -10,35 +10,35 @@
 #include <cstring>
 #include <thread>
 
-class VamWorker {
+class vam_worker {
 
     public:
 			// VAM interface for providing accel allocations
-			VAMReqIntf *req_intf;
+			vam_req_intf_t *req_intf;
 
-            VamWorker(VAMReqIntf *req_intf_param);
+            vam_worker(vam_req_intf_t *req_intf_param);
 
             // Static version of run method
 			static void* run(void* task_obj) {
-				static_cast<VamWorker *>(task_obj)->run();
+				static_cast<vam_worker *>(task_obj)->run();
 				return 0;
 			}
 
     private:
             // Registry of capabilities, including descriptions for composable ones
-            // std::unordered_map<Capability, std::vector<CapabilityDef>> CapabilityRegistry;
-            std::unordered_map<Capability, CapabilityDef> CapabilityRegistry = {
+            // std::unordered_map<capability_t, std::vector<capability_def_t>> capability_registry;
+            std::unordered_map<capability_t, capability_def_t> capability_registry = {
                 {AUDIO_FFT, {false, {}}},
                 {AUDIO_FIR, {false, {}}},
                 {AUDIO_FFI, {true, {AUDIO_FFT, AUDIO_FIR, AUDIO_FFT}}},
             };
 
             // List of physical devices in the system
-            std::vector<PhysicalAccel> accel_list;
+            std::vector<physical_accel_t> accel_list;
 
             // Mappings between virtual instances and physical devices
-            std::unordered_map<PhysicalAccel *, VirtualInst *> phy_to_virt_mapping;
-            std::unordered_map<VirtualInst *, std::vector<PhysicalAccel *>> virt_to_phy_mapping;
+            std::unordered_map<physical_accel_t *, virtual_inst_t *> phy_to_virt_mapping;
+            std::unordered_map<virtual_inst_t *, std::vector<physical_accel_t *>> virt_to_phy_mapping;
 
             // // Probe the ESP system for available physical accelerators
             // void register_capabilities();
@@ -47,7 +47,7 @@ class VamWorker {
             void probe_accel();
 
             // Probe the ESP system for available physical accelerators
-            VAMcode search_accel(void* generic_handle);
+            vam_code_t search_accel(void* generic_handle);
 
             void configure_accel(void* generic_handle);
 

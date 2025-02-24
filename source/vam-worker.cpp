@@ -2,20 +2,16 @@
 #include <vam-accel-defs.hpp>
 #include <vam-capabilities.hpp>
 
-VamWorker::VamWorker(VAMReqIntf *req_intf_param) 
-    : req_intf {req_intf_param}
-{
-    // Allocate space for accel_list?
-}
+vam_worker::vam_worker(vam_req_intf_t *req_intf_param) 
+    : req_intf {req_intf_param} {}
 
-void VamWorker::run() {
-	printf("[VAM] Hello from VamWorker!\n");
+void vam_worker::run() {
+	printf("[VAM] Hello from vam_worker!\n");
 
     // // create a list of capabilties (including graphs for composable capabilities)
     // register_capabilities();
 
     // populate the list of physical accelerators in the system
-    // PhysicalAccel *accel_list = (PhysicalAccel *) malloc (20 * sizeof(PhysicalAccel));
     probe_accel();
 
     while (1) {
@@ -46,7 +42,7 @@ void VamWorker::run() {
     }
 }
 
-void VamWorker::probe_accel() {
+void vam_worker::probe_accel() {
     // Open the devices directory to search for accels
     DIR *dir = opendir("/dev/");
     if (!dir) {
@@ -62,7 +58,7 @@ void VamWorker::probe_accel() {
     unsigned device_id = 0;
     while ((entry = readdir(dir)) != NULL) {
         if (fnmatch("*_stratus.*", entry->d_name, FNM_NOESCAPE) == 0) {
-            PhysicalAccel accel_temp;
+            physical_accel_t accel_temp;
             accel_temp.accel_id = device_id++;
             accel_temp.is_allocated = false;
             accel_temp.thread_id = 1024;
@@ -100,10 +96,10 @@ void VamWorker::probe_accel() {
     closedir(dir);
 }
 
-VAMcode VamWorker::search_accel(void* generic_handle) {
-    VirtualInst *accel_handle = (VirtualInst *) generic_handle;
+vam_code_t vam_worker::search_accel(void* generic_handle) {
+    virtual_inst_t *accel_handle = (virtual_inst_t *) generic_handle;
 
-    Capability capab = accel_handle->capab;
+    capability_t capab = accel_handle->capab;
 
 	printf("[VAM] Received allocation request from thread %d.\n", accel_handle->thread_id);
 
@@ -132,20 +128,20 @@ VAMcode VamWorker::search_accel(void* generic_handle) {
 
     // If you do not find a device with the capability, you do two things:
     // TODO a) for composable capabilities, check for devices that can be composed together
-    //         using the Capability registry. When configuring this, the application would not have specified the 
+    //         using the capability_t registry. When configuring this, the application would not have specified the 
     //         intermediate the offsets or how the register configurations needs to split/duplicated.
     // TODO b) for other capabilities, check whether there are allocated devices that can 
     //         meet your capability. If yes, you need to pre-empt them (or add extra context to them).
     //         Shouldn't this also apply to composable capabilities - pre-empt or add context to monolithic accelerators?
 
     // Check monolithic devices
-    if (CapabilityRegistry[capab].composable == true) {
+    if (capability_registry[capab].composable == true) {
         // Iterate through all the decomposable capabilities
-        // for (const auto& [_capab, consumers] : CapabilityRegistry[capab].comp_list) {
+        // for (const auto& [_capab, consumers] : capability_registry[capab].comp_list) {
         std::vector<unsigned> accel_candidates;
-        unsigned num_comp_tasks = CapabilityRegistry[capab].comp_list.size();
+        unsigned num_comp_tasks = capability_registry[capab].comp_list.size();
 
-        for (auto _capab : CapabilityRegistry[capab].comp_list) {
+        for (auto _capab : capability_registry[capab].comp_list) {
             // For each decomposed capability, we will search for the candidate device
             // TODO: we need to tweak the accelerator search to consider whether the accelerators
             // are spatially collocated later.

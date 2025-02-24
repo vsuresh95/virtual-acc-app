@@ -4,14 +4,14 @@
 
 int main(int argc, char **argv) {
 	// Create a new request interface object (that will be passed to the workers)
-	VAMReqIntf *req_intf = new VAMReqIntf;
+	vam_req_intf_t *req_intf = new vam_req_intf_t;
 
 	printf("\n-------------------------\n");
 	printf("Starting Audio App\n");
 	printf("---------------------------\n");
 
 	// Create a VAM object
-	VamWorker *vam = (VamWorker *) new VamWorker(req_intf);
+	vam_worker *vam = (vam_worker *) new vam_worker(req_intf);
 
 	// Launching a VAM thread
 	pthread_t vam_thread;
@@ -21,13 +21,13 @@ int main(int argc, char **argv) {
     }
 
 	// Declare a list of audio tasks
-	AudioTask **audio = new AudioTask*[NUM_AUDIO_THREADS];
+	audio_task **audio = new audio_task*[NUM_AUDIO_THREADS];
 
 	// Launching all threads for audio tasks
 	pthread_t audio_thread[NUM_AUDIO_THREADS];
 
 	for (unsigned i = 0; i < NUM_AUDIO_THREADS; i++) {
-	 	audio[i] = (AudioTask *) new AudioTask(i, req_intf);
+	 	audio[i] = (audio_task *) new audio_task(i, req_intf);
 		if (pthread_create(&audio_thread[i], NULL, audio[i]->run, (void *) (audio[i])) != 0) {
 			perror("Failed to create audio thread");
 			return 1;

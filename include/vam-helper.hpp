@@ -25,7 +25,7 @@ extern "C" {
 // a data flow graph with an adjacency list.
 // Note that this is assumes composability can be represented
 // as a directed acyclic graph.
-using adjacency_list = std::map<Capability, std::vector<Capability>>;
+using adjacency_list = std::map<capability_t, std::vector<capability_t>>;
 
 // This captures the defintion for composable capabilities
 // However, this does not cover the case where composable
@@ -35,8 +35,8 @@ using adjacency_list = std::map<Capability, std::vector<Capability>>;
 typedef struct {
     bool composable;
     // adjacency_list comp_list;
-    std::vector<Capability> comp_list;
-} CapabilityDef;
+    std::vector<capability_t> comp_list;
+} capability_def_t;
 
 // Physical accelerator attributes below
 
@@ -50,7 +50,7 @@ typedef struct {
 typedef struct {
     // VAM-relevant variables
     unsigned accel_id; // ID for tracking
-    Capability capab; // Capability of the accelerator
+    capability_t capab; // capability_t of the accelerator
     // AccelTileID tile_id; // Physical tile ID (for optimizing data movement)
     bool is_allocated; // Is the accelerator currently allocated?
     unsigned thread_id; // If allocated, what is the thread ID it is allocated to?
@@ -72,11 +72,11 @@ typedef struct {
         printf("\tdevname = %s\n", devname);
         printf("\thw_buf = %p\n", hw_buf);
     }
-} PhysicalAccel;
+} physical_accel_t;
 
 // // When allocating composable 
 // typedef struct {
 //     bool composable;
 //     std::vector<Capability> comp_list;
-// } CapabilityDef;
+// } capability_def_t;
 #endif // __VAM_HELPER_H__

@@ -4,34 +4,22 @@
 #include <vam-req-intf.hpp>
 #include <common-helper.hpp>
 
-class GenericTask {
+class generic_task {
     
     public:
 			// Thread ID of the worker that will use this object
             unsigned thread_id;
 
-			// Generic accelerator parameters
-            unsigned in_words;
-            unsigned out_words;
-            unsigned acc_len;
-            unsigned mem_size;
-            void *hw_buf;
-
-			// Offsets for synchronization flags
-			unsigned ConsRdyOffset;
-			unsigned ConsVldOffset;
-			unsigned ProdRdyOffset;
-			unsigned ProdVldOffset;
-            unsigned InputOffset;
-            unsigned OutputOffset;
+			// Common memory pool buffer
+    		hw_buf_pool_t *hw_buf_pool;
 
 			// VAM interface for requesting accel allocations
-			VAMReqIntf *req_intf;
+			vam_req_intf_t *req_intf;
 
-			GenericTask(unsigned , VAMReqIntf *);
+			generic_task(unsigned , vam_req_intf_t *);
 
 			// Allows worker threads to request accelerators from VAM
-			VAMcode get_accel(VirtualInst *virt_handle);
+			vam_code_t get_accel(virtual_inst_t *virt_handle);
 
 			// Timer functions
 			uint64_t t_start;

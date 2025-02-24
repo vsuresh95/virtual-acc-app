@@ -1,34 +1,35 @@
-#ifndef __AudioTask_H__
-#define __AudioTask_H__
+#ifndef __audio_task_H__
+#define __audio_task_H__
 
 #include <generic-task.hpp>
 #include <audio-helper.hpp>
 
-#define NUM_AUDIO_THREADS 4
+#define NUM_AUDIO_THREADS 2
 #define NUM_DEVICES 3
 
-typedef unsigned token_t;
-typedef uint64_t token64_t;
-
-class AudioTask : public GenericTask {
+class audio_task : public generic_task {
 
 	public:
 			unsigned logn_samples;
 			unsigned do_inverse;
 			unsigned do_shift;
-			unsigned FltRdyOffset;
-			unsigned FltVldOffset;
-			unsigned FltInputOffset;
-			unsigned TwdInputOffset;
+
+			unsigned io_payload_size;
+			unsigned flt_payload_size;
+
+			// Two user mode queues for input and output and one for filters/twiddles
+    		user_queue_t<token_t> input_queue;
+    		user_queue_t<token_t> output_queue;
+			user_queue_t<token_t> filter_queue;
 
 			// Handle to store all the parameters and configuration
-			AudioInst *accel_handle;
+			audio_inst_t *accel_handle;
 
-			AudioTask(unsigned thread_id_param, VAMReqIntf *req_intf_param) : GenericTask(thread_id_param, req_intf_param) {}
+			audio_task(unsigned thread_id_param, vam_req_intf_t *req_intf_param) : generic_task(thread_id_param, req_intf_param) {}
 
             // Static version of run method
 			static void* run(void* task_obj) {
-				static_cast<AudioTask *>(task_obj)->run();
+				static_cast<audio_task *>(task_obj)->run();
 				return 0;
 			}
 
@@ -40,16 +41,11 @@ class AudioTask : public GenericTask {
 			void run();
 
 			// Allows worker threads to request accelerators from VAM
-			VAMcode get_accel();
-
-			// Generic APIs for interfacing with ASI sync flags
-			void UpdateSync(unsigned FlagOFfset, token_t value);
-			void SpinSync(unsigned FlagOFfset, token_t value);
-			bool TestSync(unsigned FlagOFfset, token_t value);
+			vam_code_t get_accel();
 
 			// Synchronize all parameters from task instance to virtual instance.
 			// Here, all flags are the same name so we can directly assign to the struct.
 			void handle_sync();
 };
 
-#endif /* __AudioTask_H__ */
+#endif /* __audio_task_H__ */
