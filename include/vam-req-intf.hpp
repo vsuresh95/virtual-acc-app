@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <pthread.h>
+#include <common-helper.hpp>
 
 typedef enum { ALLOC_SUCCESS = 0, ALLOC_ERROR = 1 } vam_code_t;
 
@@ -18,7 +19,7 @@ class vam_req_intf_t {
             vam_code_t rsp_code;
             
             // App-specific virtual instance parameters
-            void *accel_handle;
+            std::atomic<virtual_inst_t *> accel_handle;
 
             vam_req_intf_t() {
                 intf_state.store(IDLE);

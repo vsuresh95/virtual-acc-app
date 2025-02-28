@@ -47,9 +47,9 @@ class vam_worker {
             void probe_accel();
 
             // Probe the ESP system for available physical accelerators
-            vam_code_t search_accel(void* generic_handle);
+            vam_code_t search_accel(virtual_inst_t *accel_handle);
 
-            void configure_accel(void* generic_handle);
+            void configure_accel(virtual_inst_t *accel_handle);
 
             // Main run method -- which runs forever
             void run();

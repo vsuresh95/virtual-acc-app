@@ -23,13 +23,17 @@ void vam_worker::run() {
             sched_yield();
         }
 
+        virtual_inst_t *local_accel_handle = req_intf->accel_handle.load();
+
+        DEBUG(printf("[VAM] Received a request for accel handle %p\n", local_accel_handle);)
+
         // search the available accelerators if any can satisfy the request
         // TODO: currently, we assume only allocation requests. Support deallocation later.
-        if (search_accel(req_intf->accel_handle) == ALLOC_SUCCESS) {
+        if (search_accel(local_accel_handle) == ALLOC_SUCCESS) {
             // If yes, configure the accelerator with the parameters in the handle
             req_intf->rsp_code = ALLOC_SUCCESS;
             
-            configure_accel(req_intf->accel_handle);
+            configure_accel(local_accel_handle);
         } else {
             // If no, return ALLOC_ERROR
             req_intf->rsp_code = ALLOC_ERROR;
@@ -96,9 +100,7 @@ void vam_worker::probe_accel() {
     closedir(dir);
 }
 
-vam_code_t vam_worker::search_accel(void* generic_handle) {
-    virtual_inst_t *accel_handle = (virtual_inst_t *) generic_handle;
-
+vam_code_t vam_worker::search_accel(virtual_inst_t *accel_handle) {
     capability_t capab = accel_handle->capab;
 
 	printf("[VAM] Received allocation request from thread %d.\n", accel_handle->thread_id);
@@ -121,6 +123,9 @@ vam_code_t vam_worker::search_accel(void* generic_handle) {
             accel_list[id].is_allocated = true;
             accel_list[id].thread_id = accel_handle->thread_id;
 	        printf("[VAM] ALLOC_SUCCESS: Allocated device %d!\n", id);
+            printf("[VAM] virt mapping back %p\n", virt_to_phy_mapping[accel_handle].back());
+            printf("[VAM] virt mapping back ID %d\n", virt_to_phy_mapping[accel_handle].back()->accel_id);
+            DEBUG(printf("[VAM] accel_handle = %p\n", accel_handle);)
             // Return successful.
             return ALLOC_SUCCESS;
         }

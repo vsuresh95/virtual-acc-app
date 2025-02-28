@@ -18,9 +18,9 @@ class audio_task : public generic_task {
 			unsigned flt_payload_size;
 
 			// Two user mode queues for input and output and one for filters/twiddles
-    		user_queue_t<token_t> input_queue;
-    		user_queue_t<token_t> output_queue;
-			user_queue_t<token_t> filter_queue;
+    		user_queue_t<token_t> *input_queue;
+    		user_queue_t<token_t> *output_queue;
+			user_queue_t<token_t> *filter_queue;
 
 			// Handle to store all the parameters and configuration
 			audio_inst_t *accel_handle;

@@ -3,12 +3,12 @@
 #include <vam-worker.hpp>
 
 int main(int argc, char **argv) {
-	// Create a new request interface object (that will be passed to the workers)
-	vam_req_intf_t *req_intf = new vam_req_intf_t;
-
 	printf("\n-------------------------\n");
 	printf("Starting Audio App\n");
 	printf("---------------------------\n");
+
+	// Create a new request interface object (that will be passed to the workers)
+	vam_req_intf_t *req_intf = new vam_req_intf_t;
 
 	// Create a VAM object
 	vam_worker *vam = (vam_worker *) new vam_worker(req_intf);

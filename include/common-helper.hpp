@@ -36,9 +36,14 @@ struct hw_buf_pool_t {
         hw_buf_alloc = 0;
     }
 
+    ~hw_buf_pool_t() {
+        esp_free(hw_buf);
+    }
+
     unsigned alloc(unsigned mem_size) {
+        unsigned hw_buf_alloc_curr = hw_buf_alloc; 
         hw_buf_alloc += mem_size;
-        return hw_buf_alloc;
+        return hw_buf_alloc_curr;
     }
 };
 
@@ -53,11 +58,16 @@ struct user_queue_t {
 
     bool is_full() { return (mem[base] == 1); }
 
-    void init(void *hw_buf, unsigned base_val) {
-        mem = (T *) hw_buf;
-        base = base_val;
+    user_queue_t(hw_buf_pool_t *hw_buf_pool, unsigned payload_size) {
+        mem = (T *) hw_buf_pool->hw_buf;
+        base = hw_buf_pool->alloc(PAYLOAD_OFFSET + payload_size);
+
         // Initialize queue to be empty.
         mem[base] = 0;
+    }
+
+    ~user_queue_t() {
+        
     }
 };
 
