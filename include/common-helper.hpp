@@ -59,7 +59,7 @@ struct user_queue_t {
     bool is_full() { return (mem[base] == 1); }
 
     user_queue_t(hw_buf_pool_t *hw_buf_pool, unsigned payload_size) {
-        mem = (T *) hw_buf_pool->hw_buf;
+        mem = (T *) (hw_buf_pool->hw_buf);
         base = hw_buf_pool->alloc(PAYLOAD_OFFSET + payload_size);
 
         // Initialize queue to be empty.

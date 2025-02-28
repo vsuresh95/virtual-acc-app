@@ -24,7 +24,6 @@ class vam_worker {
 				return 0;
 			}
 
-    private:
             // Registry of capabilities, including descriptions for composable ones
             // std::unordered_map<capability_t, std::vector<capability_def_t>> capability_registry;
             std::unordered_map<capability_t, capability_def_t> capability_registry = {

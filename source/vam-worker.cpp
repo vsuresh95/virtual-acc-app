@@ -19,11 +19,11 @@ void vam_worker::run() {
         // TODO: for now, just monitor this. Later, we must also monitor hardware to see if we need to live migrate.)
 
         // Wait until a task is submitted by atomically checking if the state is ONGOING
-        while (req_intf->intf_state.load() != ONGOING) {
+        while (req_intf->intf_state.load(std::memory_order_seq_cst) != ONGOING) {
             sched_yield();
         }
 
-        virtual_inst_t *local_accel_handle = req_intf->accel_handle.load();
+        virtual_inst_t *local_accel_handle = req_intf->accel_handle.load(std::memory_order_seq_cst);
 
         DEBUG(printf("[VAM] Received a request for accel handle %p\n", local_accel_handle);)
 
@@ -40,7 +40,7 @@ void vam_worker::run() {
         }
 
         // Set the task as done by acquiring the lock
-        req_intf->intf_state.store(DONE);
+        req_intf->intf_state.store(DONE, std::memory_order_seq_cst);
 
         DEBUG(printf("[VAM] Completed the processing for request.\n");)
     }

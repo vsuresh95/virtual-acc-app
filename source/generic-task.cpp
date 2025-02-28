@@ -15,17 +15,17 @@ vam_code_t generic_task::get_accel(virtual_inst_t *virt_handle) {
 	// Atomically check the interface state is IDLE, and if yes, update to ONGOING.
 	do {
 		expected = IDLE;
-	} while (!req_intf->intf_state.compare_exchange_strong(expected, ONGOING));
+	} while (!req_intf->intf_state.compare_exchange_strong(expected, ONGOING, std::memory_order_seq_cst));
 	
 	DEBUG(printf("[generic_task] Requested virtual instance for thread %d from VAM.\n", virt_handle->thread_id);)
 
 	// Submit a new task (this was registered by the upstream task that got the lock)
-	req_intf->accel_handle.store(virt_handle);
+	req_intf->accel_handle.store(virt_handle, std::memory_order_seq_cst);
 
 	// Atomically check the interface state is DONE, and if yes, update to IDLE.
 	do {
 		expected = DONE;
-	} while (!req_intf->intf_state.compare_exchange_strong(expected, IDLE));
+	} while (!req_intf->intf_state.compare_exchange_strong(expected, IDLE, std::memory_order_seq_cst));
 	
 	DEBUG(printf("[generic_task] Received virtual instance for thread %d from VAM.\n", virt_handle->thread_id);)
 

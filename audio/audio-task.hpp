@@ -33,7 +33,6 @@ class audio_task : public generic_task {
 				return 0;
 			}
 
-	private:
 			void init_buf();
 			unsigned validate_buf();
 			void flt_twd_init();
