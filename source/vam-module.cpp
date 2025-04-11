@@ -107,34 +107,7 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
 
         DEBUG(printf("\tFound node %s\n", current->dump_prim()));
 
-        usleep(5000000);
-
-        // TODO: this point we should check if there exists an accelerator for this node (if not NONE) and if yes,
-        // assign that accelerator. If not, only that do we check if the node is internal and there exists a
-        // sub-graph we can process.
-
-        // If the node is internal, we must traverse its child graph before going to its consumers
-        if (current->is_internal()) {
-            DEBUG(printf("\tSearching the child graph of int_node %s\n", ((df_int_node_t *) current)->get_name()));
-            if (!search_accel((df_int_node_t *) current)) return false;
-        }
-
-        // Iterate through all out edges of this node and add the destinations to the visitor set and the BFS queue.
-        for (df_edge_t *out : current->out_edges) {
-            // Check that the consumer was not visited earlier and push into the queue.
-            if (visited.insert(out->get_destination()).second) {
-                q.push(out->get_destination());
-            }
-
-            // Check if the queue associated with this edge is not yet allocated (might be the
-            // case for child graphs). If not, allocate it here for the size specified.
-            if (out->data == NULL) {
-                out->data = new mem_queue_t(current->get_params()->mem_pool, out->payload_size);
-            }
-        }
-
-        usleep(5000000);
-
+        // Check if there exists an accelerator for this node (if not NONE) and if yes, assign that accelerator. 
         bool success = false;
 
         // Ensure that the current node is an entry or exit
@@ -157,15 +130,37 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
                     accel_list[id].is_allocated = true;
                     std::strcpy(accel_list[id].thread_id, current->get_root()->get_name());
 
-                    printf("[VAM] ALLOC_SUCCESS: Temporarily allocated device %s!\n", virt_to_phy_mapping[current->get_root()][current]->get_name());
+                    printf("[VAM] SUCCESS: Temporarily allocated device %s to routine %s!\n", virt_to_phy_mapping[current->get_root()][current]->get_name(), current->get_root()->get_name());
                     success = true;
                     break;
                 }
             }
 
+            // If we could not find an accelerator, we check if the node is internal. If yes, 
+            // there exists a sub-graph we can process. If not, we return an ERROR.
             if (!success) {
-                printf("[VAM] ERROR: Did not find any suitable device for %s.\n", current->dump_prim());
-                return false;
+                // If the node is internal, we must traverse its child graph before going to its consumers
+                if (current->is_internal()) {
+                    DEBUG(printf("\tSearching the child graph of int_node %s\n", ((df_int_node_t *) current)->get_name()));
+                    if (!search_accel((df_int_node_t *) current)) return false;
+                } else {
+                    printf("[VAM] ERROR: Did not find any suitable device for %s.\n", current->dump_prim());
+                    return false;
+                }
+            }
+        }
+
+        // Iterate through all out edges of this node and add the destinations to the visitor set and the BFS queue.
+        for (df_edge_t *out : current->out_edges) {
+            // Check that the consumer was not visited earlier and push into the queue.
+            if (visited.insert(out->get_destination()).second) {
+                q.push(out->get_destination());
+            }
+
+            // Check if the queue associated with this edge is not yet allocated (might be the
+            // case for child graphs). If not, allocate it here for the size specified.
+            if (out->data == NULL) {
+                out->data = new mem_queue_t(current->get_params()->mem_pool, out->payload_size);
             }
         }
     }
@@ -188,7 +183,7 @@ void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel) {
     DEBUG(printf("[VAM] Configuring accel %s for node %s in routine %s\n", accel->get_name(), node->dump_prim(), node->get_root()->get_name());)
 
     // ESP defined data type for the pointer to the memory pool for accelerators.
-    contig_handle_t *handle = lookup_handle(node->get_params()->mem_pool, NULL);
+    contig_handle_t *handle = lookup_handle(node->get_params()->mem_pool->hw_buf, NULL);
 
     // Configring all the device-independent fields in the esp desc
     esp_access *generic_esp_access = (esp_access *) accel->esp_access_desc;

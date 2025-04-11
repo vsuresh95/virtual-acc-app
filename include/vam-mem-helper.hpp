@@ -26,11 +26,14 @@ struct mem_queue_t {
     uint8_t *mem;
     size_t base;
 
-    void enqueue() { mem[base] = 1; }
+    template <typename T>
+    void enqueue() { mem[sizeof(T) * base] = 1; }
 
-    void dequeue() { mem[base] = 0; }
+    template <typename T>
+    void dequeue() { mem[sizeof(T) * base] = 0; }
 
-    bool is_full() { return (mem[base] == 1); }
+    template <typename T>
+    bool is_full() { return (mem[sizeof(T) * base] == 1); }
 
     mem_queue_t(mem_pool_t *mem_pool, size_t payload_size) {
         mem = (uint8_t *) mem_pool->hw_buf;

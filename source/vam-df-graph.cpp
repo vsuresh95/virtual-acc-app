@@ -13,11 +13,11 @@ df_graph_t::df_graph_t(df_int_node_t *p) {
 }
 
 df_int_node_t *df_node_t::get_root() {
-    df_int_node_t *parent = this->get_parent();
-    if (parent->is_root()) {
-        return parent->get_parent();
+    df_int_node_t *p = this->get_parent();
+    if (p->is_root()) {
+        return p;
     } else {
-        return parent;
+        return p->get_root();
     }
 }
 

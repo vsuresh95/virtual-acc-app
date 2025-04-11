@@ -91,23 +91,23 @@ void audio_worker::run() {
 		DEBUG(printf("[%s] Starting iteration %d.\n", thread_name, iter_count);)
 
 		// Wait for FFT (consumer) to be ready.
-		while(input_queue->is_full());
+		while(input_queue->is_full<token_t>());
 		// Write input data for FFT.
 		init_buf();
 		// Inform FFT (consumer) to start.
-		filter_queue->enqueue();
-		input_queue->enqueue();
+		filter_queue->enqueue<token_t>();
+		input_queue->enqueue<token_t>();
 
 		t_accel.start_counter();
 		// Wait for IFFT (producer) to send output.
-		while(!output_queue->is_full());
+		while(!output_queue->is_full<token_t>()) { DEBUG(printf("[%s] Waiting...\n", thread_name);) };
 		t_accel.end_counter();
 		DEBUG(printf("[%s] Accel time = %lu.\n", thread_name, t_accel.get_time());)
 
 		// Read back output from IFFT
 		errors = validate_buf();
 		// Inform IFFT (producer) - ready for next iteration.
-		output_queue->dequeue();
+		output_queue->dequeue<token_t>();
 
 		iter_count++;
 		if (iter_count % 100 == 0) {
@@ -154,6 +154,8 @@ void audio_worker::create_audio_dfg(hpthread_routine_t *routine_dfg) {
     df_leaf_node_t *audio_ifft = new df_leaf_node_t(AUDIO_FFT, audio_ffi, false);
 
 	// bind AUDIO_FFI edges to internal edges -- will be added to the AUDIO_FFI graph
+	// TODO: how are mem_queues of binded edges propagated. When an edge is bound,
+	// the mem queue must propagate.
     df_edge_t *fft_input = new df_edge_t(audio_ffi->get_entry(), audio_fft);
     df_edge_t *fir_filters = new df_edge_t(audio_ffi->get_entry(), audio_fir);
     df_edge_t *ifft_output = new df_edge_t(audio_ifft, audio_ffi->get_exit());

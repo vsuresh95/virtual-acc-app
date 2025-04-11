@@ -4,7 +4,7 @@
 #include <vam-hpthread.hpp>
 #include <audio-helper.hpp>
 
-#define NUM_AUDIO_THREADS 1
+#define NUM_AUDIO_THREADS 2
 
 class audio_worker {
 
