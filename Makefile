@@ -13,14 +13,15 @@ endif
 HPP_FILES := $(shell find -L . -name '*.hpp')
 HPP_FILES := $(patsubst ./%,%,$(HPP_FILES))
 
-SRCFILES+=generic-task.cpp
-SRCFILES+=vam-worker.cpp
+SRCFILES+=vam-module.cpp
+SRCFILES+=vam-df-graph.cpp
+SRCFILES+=vam-hpthread.cpp
 
 COMMON_OBJ=$(patsubst %.cpp,%.common.o,$(SRCFILES))
 
 # AUDIO CHANGES
 CXXFLAGS+=-I./audio
-AUDIOSRCFILES+=audio-task.cpp
+AUDIOSRCFILES+=audio-worker.cpp
 AUDIOSRCFILES+=audio-app.cpp
 
 AUDIO_OBJ=$(patsubst %.cpp,%.audio.o,$(AUDIOSRCFILES))
