@@ -15,10 +15,11 @@
 #include <dirent.h>
 #include <fnmatch.h>
 #include <stdio.h>
+#include <stdint.h>
 
-// ASI synchronization variable size and offsets
+// ASI synchronization variable size and offsets (in bytes)
 #define VALID_OFFSET 0
-#define PAYLOAD_OFFSET 2
+#define PAYLOAD_OFFSET 8
 
 #ifdef VERBOSE
 #define DEBUG(x) x

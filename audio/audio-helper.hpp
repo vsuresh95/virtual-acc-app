@@ -12,16 +12,38 @@ struct ffi_params_t : public node_params_t {
 	unsigned logn_samples;
 	unsigned do_inverse;
 	unsigned do_shift;
+
+    void dump() {
+        printf("\tlogn_samples = %d\n", logn_samples);
+        printf("\tdo_inverse = %d\n", do_inverse);
+        printf("\tdo_shift = %d\n", do_shift);
+
+        node_params_t::dump();
+    } 
 };
 
 struct fft_params_t : public node_params_t {
 	unsigned logn_samples;
 	unsigned do_inverse;
 	unsigned do_shift;
+
+    void dump() {
+        printf("\tlogn_samples = %d\n", logn_samples);
+        printf("\tdo_inverse = %d\n", do_inverse);
+        printf("\tdo_shift = %d\n", do_shift);
+
+        node_params_t::dump();
+    } 
 };
 
 struct fir_params_t : public node_params_t {
 	unsigned logn_samples;
+
+    void dump() {
+        printf("\tlogn_samples = %d\n", logn_samples);
+
+        node_params_t::dump();
+    } 
 };
 
 // Device-dependent configuration functions
@@ -34,8 +56,8 @@ static void audio_fft_access_cfg(df_node_t *node, esp_access *generic_esp_access
     audio_fft_desc->do_inverse = params->do_inverse;
 
     // Get the queue base from the in/out edges of the FFT node
-    audio_fft_desc->input_queue_base = node->in_edges[0]->data->base;
-    audio_fft_desc->output_queue_base = node->out_edges[0]->data->base;
+    audio_fft_desc->input_queue_base = node->in_edges[0]->data->base / sizeof(token_t);
+    audio_fft_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
 }
 
 static void audio_fir_access_cfg(df_node_t *node, esp_access *generic_esp_access) {
@@ -45,9 +67,9 @@ static void audio_fir_access_cfg(df_node_t *node, esp_access *generic_esp_access
     audio_fir_desc->logn_samples = params->logn_samples;
 
     // Get the queue base from the in/out edges of the FIR node
-    audio_fir_desc->input_queue_base = node->in_edges[0]->data->base;
-    audio_fir_desc->filter_queue_base = node->in_edges[1]->data->base;
-    audio_fir_desc->output_queue_base = node->out_edges[0]->data->base;
+    audio_fir_desc->input_queue_base = node->in_edges[0]->data->base / sizeof(token_t);
+    audio_fir_desc->filter_queue_base = node->in_edges[1]->data->base / sizeof(token_t);
+    audio_fir_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
 }
 
 static void audio_ffi_access_cfg(df_node_t *node, esp_access *generic_esp_access) {
@@ -59,9 +81,9 @@ static void audio_ffi_access_cfg(df_node_t *node, esp_access *generic_esp_access
     audio_ffi_desc->do_inverse = params->do_inverse;
 
     // Get the queue base from the in/out edges of the FFT node
-    audio_ffi_desc->input_queue_base = node->in_edges[0]->data->base;
-    audio_ffi_desc->filter_queue_base = node->in_edges[1]->data->base;
-    audio_ffi_desc->output_queue_base = node->out_edges[0]->data->base;
+    audio_ffi_desc->input_queue_base = node->in_edges[0]->data->base / sizeof(token_t);
+    audio_ffi_desc->filter_queue_base = node->in_edges[1]->data->base / sizeof(token_t);
+    audio_ffi_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
 }
 
 struct time_helper {

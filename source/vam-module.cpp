@@ -111,7 +111,7 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
         bool success = false;
 
         // Ensure that the current node is an entry or exit
-        if (!(current->get_prim() == NONE)) {
+        if (current->get_prim() != NONE) {
             // Check if there is any hardware device that supports the task for the requested instance,
             // and are not yet allocated.
             for (unsigned id = 0; id < accel_list.size(); id++) {
@@ -158,9 +158,18 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
             }
 
             // Check if the queue associated with this edge is not yet allocated (might be the
-            // case for child graphs). If not, allocate it here for the size specified.
+            // case for child graphs). Further, check if the edge is a binding to a parent node edge.
+            // This also covers the fact that bindings will usually be from NONE nodes, which 
+            // will not have mem_pool or payload size. If yes, you need to set the mem queue
+            // of this edge to the mem queue of the parent bound edge. If no to both,
+            // allocate it here for the size specified.
             if (out->data == NULL) {
-                out->data = new mem_queue_t(current->get_params()->mem_pool, out->payload_size);
+                if (out->is_binding()) {
+                    out->set_mem_queue(out->get_bind()->get_mem_queue());
+                } else {
+                    mem_queue_t *temp_queue = new mem_queue_t(current->get_params()->mem_pool, out->payload_size);
+                    out->set_mem_queue(temp_queue);
+                }
             }
         }
     }

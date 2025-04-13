@@ -122,6 +122,11 @@ struct node_params_t {
     mem_pool_t *mem_pool;
 
     // This will be primitive specific parameters
+
+    // Print for debug
+    void dump() {
+        printf("\tmem_pool = %p\n", mem_pool);
+    } 
 };
 
 struct df_int_node_t : public df_node_t {
@@ -182,13 +187,20 @@ struct df_edge_t {
     mem_queue_t *data;
     unsigned payload_size;
 
+    df_edge_t *bind_edge;
+    bool binding;
+
     // Helper functions
     df_edge_t(df_node_t *src, df_node_t *dst) : src_node(src), dst_node(dst) {}
     df_edge_t(df_node_t *src, df_node_t *dst, unsigned s) : src_node(src), dst_node(dst), payload_size(s) {}
+    df_edge_t(df_node_t *src, df_node_t *dst, df_edge_t *b) : src_node(src), dst_node(dst), bind_edge(b) { binding = true; }
 
     df_node_t *get_source() { return src_node; }
     df_node_t *get_destination() { return dst_node; }
     void set_mem_queue(mem_queue_t *d) { data = d; }
+    mem_queue_t *get_mem_queue() { return data; }
+    bool is_binding() { return binding; }
+    df_edge_t * get_bind() { return bind_edge; }
 
     void dump() {
         printf("\tEdge in: %s, out: %s\n", src_node->dump_prim(), dst_node->dump_prim());

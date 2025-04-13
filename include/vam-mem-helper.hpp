@@ -26,21 +26,21 @@ struct mem_queue_t {
     uint8_t *mem;
     size_t base;
 
-    template <typename T>
-    void enqueue() { mem[sizeof(T) * base] = 1; }
+    void enqueue() { mem[base] = 1; }
 
-    template <typename T>
-    void dequeue() { mem[sizeof(T) * base] = 0; }
+    void dequeue() { mem[base] = 0; }
 
-    template <typename T>
-    bool is_full() { return (mem[sizeof(T) * base] == 1); }
+    bool is_full() { return (mem[base] == 1); }
+
+    uint8_t *get_payload_base() { return &(mem[base + PAYLOAD_OFFSET]); }
 
     mem_queue_t(mem_pool_t *mem_pool, size_t payload_size) {
         mem = (uint8_t *) mem_pool->hw_buf;
         base = mem_pool->alloc(PAYLOAD_OFFSET + payload_size);
 
-        // Initialize queue to be empty.
-        mem[base] = 0;
+        // Zero out payload offset so queue is initialized to be empty.
+        __uint128_t *offset = (__uint128_t *) &(mem[base]);
+        offset[0] = 0;
     }
 
     ~mem_queue_t() {}

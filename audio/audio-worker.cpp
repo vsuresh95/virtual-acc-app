@@ -1,8 +1,8 @@
 #include <audio-worker.hpp>
 
 void audio_worker::init_buf() {
-	unsigned local_len = io_payload_size;
-	token64_t *input_base = (token64_t *) ((token_t *) mem_pool->hw_buf + input_queue->base + PAYLOAD_OFFSET);
+	unsigned local_len = 2 * (1 << logn_samples);
+	token_t *input_base = (token_t *) input_queue->get_payload_base();
 
 	// initialize filters
 	for (unsigned i = 0; i < local_len; i++) {
@@ -12,8 +12,8 @@ void audio_worker::init_buf() {
 
 unsigned audio_worker::validate_buf() {
 	unsigned errors = 0;
-	unsigned local_len = io_payload_size;
-	token64_t *output_base = (token64_t *) ((token_t *) mem_pool->hw_buf + output_queue->base + PAYLOAD_OFFSET);
+	unsigned local_len = 2 * (1 << logn_samples);
+	token_t *output_base = (token_t *) output_queue->get_payload_base();
 
 	// initialize filters
 	for (unsigned i = 0; i < local_len; i++) {
@@ -24,8 +24,8 @@ unsigned audio_worker::validate_buf() {
 }
 
 void audio_worker::flt_twd_init() {
-	unsigned local_len = flt_payload_size + (1 << logn_samples);
-	token64_t *filter_twiddle_base = (token64_t *) ((token_t *) mem_pool->hw_buf + filter_queue->base + PAYLOAD_OFFSET);
+	unsigned local_len = 3 * (1 << logn_samples) + 2;
+	token_t *filter_twiddle_base = (token_t *) filter_queue->get_payload_base();
 
 	// initialize filters + twiddles
 	for (unsigned i = 0; i < local_len; i++) {
@@ -49,7 +49,7 @@ void audio_worker::run() {
 		do_shift = 0;
 
 		// for audio, input and output payload is of same size.
-		io_payload_size = 2 * (1 << logn_samples);
+		io_payload_size = 2 * (1 << logn_samples) * sizeof(token_t);
 
 		// Allocate input queue 
 		// -- alloc function increments a counter for amount of memory used from pool
@@ -59,7 +59,7 @@ void audio_worker::run() {
 		output_queue = new mem_queue_t(mem_pool, io_payload_size);
 
 		// filter payload size for audio
-		flt_payload_size = io_payload_size + 2;
+		flt_payload_size = (3 * (1 << logn_samples) + 2) * sizeof(token_t);
 
 		// Allocate output queue
 		filter_queue = new mem_queue_t(mem_pool, flt_payload_size);
@@ -91,23 +91,23 @@ void audio_worker::run() {
 		DEBUG(printf("[%s] Starting iteration %d.\n", thread_name, iter_count);)
 
 		// Wait for FFT (consumer) to be ready.
-		while(input_queue->is_full<token_t>());
+		while(input_queue->is_full());
 		// Write input data for FFT.
 		init_buf();
 		// Inform FFT (consumer) to start.
-		filter_queue->enqueue<token_t>();
-		input_queue->enqueue<token_t>();
+		filter_queue->enqueue();
+		input_queue->enqueue();
 
 		t_accel.start_counter();
 		// Wait for IFFT (producer) to send output.
-		while(!output_queue->is_full<token_t>()) { DEBUG(printf("[%s] Waiting...\n", thread_name);) };
+		while(!output_queue->is_full()) {};
 		t_accel.end_counter();
 		DEBUG(printf("[%s] Accel time = %lu.\n", thread_name, t_accel.get_time());)
 
 		// Read back output from IFFT
 		errors = validate_buf();
 		// Inform IFFT (producer) - ready for next iteration.
-		output_queue->dequeue<token_t>();
+		output_queue->dequeue();
 
 		iter_count++;
 		if (iter_count % 100 == 0) {
@@ -154,11 +154,9 @@ void audio_worker::create_audio_dfg(hpthread_routine_t *routine_dfg) {
     df_leaf_node_t *audio_ifft = new df_leaf_node_t(AUDIO_FFT, audio_ffi, false);
 
 	// bind AUDIO_FFI edges to internal edges -- will be added to the AUDIO_FFI graph
-	// TODO: how are mem_queues of binded edges propagated. When an edge is bound,
-	// the mem queue must propagate.
-    df_edge_t *fft_input = new df_edge_t(audio_ffi->get_entry(), audio_fft);
-    df_edge_t *fir_filters = new df_edge_t(audio_ffi->get_entry(), audio_fir);
-    df_edge_t *ifft_output = new df_edge_t(audio_ifft, audio_ffi->get_exit());
+    df_edge_t *fft_input = new df_edge_t(audio_ffi->get_entry(), audio_fft, ffi_input);
+    df_edge_t *fir_filters = new df_edge_t(audio_ffi->get_entry(), audio_fir, ffi_filters);
+    df_edge_t *ifft_output = new df_edge_t(audio_ifft, audio_ffi->get_exit(), ffi_output);
 
     // Create internal edges
     df_edge_t *fft_fir = new df_edge_t(audio_fft, audio_fir, io_payload_size);
