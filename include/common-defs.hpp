@@ -16,6 +16,7 @@
 #include <fnmatch.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <iostream>
 
 // ASI synchronization variable size and offsets (in bytes)
 #define VALID_OFFSET 0

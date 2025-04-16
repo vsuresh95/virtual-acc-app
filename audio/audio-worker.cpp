@@ -79,7 +79,9 @@ void audio_worker::run() {
 
 	// Create an hpthread by requesting the VAM
 	// TODO: eventually this will always succeed where the CPU function is always the backup.
-	while (!hpthread_create(&audio_hpthread, NULL, NULL));
+	while (!hpthread_create(&audio_hpthread, NULL, NULL)) {
+		usleep(1000000);
+	}
 
 	DEBUG(printf("[%s] Successfully received hpthread.\n", thread_name);)
 
@@ -102,7 +104,7 @@ void audio_worker::run() {
 		// Wait for IFFT (producer) to send output.
 		while(!output_queue->is_full()) {};
 		t_accel.end_counter();
-		DEBUG(printf("[%s] Accel time = %lu.\n", thread_name, t_accel.get_time());)
+		DEBUG(printf("[%s] Accel time = %lu.\n", thread_name, t_accel.get_diff());)
 
 		// Read back output from IFFT
 		errors = validate_buf();
@@ -111,7 +113,7 @@ void audio_worker::run() {
 
 		iter_count++;
 		if (iter_count % 100 == 0) {
-			printf("[%s] Finished iteration %d.\n", thread_name, iter_count);
+			printf("[%s] Finished iteration %d, Avg accel time = %lu.\n", thread_name, iter_count, t_accel.get_total()/iter_count);
 		}
 	}
 
@@ -147,6 +149,9 @@ void audio_worker::create_audio_dfg(hpthread_routine_t *routine_dfg) {
 	ffi_input->set_mem_queue(input_queue);
 	ffi_filters->set_mem_queue(filter_queue);
 	ffi_output->set_mem_queue(output_queue);
+
+	// Add SW implementation for Audio FFI
+	audio_ffi->set_sw_impl(audio_ffi_sw_impl);
 
     // Create all nodes for AUDIO_FFI graph
     df_leaf_node_t *audio_fft = new df_leaf_node_t(AUDIO_FFT, audio_ffi, false);
@@ -186,4 +191,9 @@ void audio_worker::create_audio_dfg(hpthread_routine_t *routine_dfg) {
 	fft_params_t *ifft_params = new fft_params_t;
 	*ifft_params = {mem_pool, logn_samples, 1, 0};
 	audio_ifft->set_params(ifft_params);
+
+	// Add SW implementation for Audio FFT/FIR
+	audio_fft->set_sw_impl(audio_fft_sw_impl);
+	audio_fir->set_sw_impl(audio_fir_sw_impl);
+	audio_ifft->set_sw_impl(audio_fft_sw_impl);
 }

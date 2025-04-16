@@ -1,4 +1,3 @@
-#include <iostream>
 #include <audio-worker.hpp>
 #include <vam-module.hpp>
 

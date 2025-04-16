@@ -27,6 +27,9 @@ class vam_worker {
             std::unordered_map<physical_accel_t *, hpthread_routine_t *> phy_to_virt_mapping;
             std::unordered_map<hpthread_routine_t *, std::unordered_map<df_node_t *, physical_accel_t *>> virt_to_phy_mapping;
 
+            // List of pthreads that we can launch a SW kernel from
+            std::vector<pthread_t> cpu_thread_list;
+
             // Probe the ESP system for available physical accelerators
             void probe_accel();
 
@@ -35,6 +38,9 @@ class vam_worker {
 
             // Once accelerator candidates are identified, configure each accelerator
             void configure_accel(df_node_t *node, physical_accel_t *accel);
+
+            // Similar as accelerator counterpart; this function launches a pthread.
+            void configure_cpu(df_node_t *node, physical_accel_t *accel);
 
             // Main run method -- which runs forever
             void run();

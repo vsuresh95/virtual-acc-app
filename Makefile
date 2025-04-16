@@ -23,6 +23,7 @@ COMMON_OBJ=$(patsubst %.cpp,%.common.o,$(SRCFILES))
 CXXFLAGS+=-I./audio
 AUDIOSRCFILES+=audio-worker.cpp
 AUDIOSRCFILES+=audio-app.cpp
+AUDIOSRCFILES+=audio-sw-func.cpp
 
 AUDIO_OBJ=$(patsubst %.cpp,%.audio.o,$(AUDIOSRCFILES))
 

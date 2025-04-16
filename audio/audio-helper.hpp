@@ -1,7 +1,7 @@
 #ifndef __AUDIO_HELPER_H__
 #define __AUDIO_HELPER_H__
 
-typedef unsigned token_t;
+typedef float token_t;
 typedef uint64_t token64_t;
 
 #include <audio_fft_stratus.h>
@@ -91,6 +91,7 @@ struct time_helper {
     uint64_t t_start;
     uint64_t t_end;
     uint64_t t_diff;
+    uint64_t t_total;
 
     void start_counter() {
         asm volatile (
@@ -114,9 +115,22 @@ struct time_helper {
         );
 
         t_diff = t_end - t_start;
+        t_total += t_diff;
     }
 
-    uint64_t get_time() { return t_diff; }
+    uint64_t get_diff() { return t_diff; }
+    uint64_t get_total() { return t_total; }
+
+    time_helper() { t_total = 0; }
 };
+
+// Software implementations
+void *audio_fft_sw_impl (void *args);
+void *audio_fir_sw_impl (void *args);
+void *audio_ffi_sw_impl (void *args);
+void fft_comp(token_t *in_data, token_t *out_data, unsigned int logn, int sign, bool rev);
+void fir_comp(unsigned len, token_t *in_data, token_t *out_data, token_t *filters, token_t *twiddles, token_t *tmpbuf);
+unsigned int fft_rev(unsigned int v);
+void fft_bit_reverse(float *w, unsigned int n, unsigned int bits);
 
 #endif /* __AUDIO_HELPER_H__ */

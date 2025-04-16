@@ -101,6 +101,10 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
     q.push(entry);
     visited.insert(entry);
 
+    // This variable tracks if any accelerator was allocated in this int_node
+    // If not, we will allocated a coarse-grained SW function.
+    bool accel_allocated = false;
+
     while (!q.empty()) {
         df_node_t *current = q.front();
         q.pop();
@@ -130,8 +134,9 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
                     accel_list[id].is_allocated = true;
                     std::strcpy(accel_list[id].thread_id, current->get_root()->get_name());
 
-                    printf("[VAM] SUCCESS: Temporarily allocated device %s to routine %s!\n", virt_to_phy_mapping[current->get_root()][current]->get_name(), current->get_root()->get_name());
+                    printf("[VAM] Temporarily allocated device %s to node %s of routine %s!\n", virt_to_phy_mapping[current->get_root()][current]->get_name(), current->dump_prim(), current->get_root()->get_name());
                     success = true;
+                    accel_allocated = true;
                     break;
                 }
             }
@@ -142,10 +147,39 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
                 // If the node is internal, we must traverse its child graph before going to its consumers
                 if (current->is_internal()) {
                     DEBUG(printf("\tSearching the child graph of int_node %s\n", ((df_int_node_t *) current)->get_name()));
-                    if (!search_accel((df_int_node_t *) current)) return false;
+
+                    // If the child graph was unable to allocate any hardware accelerators, run this internal node in SW.
+                    if (!search_accel((df_int_node_t *) current)) {
+                        // None of the child nodes mapped to an accelerator, therefore, we will delete the CPU physical accel's
+                        // created for this node, and then clear all entries in virt_to_phy_mapping for all the child nodes
+                        // of current and then assign current to a single CPU physical accel alone.
+                        for (auto child : ((df_int_node_t *) current)->child_graph->df_node_list) {
+                            delete virt_to_phy_mapping[current->get_root()][current];
+                            virt_to_phy_mapping[current->get_root()].erase(child);
+                        }
+
+                        DEBUG(printf("[VAM] Cleared all child nodes of %s of routine %s!\n", current->dump_prim(), current->get_root()->get_name());)
+
+                        // Create a new physical accelerator for this CPU thread
+                        physical_accel_t *cpu_thread = new physical_accel_t;
+                        cpu_thread->prim = NONE;
+                        std::strcpy(cpu_thread->devname, "CPU");
+
+                        // Only virt to phy is updated, since multiple nodes might map to CPU
+                        virt_to_phy_mapping[current->get_root()][current] = cpu_thread;
+
+                        printf("[VAM] Temporarily allocated CPU to node %s of routine %s!\n", current->dump_prim(), current->get_root()->get_name());
+                    }
                 } else {
-                    printf("[VAM] ERROR: Did not find any suitable device for %s.\n", current->dump_prim());
-                    return false;
+                    // Create a new physical accelerator for this CPU thread
+                    physical_accel_t *cpu_thread = new physical_accel_t;
+                    cpu_thread->prim = NONE;
+                    std::strcpy(cpu_thread->devname, "CPU");
+
+                    // Only virt to phy is updated, since multiple nodes might map to CPU
+                    virt_to_phy_mapping[current->get_root()][current] = cpu_thread;
+
+                    printf("[VAM] Temporarily allocated CPU to node %s of routine %s!\n", current->dump_prim(), current->get_root()->get_name());
                 }
             }
         }
@@ -176,12 +210,18 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
 
     // Once all nodes in the graph have been processed, we will return immediately if it's a sub-graph
     // or configure the accelerators if it is the root graph of the routine.
-    if (!routine->is_root()) return true;
+    // We will return whether were able to allocate any accelerator within this child graph; if not, we
+    // we will allocate the SW function for it.
+    if (!routine->is_root()) return accel_allocated;
 
     // Iterate through all the nodes in the virt to phy mapping to configure the accelerators
     std::unordered_map<df_node_t *, physical_accel_t *> accel_candidates = virt_to_phy_mapping[routine];
     for (const auto& node_accel_pair : accel_candidates) {
-        configure_accel(node_accel_pair.first, node_accel_pair.second);
+        if ((node_accel_pair.second)->prim == NONE) {
+            configure_cpu(node_accel_pair.first, node_accel_pair.second);
+        } else {
+            configure_accel(node_accel_pair.first, node_accel_pair.second);
+        }
     }
 
     // If we reached this point, we successfully allocated accelerators to all tasks in the DFG.
@@ -215,4 +255,20 @@ void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel) {
         perror("ioctl");
         exit(EXIT_FAILURE);
     }
+}
+
+void vam_worker::configure_cpu(df_node_t *node, physical_accel_t *accel) {
+    DEBUG(printf("[VAM] Configuring CPU for node %s in routine %s\n", node->dump_prim(), node->get_root()->get_name());)
+
+    // Create a new CPU thread for the SW implementation of this node.
+    pthread_t cpu_thread;
+    if (pthread_create(&cpu_thread, NULL, node->sw_impl, (void *) node) != 0) {
+        perror("Failed to create CPU thread\n");
+    }
+
+    // Add this thread to the cpu thread list of VAM
+    cpu_thread_list.push_back(cpu_thread);
+
+    // Map the physical accel struct to the new CPU thread.
+    accel->accel_id = cpu_thread_list.size() - 1;
 }

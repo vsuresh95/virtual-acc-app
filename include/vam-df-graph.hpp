@@ -66,6 +66,9 @@ struct df_node_t {
     // Type of node -- is it root? is it internal?
     bool root, internal;
 
+    // If an accelerator is not found, we will map the node to this SW function.
+    void *(*sw_impl)(void *args);
+
     // Helper functions
     df_node_t(primitive_t p1, df_int_node_t *p2, bool is_root) {
         prim = p1;
@@ -101,6 +104,8 @@ struct df_node_t {
 
     // Recursvively traverse parents to find the root of the graph this node belongs to
     df_int_node_t *get_root();
+
+    void set_sw_impl(void *s(void *)) { sw_impl = s; }
 
     static const char *dump_prim(primitive_t p) {
         switch(p) {
