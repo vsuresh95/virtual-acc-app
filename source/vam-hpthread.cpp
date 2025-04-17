@@ -67,13 +67,14 @@ void hpthread_join() {
     // Not yet implemented
 }
 
-hpthread_routine_t *wait_hpthread_req() {
+hpthread_routine_t *test_hpthread_req() {
     // wait until there is a request on the interface
-    while (hpthread_intf.test_intf_state() != ONGOING) {
+    if (hpthread_intf.test_intf_state() == ONGOING) {
+        return hpthread_intf.test_routine();
+    } else {
         sched_yield();
+        return NULL;
     }
-
-    return hpthread_intf.test_routine();
 }
 
 void ack_hpthread_req(bool success) {

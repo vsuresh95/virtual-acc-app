@@ -10,6 +10,10 @@ extern "C" {
 #endif
 
 // Physical accelerator attributes below
+#define CPU_TICKETS          1
+#define AUDIO_FFT_TICKETS    3
+#define AUDIO_FIR_TICKETS    5
+#define AUDIO_FFI_TICKETS    15
 
 // Physical location of accelerator in SoC (used for optimizing
 // data movement and accelerator locality)
@@ -25,6 +29,7 @@ typedef struct {
     // AccelTileID tile_id; // Physical tile ID (for optimizing data movement)
     bool is_allocated; // Is the accelerator currently allocated?
     char thread_id[100]; // If allocated, what is the thread ID it is allocated to?
+    unsigned tickets;
     // ESP-relevant variables
     char devname[384]; // Name of device in file system
 	int ioctl_req; // IOCTL access code

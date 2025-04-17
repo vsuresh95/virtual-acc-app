@@ -30,6 +30,8 @@ class vam_worker {
             // List of pthreads that we can launch a SW kernel from
             std::vector<pthread_t> cpu_thread_list;
 
+            std::unordered_map<hpthread_routine_t *, unsigned> virt_ticket_table;
+
             // Probe the ESP system for available physical accelerators
             void probe_accel();
 

@@ -55,7 +55,7 @@ bool hpthread_create(hpthread_t *__newthread,
 // Not yet implemented
 void hpthread_join();
 
-hpthread_routine_t *wait_hpthread_req();
+hpthread_routine_t *test_hpthread_req();
 
 void ack_hpthread_req(bool success);
 

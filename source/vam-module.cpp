@@ -7,18 +7,27 @@ void vam_worker::run() {
     probe_accel();
 
     while (1) {
-        // Wait until a task is submitted by atomically checking if the state is ONGOING
-        hpthread_routine_t *routine = wait_hpthread_req();
+        // Test if a task is submitted by atomically checking if the state is ONGOING
+        hpthread_routine_t *routine = test_hpthread_req();
 
-        DEBUG(printf("[VAM] Received a request for hpthread %s\n", routine->get_name());)
+        if (routine != NULL) {
+            DEBUG(printf("[VAM] Received a request for hpthread %s\n", routine->get_name());)
 
-        // search the available accelerators if any can satisfy the request
-        bool success = search_accel(routine);
+            // search the available accelerators if any can satisfy the request
+            bool success = search_accel(routine);
 
-        // Acknowledge the request with the success code
-        ack_hpthread_req(success);
+            // Acknowledge the request with the success code
+            ack_hpthread_req(success);
 
-        DEBUG(printf("[VAM] Completed the processing for request.\n");)
+            DEBUG(printf("[VAM] Completed the processing for request.\n");)
+        } else {
+            // Print out the tickets for each hpthread
+            for (const auto& thread_ticket_pair : virt_ticket_table) {
+                printf("[VAM] Tickets allocated to %s = %d\n", thread_ticket_pair.first->get_name(), thread_ticket_pair.second);
+            }
+
+            sleep(1);
+        }
     }
 }
 
@@ -51,6 +60,7 @@ void vam_worker::probe_accel() {
             if (fnmatch("audio_fft*", entry->d_name, FNM_NOESCAPE) == 0) {
                 accel_temp.prim = AUDIO_FFT;
                 accel_temp.ioctl_req = AUDIO_FFT_STRATUS_IOC_ACCESS;
+                accel_temp.tickets = AUDIO_FFT_TICKETS;
 
                 // Create a new access struct and track within the device struct
                 struct audio_fft_stratus_access *audio_fft_desc = new struct audio_fft_stratus_access;
@@ -59,6 +69,7 @@ void vam_worker::probe_accel() {
             } else if (fnmatch("audio_fir*", entry->d_name, FNM_NOESCAPE) == 0) {
                 accel_temp.prim = AUDIO_FIR;
                 accel_temp.ioctl_req = AUDIO_FIR_STRATUS_IOC_ACCESS;
+                accel_temp.tickets = AUDIO_FIR_TICKETS;
 
                 // Create a new access struct and track within the device struct
                 struct audio_fir_stratus_access *audio_fir_desc = new struct audio_fir_stratus_access;
@@ -67,6 +78,7 @@ void vam_worker::probe_accel() {
             } else if (fnmatch("audio_ffi*", entry->d_name, FNM_NOESCAPE) == 0) {
                 accel_temp.prim = AUDIO_FFI;
                 accel_temp.ioctl_req = AUDIO_FFI_STRATUS_IOC_ACCESS;
+                accel_temp.tickets = AUDIO_FFI_TICKETS;
 
                 // Create a new access struct and track within the device struct
                 struct audio_ffi_stratus_access *audio_ffi_desc = new struct audio_ffi_stratus_access;
@@ -163,6 +175,7 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
                         // Create a new physical accelerator for this CPU thread
                         physical_accel_t *cpu_thread = new physical_accel_t;
                         cpu_thread->prim = NONE;
+                        cpu_thread->tickets = CPU_TICKETS;
                         std::strcpy(cpu_thread->devname, "CPU");
 
                         // Only virt to phy is updated, since multiple nodes might map to CPU
@@ -174,6 +187,7 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
                     // Create a new physical accelerator for this CPU thread
                     physical_accel_t *cpu_thread = new physical_accel_t;
                     cpu_thread->prim = NONE;
+                    cpu_thread->tickets = CPU_TICKETS;
                     std::strcpy(cpu_thread->devname, "CPU");
 
                     // Only virt to phy is updated, since multiple nodes might map to CPU
@@ -214,6 +228,8 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
     // we will allocate the SW function for it.
     if (!routine->is_root()) return accel_allocated;
 
+    virt_ticket_table[routine] = 0;
+
     // Iterate through all the nodes in the virt to phy mapping to configure the accelerators
     std::unordered_map<df_node_t *, physical_accel_t *> accel_candidates = virt_to_phy_mapping[routine];
     for (const auto& node_accel_pair : accel_candidates) {
@@ -222,6 +238,9 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
         } else {
             configure_accel(node_accel_pair.first, node_accel_pair.second);
         }
+
+        // Increment the tickets for this hpthread
+        virt_ticket_table[routine] += node_accel_pair.second->tickets;
     }
 
     // If we reached this point, we successfully allocated accelerators to all tasks in the DFG.
