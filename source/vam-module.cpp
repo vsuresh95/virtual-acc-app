@@ -59,7 +59,9 @@ void vam_worker::probe_accel() {
 
             if (fnmatch("audio_fft*", entry->d_name, FNM_NOESCAPE) == 0) {
                 accel_temp.prim = AUDIO_FFT;
-                accel_temp.ioctl_req = AUDIO_FFT_STRATUS_IOC_ACCESS;
+                accel_temp.init_ioctl = AUDIO_FFT_STRATUS_INIT_IOC_ACCESS;
+                accel_temp.add_ctxt_ioctl = AUDIO_FFT_STRATUS_ADD_IOC_ACCESS;
+                accel_temp.del_ctxt_ioctl = AUDIO_FFT_STRATUS_DEL_IOC_ACCESS;
                 accel_temp.tickets = AUDIO_FFT_TICKETS;
 
                 // Create a new access struct and track within the device struct
@@ -68,7 +70,9 @@ void vam_worker::probe_accel() {
                 accel_temp.device_access_cfg = audio_fft_access_cfg;
             } else if (fnmatch("audio_fir*", entry->d_name, FNM_NOESCAPE) == 0) {
                 accel_temp.prim = AUDIO_FIR;
-                accel_temp.ioctl_req = AUDIO_FIR_STRATUS_IOC_ACCESS;
+                accel_temp.init_ioctl = AUDIO_FIR_STRATUS_INIT_IOC_ACCESS;
+                accel_temp.add_ctxt_ioctl = AUDIO_FIR_STRATUS_ADD_IOC_ACCESS;
+                accel_temp.del_ctxt_ioctl = AUDIO_FIR_STRATUS_DEL_IOC_ACCESS;
                 accel_temp.tickets = AUDIO_FIR_TICKETS;
 
                 // Create a new access struct and track within the device struct
@@ -77,7 +81,9 @@ void vam_worker::probe_accel() {
                 accel_temp.device_access_cfg = audio_fir_access_cfg;
             } else if (fnmatch("audio_ffi*", entry->d_name, FNM_NOESCAPE) == 0) {
                 accel_temp.prim = AUDIO_FFI;
-                accel_temp.ioctl_req = AUDIO_FFI_STRATUS_IOC_ACCESS;
+                accel_temp.init_ioctl = AUDIO_FFI_STRATUS_INIT_IOC_ACCESS;
+                accel_temp.add_ctxt_ioctl = AUDIO_FFI_STRATUS_ADD_IOC_ACCESS;
+                accel_temp.del_ctxt_ioctl = AUDIO_FFI_STRATUS_DEL_IOC_ACCESS;
                 accel_temp.tickets = AUDIO_FFI_TICKETS;
 
                 // Create a new access struct and track within the device struct
@@ -251,12 +257,15 @@ void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel) {
     DEBUG(printf("[VAM] Configuring accel %s for node %s in routine %s\n", accel->get_name(), node->dump_prim(), node->get_root()->get_name());)
 
     // ESP defined data type for the pointer to the memory pool for accelerators.
-    contig_handle_t *handle = lookup_handle(node->get_params()->mem_pool->hw_buf, NULL);
+    enum contig_alloc_policy policy;
+    contig_handle_t *handle = lookup_handle(node->get_params()->mem_pool->hw_buf, &policy);
 
     // Configring all the device-independent fields in the esp desc
     esp_access *generic_esp_access = (esp_access *) accel->esp_access_desc;
     {
         generic_esp_access->contig = contig_to_khandle(*handle);
+        generic_esp_access->ddr_node = contig_to_most_allocated(*handle);
+        generic_esp_access->alloc_policy = policy;
         generic_esp_access->run = true;
         generic_esp_access->coherence = ACC_COH_RECALL;
         generic_esp_access->spandex_conf = 0;
@@ -265,12 +274,13 @@ void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel) {
         generic_esp_access->p2p_nsrcs = 0;
         generic_esp_access->src_offset = 0;
         generic_esp_access->dst_offset = 0;
+        generic_esp_access->context_id = 0;
     }
 
     // Call function for configuring other accel-dependent fields
     accel->device_access_cfg(node, generic_esp_access);
 
-    if (ioctl(accel->fd, accel->ioctl_req, accel->esp_access_desc)) {
+    if (ioctl(accel->fd, accel->init_ioctl, accel->esp_access_desc)) {
         perror("ioctl");
         exit(EXIT_FAILURE);
     }

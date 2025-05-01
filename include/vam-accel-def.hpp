@@ -32,7 +32,9 @@ typedef struct {
     unsigned tickets;
     // ESP-relevant variables
     char devname[384]; // Name of device in file system
-	int ioctl_req; // IOCTL access code
+	int init_ioctl; // IOCTL access code for initialization
+	int add_ctxt_ioctl; // IOCTL access code for adding context
+	int del_ctxt_ioctl; // IOCTL access code for deleting context
     void* hw_buf; // Buffer address -- converted to configuous
     int fd; // File descriptor of the device, when open
     // Variables used for configuraption and context

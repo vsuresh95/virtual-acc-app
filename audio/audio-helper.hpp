@@ -10,12 +10,10 @@ typedef uint64_t token64_t;
 
 struct ffi_params_t : public node_params_t {
 	unsigned logn_samples;
-	unsigned do_inverse;
 	unsigned do_shift;
 
     void dump() {
         printf("\tlogn_samples = %d\n", logn_samples);
-        printf("\tdo_inverse = %d\n", do_inverse);
         printf("\tdo_shift = %d\n", do_shift);
 
         node_params_t::dump();
@@ -58,6 +56,9 @@ static void audio_fft_access_cfg(df_node_t *node, esp_access *generic_esp_access
     // Get the queue base from the in/out edges of the FFT node
     audio_fft_desc->input_queue_base = node->in_edges[0]->data->base / sizeof(token_t);
     audio_fft_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
+
+    audio_fft_desc->valid_contexts = 0x1;
+    audio_fft_desc->context_quota = 0x10000;
 }
 
 static void audio_fir_access_cfg(df_node_t *node, esp_access *generic_esp_access) {
@@ -70,6 +71,9 @@ static void audio_fir_access_cfg(df_node_t *node, esp_access *generic_esp_access
     audio_fir_desc->input_queue_base = node->in_edges[0]->data->base / sizeof(token_t);
     audio_fir_desc->filter_queue_base = node->in_edges[1]->data->base / sizeof(token_t);
     audio_fir_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
+
+    audio_fir_desc->valid_contexts = 0x1;
+    audio_fir_desc->context_quota = 0x10000;
 }
 
 static void audio_ffi_access_cfg(df_node_t *node, esp_access *generic_esp_access) {
@@ -78,12 +82,14 @@ static void audio_ffi_access_cfg(df_node_t *node, esp_access *generic_esp_access
 
     audio_ffi_desc->logn_samples = params->logn_samples;
     audio_ffi_desc->do_shift = params->do_shift;
-    audio_ffi_desc->do_inverse = params->do_inverse;
 
-    // Get the queue base from the in/out edges of the FFT node
+    // Get the queue base from the in/out edges of the FFI node
     audio_ffi_desc->input_queue_base = node->in_edges[0]->data->base / sizeof(token_t);
     audio_ffi_desc->filter_queue_base = node->in_edges[1]->data->base / sizeof(token_t);
     audio_ffi_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
+
+    audio_ffi_desc->valid_contexts = 0x1;
+    audio_ffi_desc->context_quota = 0x10000;
 }
 
 struct time_helper {

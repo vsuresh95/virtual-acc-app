@@ -142,7 +142,7 @@ void audio_worker::create_audio_dfg(hpthread_routine_t *routine_dfg) {
 
 	// Setting the parameters for FFI
 	ffi_params_t *ffi_params = new ffi_params_t;
-	*ffi_params = {mem_pool, logn_samples, 0, 0};
+	*ffi_params = {mem_pool, logn_samples, 0};
 	audio_ffi->set_params(ffi_params);
 	
 	// Set the mem queues for the edges
