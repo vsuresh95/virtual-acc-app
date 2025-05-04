@@ -4,12 +4,14 @@
 #include <vam-hpthread.hpp>
 #include <audio-helper.hpp>
 
-#define NUM_AUDIO_THREADS 6
+#define MAX_AUDIO_THREADS 100
 
 class audio_worker {
 
 	public:
+			// Thread name and pthread associated with this object
 			char thread_name[100];
+			pthread_t audio_thread;
 
 			unsigned logn_samples;
 			unsigned do_inverse;

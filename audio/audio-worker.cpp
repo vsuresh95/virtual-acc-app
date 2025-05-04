@@ -38,7 +38,7 @@ void audio_worker::run() {
 
 	// set up memory buffers for accel -- single contiguous buffer for an arbitrarily large size
 	mem_pool = new mem_pool_t;
-	DEBUG(printf("[%s] Allocated mem pool.\n", thread_name);)
+	DEBUG(printf("[%s] Allocated mem pool %p.\n", thread_name, mem_pool->hw_buf);)
 
 	// configure the parameters for this audio worker
 	{
@@ -93,7 +93,7 @@ void audio_worker::run() {
 		DEBUG(printf("[%s] Starting iteration %d.\n", thread_name, iter_count);)
 
 		// Wait for FFT (consumer) to be ready.
-		while(input_queue->is_full());
+		while(input_queue->is_full()) { sched_yield(); };
 		// Write input data for FFT.
 		init_buf();
 		// Inform FFT (consumer) to start.
@@ -102,7 +102,7 @@ void audio_worker::run() {
 
 		t_accel.start_counter();
 		// Wait for IFFT (producer) to send output.
-		while(!output_queue->is_full()) {};
+		while(!output_queue->is_full()) { sched_yield(); };
 		t_accel.end_counter();
 		DEBUG(printf("[%s] Accel time = %lu.\n", thread_name, t_accel.get_diff());)
 

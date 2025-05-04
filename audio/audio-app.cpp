@@ -20,17 +20,19 @@ int main(int argc, char **argv) {
     }
 
 	// Declare a list of audio tasks
-	audio_worker **audio = new audio_worker*[NUM_AUDIO_THREADS];
+	audio_worker **audio = new audio_worker*[MAX_AUDIO_THREADS];
 
-	// Launching all threads for audio tasks
-	pthread_t audio_thread[NUM_AUDIO_THREADS];
+    unsigned num_audio_threads = 1;
+    if (argc > 1){
+        num_audio_threads = atoi(argv[1]);
+    }
 
-	for (unsigned i = 0; i < NUM_AUDIO_THREADS; i++) {
+	for (unsigned i = 0; i < num_audio_threads; i++) {
 		char name[100];
 		sprintf(name, "AUDIO %d", i);
 	 	audio[i] = (audio_worker *) new audio_worker(name);
 
-		if (pthread_create(&audio_thread[i], NULL, audio[i]->run, (void *) (audio[i])) != 0) {
+		if (pthread_create(&(audio[i]->audio_thread), NULL, audio[i]->run, (void *) (audio[i])) != 0) {
 			perror("Failed to create audio thread");
 			return 1;
 		}
@@ -44,8 +46,8 @@ int main(int argc, char **argv) {
 
 	// Wait for all threads to return
 	pthread_join(vam_thread, NULL);
-	for (unsigned i = 0; i < NUM_AUDIO_THREADS; i++) {
-		pthread_join(audio_thread[i], NULL);
+	for (unsigned i = 0; i < num_audio_threads; i++) {
+		pthread_join(audio[i]->audio_thread, NULL);
 	}
 
 	return 0;

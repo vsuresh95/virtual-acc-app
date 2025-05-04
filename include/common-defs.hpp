@@ -22,6 +22,9 @@
 #define VALID_OFFSET 0
 #define PAYLOAD_OFFSET 8
 
+//  Number of concurrent contextss possible in a single accelerator
+#define MAX_CONTEXTS 4
+
 #ifdef VERBOSE
 #define DEBUG(x) x
 #else
