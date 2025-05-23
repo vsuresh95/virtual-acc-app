@@ -17,7 +17,7 @@ struct ffi_params_t : public node_params_t {
         printf("\tdo_shift = %d\n", do_shift);
 
         node_params_t::dump();
-    } 
+    }
 };
 
 struct fft_params_t : public node_params_t {
@@ -31,7 +31,7 @@ struct fft_params_t : public node_params_t {
         printf("\tdo_shift = %d\n", do_shift);
 
         node_params_t::dump();
-    } 
+    }
 };
 
 struct fir_params_t : public node_params_t {
@@ -41,7 +41,7 @@ struct fir_params_t : public node_params_t {
         printf("\tlogn_samples = %d\n", logn_samples);
 
         node_params_t::dump();
-    } 
+    }
 };
 
 // Device-dependent configuration functions

@@ -25,7 +25,7 @@ struct hpthread_intf_t {
 
     // Result of previous task
     bool rsp_code;
-    
+
     // hpthread routine
     std::atomic<hpthread_routine_t *> routine;
 

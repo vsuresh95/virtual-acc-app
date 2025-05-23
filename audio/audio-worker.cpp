@@ -51,7 +51,7 @@ void audio_worker::run() {
 		// for audio, input and output payload is of same size.
 		io_payload_size = 2 * (1 << logn_samples) * sizeof(token_t);
 
-		// Allocate input queue 
+		// Allocate input queue
 		// -- alloc function increments a counter for amount of memory used from pool
 		input_queue = new mem_queue_t(mem_pool, io_payload_size);
 
@@ -65,7 +65,7 @@ void audio_worker::run() {
 		filter_queue = new mem_queue_t(mem_pool, flt_payload_size);
 	}
 
-	// One-time initialization of FIR filters and twiddle factors 
+	// One-time initialization of FIR filters and twiddle factors
 	flt_twd_init();
 
 	// Declare an hpthread for the audio task, and create the DFG
@@ -123,7 +123,7 @@ void audio_worker::run() {
 	delete output_queue;
 	delete filter_queue;
 	delete mem_pool;
-}   
+}
 
 void audio_worker::create_audio_dfg(hpthread_routine_t *routine_dfg) {
     // Create node for AUDIO_FFI

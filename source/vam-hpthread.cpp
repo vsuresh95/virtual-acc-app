@@ -25,12 +25,12 @@ void hpthread_intf_t::set_intf_state(hpthread_intf_state_t s) {
 
 // Atomically set the hpthread routine
 void hpthread_intf_t::set_routine(hpthread_routine_t *r) {
-    routine.store(r, std::memory_order_seq_cst); 
+    routine.store(r, std::memory_order_seq_cst);
 
 }
 // Atomically test the hpthread routine
 hpthread_routine_t *hpthread_intf_t::test_routine() {
-    return routine.load(std::memory_order_seq_cst); 
+    return routine.load(std::memory_order_seq_cst);
 }
 
 hpthread_intf_t::hpthread_intf_t(){
@@ -42,7 +42,7 @@ hpthread_intf_t::hpthread_intf_t(){
 bool hpthread_create(hpthread_t *__newthread,
     void *(*__start_routine) (void *),
     void *__restrict __arg) {
-    
+
     // assign a name to this hpthread from the name in the DFG
     std::strcpy(__newthread->hpthread_id, __newthread->routine_dfg->get_name());
 
@@ -78,7 +78,7 @@ hpthread_routine_t *test_hpthread_req() {
 }
 
 void ack_hpthread_req(bool success) {
-    // set the interface response 
+    // set the interface response
     hpthread_intf.rsp_code = success;
 
     // Set the task as done by acquiring the lock

@@ -131,7 +131,7 @@ struct node_params_t {
     // Print for debug
     void dump() {
         printf("\tmem_pool = %p\n", mem_pool);
-    } 
+    }
 };
 
 struct df_int_node_t : public df_node_t {

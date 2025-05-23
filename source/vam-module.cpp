@@ -239,7 +239,7 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
 
             // Check if the queue associated with this edge is not yet allocated (might be the
             // case for child graphs). Further, check if the edge is a binding to a parent node edge.
-            // This also covers the fact that bindings will usually be from NONE nodes, which 
+            // This also covers the fact that bindings will usually be from NONE nodes, which
             // will not have mem_pool or payload size. If yes, you need to set the mem queue
             // of this edge to the mem queue of the parent bound edge. If no to both,
             // allocate it here for the size specified.
@@ -304,7 +304,7 @@ void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel, unsig
             perror("ioctl");
             exit(EXIT_FAILURE);
         }
-    } else {        
+    } else {
         DEBUG(printf("[VAM] Initializing accel %s for node %s in routine %s\n", accel->get_name(), node->dump_prim(), node->get_root()->get_name());)
 
         // ESP defined data type for the pointer to the memory pool for accelerators.

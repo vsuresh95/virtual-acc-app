@@ -16,7 +16,7 @@ struct mem_pool_t {
     }
 
     size_t alloc(size_t mem_size) {
-        unsigned curr_allocated = allocated; 
+        unsigned curr_allocated = allocated;
         allocated += mem_size;
         return curr_allocated;
     }

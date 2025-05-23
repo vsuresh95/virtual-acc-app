@@ -74,7 +74,7 @@ void *audio_fir_sw_impl (void *args) {
         input_queue->dequeue();
         filters_queue->dequeue();
         output_queue->enqueue();
-    }        
+    }
 
     delete tmpbuf;
 }
@@ -246,7 +246,7 @@ void fir_comp(unsigned len, token_t *in_data, token_t *out_data, token_t *filter
     tmpbuf[len].i = tmpbuf[0].i = 0;
 
     for ( j=1;j <= len/2 ; ++j ) {
-        fpk    = in[j]; 
+        fpk    = in[j];
         fpnk.r =   in[len-j].r;
         fpnk.i = - in[len-j].i;
         C_FIXDIV(fpk,2);
