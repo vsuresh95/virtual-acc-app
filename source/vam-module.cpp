@@ -49,10 +49,11 @@ void vam_worker::probe_accel() {
         if (fnmatch("*_stratus.*", entry->d_name, FNM_NOESCAPE) == 0) {
             physical_accel_t accel_temp;
             accel_temp.accel_id = device_id++;
-            accel_temp.is_allocated = false;
-            std::strcpy(accel_temp.thread_id, "Unallocated");
+            accel_temp.valid_contexts.reset();
+            for (char *id : accel_temp.thread_id)
+                std::strcpy(id, "UNALLOC");
             std::strcpy(accel_temp.devname, entry->d_name);
-            accel_temp.hw_buf = NULL;
+            accel_temp.init_done = false;
 
             // Print out debug message
             DEBUG(printf("[VAM] Discovered device %d: %s\n", device_id, accel_temp.devname);)
@@ -119,9 +120,8 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
     q.push(entry);
     visited.insert(entry);
 
-    // This variable tracks if any accelerator was allocated in this int_node
-    // If not, we will allocated a coarse-grained SW function.
-    bool accel_allocated = false;
+    // This variable tracks the total number of tickets allocated to this graph.
+    unsigned tickets_allocated = 0;
 
     while (!q.empty()) {
         df_node_t *current = q.front();
@@ -129,79 +129,105 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
 
         DEBUG(printf("\tFound node %s\n", current->dump_prim()));
 
-        // Check if there exists an accelerator for this node (if not NONE) and if yes, assign that accelerator. 
-        bool success = false;
-
         // Ensure that the current node is an entry or exit
         if (current->get_prim() != NONE) {
-            // Check if there is any hardware device that supports the task for the requested instance,
-            // and are not yet allocated.
-            for (unsigned id = 0; id < accel_list.size(); id++) {
+            // For each non-NONE node, we will find a candidate accelerator that gives the highest number of
+            // tickets. If no accelerator candidates are found, we will consider the CPU as the only candidate.
+            std::pair<physical_accel_t *, unsigned> candidate_accel = {NULL, 0};
+
+            for (physical_accel_t &accel : accel_list) {
                 DEBUG(
-                    printf("\n[VAM] Checking device %d.\n", id);
-                    accel_list[id].dump();
+                    printf("\n[VAM] Checking device %s.\n", accel.get_name());
+                    accel.dump();
                 )
 
-                if (accel_list[id].prim == current->get_prim() && accel_list[id].is_allocated == false) {
-                    // Update the phy->virt (here virt is the root of the original task request)
-                    phy_to_virt_mapping[&(accel_list[id])] = current->get_root();
-                    // Update the virt->node->phy
-                    virt_to_phy_mapping[current->get_root()][current] = &(accel_list[id]);
-
-                    // Mark the device as allocated.
-                    accel_list[id].is_allocated = true;
-                    std::strcpy(accel_list[id].thread_id, current->get_root()->get_name());
-
-                    printf("[VAM] Temporarily allocated device %s to node %s of routine %s!\n", virt_to_phy_mapping[current->get_root()][current]->get_name(), current->dump_prim(), current->get_root()->get_name());
-                    success = true;
-                    accel_allocated = true;
-                    break;
+                if (accel.prim == current->get_prim() && !accel.valid_contexts.all()) {
+                    // Check if this accelerator's available tickets is more than the previous max
+                    if (accel.get_avail_tickets() > candidate_accel.second) {
+                        candidate_accel = std::make_pair(&accel, accel.get_avail_tickets());
+                    }
                 }
             }
 
-            // If we could not find an accelerator, we check if the node is internal. If yes, 
-            // there exists a sub-graph we can process. If not, we return an ERROR.
-            if (!success) {
-                // If the node is internal, we must traverse its child graph before going to its consumers
-                if (current->is_internal()) {
-                    DEBUG(printf("\tSearching the child graph of int_node %s\n", ((df_int_node_t *) current)->get_name()));
+            // If no candidate accelerator was found, we will create a new CPU thread for this node.
+            if (candidate_accel.first == NULL) {
+                // Create a new physical accelerator for this CPU thread
+                physical_accel_t *cpu_thread = new physical_accel_t;
+                cpu_thread->prim = NONE;
+                cpu_thread->tickets = CPU_TICKETS;
+                std::strcpy(cpu_thread->devname, "CPU");
 
-                    // If the child graph was unable to allocate any hardware accelerators, run this internal node in SW.
-                    if (!search_accel((df_int_node_t *) current)) {
-                        // None of the child nodes mapped to an accelerator, therefore, we will delete the CPU physical accel's
-                        // created for this node, and then clear all entries in virt_to_phy_mapping for all the child nodes
-                        // of current and then assign current to a single CPU physical accel alone.
-                        for (auto child : ((df_int_node_t *) current)->child_graph->df_node_list) {
-                            delete virt_to_phy_mapping[current->get_root()][current];
-                            virt_to_phy_mapping[current->get_root()].erase(child);
+                candidate_accel = {cpu_thread, 0};
+            }
+
+            DEBUG(printf("[VAM] Best candidate for node %s of routine %s = %s!\n", current->dump_prim(),
+                    current->get_root()->get_name(), candidate_accel.first->get_name()));
+
+            // We have the best candidate for this node, but what if there are better candidates
+            // when decomposed. Therefore, we will check the child graph if the node is internal.
+            bool alloc_internal = false;
+
+            if (current->is_internal()) {
+                DEBUG(printf("\n[VAM] Searching the child graph of int_node %s\n", ((df_int_node_t *) current)->get_name()));
+
+                // If the child graph score is less than (or equal to) the candidate found in parent node,
+                // then we need to choose the parent candidate instead.
+                if (search_accel((df_int_node_t *) current) <= candidate_accel.second) {
+                    DEBUG(printf("[VAM] Traversing children of %s for deletion\n", ((df_int_node_t *) current)->get_name());)
+                    // Iterate through all the child nodes
+                    for (auto child : ((df_int_node_t *) current)->child_graph->df_node_list) {
+                        // Do nothing for NONE children
+                        if (child->get_prim() == NONE) continue;
+
+                        DEBUG(printf("\t%s\n", child->dump_prim());)
+                        // Set the appropriate context of the device as unallocated and delete if CPU device
+                        physical_accel_t *child_device = virt_to_phy_mapping[current->get_root()][child].first;
+                        unsigned child_context = virt_to_phy_mapping[current->get_root()][child].second;
+                        if (child_device->prim == NONE) {
+                            delete child_device;
+                        } else {
+                            phy_to_virt_mapping[child_device][child_context] = NULL;
+                            child_device->valid_contexts.reset(child_context);
+                            std::strcpy(child_device->thread_id[child_context], "UNALLOC");
                         }
 
-                        DEBUG(printf("[VAM] Cleared all child nodes of %s of routine %s!\n", current->dump_prim(), current->get_root()->get_name());)
-
-                        // Create a new physical accelerator for this CPU thread
-                        physical_accel_t *cpu_thread = new physical_accel_t;
-                        cpu_thread->prim = NONE;
-                        cpu_thread->tickets = CPU_TICKETS;
-                        std::strcpy(cpu_thread->devname, "CPU");
-
-                        // Only virt to phy is updated, since multiple nodes might map to CPU
-                        virt_to_phy_mapping[current->get_root()][current] = cpu_thread;
-
-                        printf("[VAM] Temporarily allocated CPU to node %s of routine %s!\n", current->dump_prim(), current->get_root()->get_name());
+                        // Delete the map entry for the child node
+                        virt_to_phy_mapping[current->get_root()].erase(child);
                     }
                 } else {
-                    // Create a new physical accelerator for this CPU thread
-                    physical_accel_t *cpu_thread = new physical_accel_t;
-                    cpu_thread->prim = NONE;
-                    cpu_thread->tickets = CPU_TICKETS;
-                    std::strcpy(cpu_thread->devname, "CPU");
-
-                    // Only virt to phy is updated, since multiple nodes might map to CPU
-                    virt_to_phy_mapping[current->get_root()][current] = cpu_thread;
-
-                    printf("[VAM] Temporarily allocated CPU to node %s of routine %s!\n", current->dump_prim(), current->get_root()->get_name());
+                    alloc_internal = true;
                 }
             }
+
+            // If the node was not allocated internally (or if the node is not internal),
+            // assign PHY<->VIRT mapping and set the context of the device as allocated
+            if (!alloc_internal)
+            {
+                // If the device is not fully allocated, identify the valid context to allocate
+                unsigned cur_context;
+                for (unsigned i = 0; i < MAX_CONTEXTS; i++) {
+                    if (!candidate_accel.first->valid_contexts[i]) {
+                        cur_context = i;
+                        break;
+                    }
+                }
+
+                // Update the phy->virt for the chosen context with the root node
+                phy_to_virt_mapping[candidate_accel.first][cur_context] = current->get_root();
+
+                // Update the virt->node->phy
+                virt_to_phy_mapping[current->get_root()][current] = std::make_pair(candidate_accel.first, cur_context);
+
+                // Mark the device as allocated.
+                candidate_accel.first->valid_contexts.set(cur_context);
+                std::strcpy(candidate_accel.first->thread_id[cur_context], current->get_root()->get_name());
+
+                printf("[VAM] Allocated device %s:%d to node %s of routine %s!\n", candidate_accel.first->get_name(), cur_context, current->dump_prim(), current->get_root()->get_name());
+
+                // Increment the total tickets allocated with this candidate accel
+                tickets_allocated += candidate_accel.second;
+            }
+
         }
 
         // Iterate through all out edges of this node and add the destinations to the visitor set and the BFS queue.
@@ -232,57 +258,85 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
     // or configure the accelerators if it is the root graph of the routine.
     // We will return whether were able to allocate any accelerator within this child graph; if not, we
     // we will allocate the SW function for it.
-    if (!routine->is_root()) return accel_allocated;
-
-    virt_ticket_table[routine] = 0;
+    DEBUG(printf("[VAM] Returning total tickets for graph %s = %d\n", routine->get_name(), tickets_allocated));
+    if (!routine->is_root()) return tickets_allocated;
 
     // Iterate through all the nodes in the virt to phy mapping to configure the accelerators
-    std::unordered_map<df_node_t *, physical_accel_t *> accel_candidates = virt_to_phy_mapping[routine];
+    std::unordered_map<df_node_t *, std::pair<physical_accel_t *, unsigned>> accel_candidates = virt_to_phy_mapping[routine];
     for (const auto& node_accel_pair : accel_candidates) {
-        if ((node_accel_pair.second)->prim == NONE) {
-            configure_cpu(node_accel_pair.first, node_accel_pair.second);
-        } else {
-            configure_accel(node_accel_pair.first, node_accel_pair.second);
-        }
+        std::pair<physical_accel_t *, unsigned> accel = node_accel_pair.second;
 
-        // Increment the tickets for this hpthread
-        virt_ticket_table[routine] += node_accel_pair.second->tickets;
+        if (accel.first->prim == NONE) {
+            configure_cpu(node_accel_pair.first, accel.first);
+        } else {
+            configure_accel(node_accel_pair.first, accel.first, accel.second);
+        }
     }
+
+    // Re-evaluate all the virtual instance ticket allocations
+    eval_ticket_alloc();
 
     // If we reached this point, we successfully allocated accelerators to all tasks in the DFG.
     return true;
 }
 
-void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel) {
-    DEBUG(printf("[VAM] Configuring accel %s for node %s in routine %s\n", accel->get_name(), node->dump_prim(), node->get_root()->get_name());)
+void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel, unsigned context) {
+    if (accel->init_done) {
+        DEBUG(printf("[VAM] Adding to accel %s for node %s in routine %s\n", accel->get_name(), node->dump_prim(), node->get_root()->get_name());)
 
-    // ESP defined data type for the pointer to the memory pool for accelerators.
-    enum contig_alloc_policy policy;
-    contig_handle_t *handle = lookup_handle(node->get_params()->mem_pool->hw_buf, &policy);
+        // ESP defined data type for the pointer to the memory pool for accelerators.
+        enum contig_alloc_policy policy;
+        contig_handle_t *handle = lookup_handle(node->get_params()->mem_pool->hw_buf, &policy);
 
-    // Configring all the device-independent fields in the esp desc
-    esp_access *generic_esp_access = (esp_access *) accel->esp_access_desc;
-    {
-        generic_esp_access->contig = contig_to_khandle(*handle);
-        generic_esp_access->ddr_node = contig_to_most_allocated(*handle);
-        generic_esp_access->alloc_policy = policy;
-        generic_esp_access->run = true;
-        generic_esp_access->coherence = ACC_COH_RECALL;
-        generic_esp_access->spandex_conf = 0;
-        generic_esp_access->start_stop = 1;
-        generic_esp_access->p2p_store = 0;
-        generic_esp_access->p2p_nsrcs = 0;
-        generic_esp_access->src_offset = 0;
-        generic_esp_access->dst_offset = 0;
-        generic_esp_access->context_id = 0;
-    }
+        // Configring all the device-independent fields in the esp desc
+        esp_access *generic_esp_access = (esp_access *) accel->esp_access_desc;
+        {
+            generic_esp_access->contig = contig_to_khandle(*handle);
+            generic_esp_access->ddr_node = contig_to_most_allocated(*handle);
+            generic_esp_access->alloc_policy = policy;
+            generic_esp_access->context_id = context;
+        }
 
-    // Call function for configuring other accel-dependent fields
-    accel->device_access_cfg(node, generic_esp_access);
+        // Call function for configuring other accel-dependent fields
+        accel->device_access_cfg(node, generic_esp_access, accel->valid_contexts.to_ulong());
 
-    if (ioctl(accel->fd, accel->init_ioctl, accel->esp_access_desc)) {
-        perror("ioctl");
-        exit(EXIT_FAILURE);
+        if (ioctl(accel->fd, accel->add_ctxt_ioctl, accel->esp_access_desc)) {
+            perror("ioctl");
+            exit(EXIT_FAILURE);
+        }
+    } else {        
+        DEBUG(printf("[VAM] Initializing accel %s for node %s in routine %s\n", accel->get_name(), node->dump_prim(), node->get_root()->get_name());)
+
+        // ESP defined data type for the pointer to the memory pool for accelerators.
+        enum contig_alloc_policy policy;
+        contig_handle_t *handle = lookup_handle(node->get_params()->mem_pool->hw_buf, &policy);
+
+        // Configring all the device-independent fields in the esp desc
+        esp_access *generic_esp_access = (esp_access *) accel->esp_access_desc;
+        {
+            generic_esp_access->contig = contig_to_khandle(*handle);
+            generic_esp_access->ddr_node = contig_to_most_allocated(*handle);
+            generic_esp_access->alloc_policy = policy;
+            generic_esp_access->run = true;
+            generic_esp_access->coherence = ACC_COH_RECALL;
+            generic_esp_access->spandex_conf = 0;
+            generic_esp_access->start_stop = 1;
+            generic_esp_access->p2p_store = 0;
+            generic_esp_access->p2p_nsrcs = 0;
+            generic_esp_access->src_offset = 0;
+            generic_esp_access->dst_offset = 0;
+            generic_esp_access->context_id = 0;
+        }
+
+        // Call function for configuring other accel-dependent fields
+        accel->device_access_cfg(node, generic_esp_access, 0x1);
+
+        if (ioctl(accel->fd, accel->init_ioctl, accel->esp_access_desc)) {
+            perror("ioctl");
+            exit(EXIT_FAILURE);
+        }
+
+        accel->init_done = true;
     }
 }
 
@@ -300,4 +354,20 @@ void vam_worker::configure_cpu(df_node_t *node, physical_accel_t *accel) {
 
     // Map the physical accel struct to the new CPU thread.
     accel->accel_id = cpu_thread_list.size() - 1;
+}
+
+void vam_worker::eval_ticket_alloc() {
+    for (const auto& routine_map_pair : virt_to_phy_mapping) {
+        df_int_node_t *routine = routine_map_pair.first;
+        std::unordered_map<df_node_t *, std::pair<physical_accel_t *, unsigned>> mapping = routine_map_pair.second;
+
+        virt_ticket_table[routine] = 0;
+
+        for (const auto& mapping_pair : mapping) {
+            physical_accel_t *device = mapping_pair.second.first;
+            virt_ticket_table[routine] += device->get_avg_tickets();
+        }
+
+        DEBUG(printf("[VAM] Re-evaluated tickets for %s = %d\n", routine->get_name(), virt_ticket_table[routine]);)
+    }
 }

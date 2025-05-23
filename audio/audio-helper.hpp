@@ -45,7 +45,7 @@ struct fir_params_t : public node_params_t {
 };
 
 // Device-dependent configuration functions
-static void audio_fft_access_cfg(df_node_t *node, esp_access *generic_esp_access) {
+static void audio_fft_access_cfg(df_node_t *node, esp_access *generic_esp_access, unsigned valid_contexts) {
     fft_params_t *params = (fft_params_t *) node->get_params();
     struct audio_fft_stratus_access *audio_fft_desc = (struct audio_fft_stratus_access *) generic_esp_access;
 
@@ -57,11 +57,11 @@ static void audio_fft_access_cfg(df_node_t *node, esp_access *generic_esp_access
     audio_fft_desc->input_queue_base = node->in_edges[0]->data->base / sizeof(token_t);
     audio_fft_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
 
-    audio_fft_desc->valid_contexts = 0x1;
+    audio_fft_desc->valid_contexts = valid_contexts;
     audio_fft_desc->context_quota = 0x10000;
 }
 
-static void audio_fir_access_cfg(df_node_t *node, esp_access *generic_esp_access) {
+static void audio_fir_access_cfg(df_node_t *node, esp_access *generic_esp_access, unsigned valid_contexts) {
     fir_params_t *params = (fir_params_t *) node->get_params();
     struct audio_fir_stratus_access *audio_fir_desc = (struct audio_fir_stratus_access *) generic_esp_access;
 
@@ -72,11 +72,11 @@ static void audio_fir_access_cfg(df_node_t *node, esp_access *generic_esp_access
     audio_fir_desc->filter_queue_base = node->in_edges[1]->data->base / sizeof(token_t);
     audio_fir_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
 
-    audio_fir_desc->valid_contexts = 0x1;
+    audio_fir_desc->valid_contexts = valid_contexts;
     audio_fir_desc->context_quota = 0x10000;
 }
 
-static void audio_ffi_access_cfg(df_node_t *node, esp_access *generic_esp_access) {
+static void audio_ffi_access_cfg(df_node_t *node, esp_access *generic_esp_access, unsigned valid_contexts) {
     ffi_params_t *params = (ffi_params_t *) node->get_params();
     struct audio_ffi_stratus_access *audio_ffi_desc = (struct audio_ffi_stratus_access *) generic_esp_access;
 
@@ -88,7 +88,7 @@ static void audio_ffi_access_cfg(df_node_t *node, esp_access *generic_esp_access
     audio_ffi_desc->filter_queue_base = node->in_edges[1]->data->base / sizeof(token_t);
     audio_ffi_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
 
-    audio_ffi_desc->valid_contexts = 0x1;
+    audio_ffi_desc->valid_contexts = valid_contexts;
     audio_ffi_desc->context_quota = 0x10000;
 }
 

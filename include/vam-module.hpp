@@ -24,8 +24,8 @@ class vam_worker {
             std::vector<physical_accel_t> accel_list;
 
             // Mapping from pyhsical to virtual instances (DFG graphs)
-            std::unordered_map<physical_accel_t *, hpthread_routine_t *> phy_to_virt_mapping;
-            std::unordered_map<hpthread_routine_t *, std::unordered_map<df_node_t *, physical_accel_t *>> virt_to_phy_mapping;
+            std::unordered_map<physical_accel_t *, std::array<hpthread_routine_t *, MAX_CONTEXTS>> phy_to_virt_mapping;
+            std::unordered_map<hpthread_routine_t *, std::unordered_map<df_node_t *, std::pair<physical_accel_t *, unsigned>>> virt_to_phy_mapping;
 
             // List of pthreads that we can launch a SW kernel from
             std::vector<pthread_t> cpu_thread_list;
@@ -39,10 +39,13 @@ class vam_worker {
             bool search_accel(hpthread_routine_t *routine);
 
             // Once accelerator candidates are identified, configure each accelerator
-            void configure_accel(df_node_t *node, physical_accel_t *accel);
+            void configure_accel(df_node_t *node, physical_accel_t *accel, unsigned context);
 
             // Similar as accelerator counterpart; this function launches a pthread.
             void configure_cpu(df_node_t *node, physical_accel_t *accel);
+
+            // Evaluate tickets allocated to each routine
+            void eval_ticket_alloc();
 
             // Main run method -- which runs forever
             void run();

@@ -17,6 +17,8 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <iostream>
+#include <bitset>
+#include <utility>
 
 // ASI synchronization variable size and offsets (in bytes)
 #define VALID_OFFSET 0

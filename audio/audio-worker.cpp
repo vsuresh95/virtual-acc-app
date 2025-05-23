@@ -42,7 +42,7 @@ void audio_worker::run() {
 
 	// configure the parameters for this audio worker
 	{
-		logn_samples = 8; // (rand() % 6) + 6;
+		logn_samples = 4; // (rand() % 6) + 6;
 		// This task assumes it's doing the entirety of Audio FFI, therefore, it sets inverse
 		// as 0. But VAM should internally set this as 1 for the IFFT accelerator.
 		do_inverse = 0;
