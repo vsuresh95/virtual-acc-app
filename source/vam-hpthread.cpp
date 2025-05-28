@@ -26,8 +26,8 @@ void hpthread_intf_t::set_intf_state(hpthread_intf_state_t s) {
 // Atomically set the hpthread routine
 void hpthread_intf_t::set_routine(hpthread_routine_t *r) {
     routine.store(r, std::memory_order_seq_cst);
-
 }
+
 // Atomically test the hpthread routine
 hpthread_routine_t *hpthread_intf_t::test_routine() {
     return routine.load(std::memory_order_seq_cst);

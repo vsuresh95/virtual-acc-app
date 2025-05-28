@@ -87,15 +87,17 @@ void audio_worker::run() {
 
 	unsigned iter_count = 0;
 	time_helper t_accel;
+	time_helper t_iter;
 	unsigned errors;
 
 	while (1) {
 		DEBUG(printf("[%s] Starting iteration %d.\n", thread_name, iter_count);)
 
+		t_iter.start_counter();
 		// Wait for FFT (consumer) to be ready.
 		while(input_queue->is_full()) { sched_yield(); };
 		// Write input data for FFT.
-		init_buf();
+		// init_buf();
 		// Inform FFT (consumer) to start.
 		filter_queue->enqueue();
 		input_queue->enqueue();
@@ -107,13 +109,14 @@ void audio_worker::run() {
 		DEBUG(printf("[%s] Accel time = %lu.\n", thread_name, t_accel.get_diff());)
 
 		// Read back output from IFFT
-		errors = validate_buf();
+		// errors = validate_buf();
 		// Inform IFFT (producer) - ready for next iteration.
 		output_queue->dequeue();
+		t_iter.end_counter();
 
 		iter_count++;
 		if (iter_count % 100 == 0) {
-			printf("[%s] Finished iteration %d, Avg accel time = %lu.\n", thread_name, iter_count, t_accel.get_total()/iter_count);
+			printf("[%s] Finished iteration %d, Avg iteration time = %lu.\n", thread_name, iter_count, t_iter.get_total()/iter_count);
 		}
 	}
 

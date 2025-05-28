@@ -1,14 +1,18 @@
 #ifndef __VAM_MEM_HELPER_H__
 #define __VAM_MEM_HELPER_H__
 
+static pthread_mutex_t mem_helper_lock;
+
 struct mem_pool_t {
     void *hw_buf;
-    size_t allocated; // number of bytes already allocated in this instance/task
+    std::atomic<size_t> allocated; // number of bytes already allocated in this instance/task
 
     mem_pool_t() {
 	    const unsigned mem_size = 2 * 1024 * 1024; // 2MB
+	    pthread_mutex_lock(&mem_helper_lock);
         hw_buf = esp_alloc(mem_size);
-        allocated = 0;
+	    pthread_mutex_unlock(&mem_helper_lock);
+        allocated.store(0);
     }
 
     ~mem_pool_t() {
@@ -16,9 +20,7 @@ struct mem_pool_t {
     }
 
     size_t alloc(size_t mem_size) {
-        unsigned curr_allocated = allocated;
-        allocated += mem_size;
-        return curr_allocated;
+        return allocated.fetch_add(mem_size, std::memory_order_seq_cst);
     }
 };
 

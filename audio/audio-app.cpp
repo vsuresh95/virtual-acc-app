@@ -19,6 +19,11 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    if (pthread_mutex_init(&mem_helper_lock, NULL) != 0) {
+        printf("\n mutex init for mem helper has failed\n");
+        return 1;
+    }
+
 	// Declare a list of audio tasks
 	audio_worker **audio = new audio_worker*[MAX_AUDIO_THREADS];
 
