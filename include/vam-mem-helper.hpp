@@ -27,57 +27,20 @@ struct mem_pool_t {
 struct mem_queue_t {
     volatile uint8_t *mem;
     size_t base;
+    volatile std::atomic<uint64_t> *sync;
 
     bool enqueue() {
-        volatile uint64_t *sync = (volatile uint64_t *) &(mem[base]);
-        uint64_t old_val;
-        uint64_t value = 1;
-
-        asm volatile (
-            "mv t0, %2;"
-            "mv t2, %1;"
-            "amoswap.d.aqrl t1, t0, (t2);"
-            "mv %0, t1"
-            : "=r" (old_val)
-            : "r" (sync), "r" (value)
-            : "t0", "t1", "t2", "memory"
-            );
-
-        return (old_val == 0);
+        uint64_t expected = 0;
+        return (sync->compare_exchange_strong(expected, 1, std::memory_order_seq_cst) == 0);
     }
 
     bool dequeue() {
-        volatile uint64_t *sync = (volatile uint64_t *) &(mem[base]);
-        uint64_t old_val;
-        uint64_t value = 0;
-
-        asm volatile (
-            "mv t0, %2;"
-            "mv t2, %1;"
-            "amoswap.d.aqrl t1, t0, (t2);"
-            "mv %0, t1"
-            : "=r" (old_val)
-            : "r" (sync), "r" (value)
-            : "t0", "t1", "t2", "memory"
-            );
-
-        return (old_val == 1);
+        uint64_t expected = 1;
+        return (sync->compare_exchange_strong(expected, 0, std::memory_order_seq_cst) == 1);
     }
 
     bool is_full() {
-        volatile uint64_t *sync = (volatile uint64_t *) &(mem[base]);
-        uint64_t val;
-
-        asm volatile (
-            "mv t0, %0;"
-            "lr.d.aq t1, (t0);"
-            "mv %0, t1"
-            : "=r" (val)
-            : "r" (sync)
-            : "t0", "t1", "memory"
-            );
-
-        return (val == 1);
+        return (sync->load(std::memory_order_seq_cst) == 1);
     }
 
     volatile uint8_t *get_payload_base() { return &(mem[base + PAYLOAD_OFFSET]); }
@@ -89,6 +52,8 @@ struct mem_queue_t {
         // Zero out payload offset so queue is initialized to be empty.
         volatile __uint128_t *offset = (volatile __uint128_t *) &(mem[base]);
         offset[0] = 0;
+
+        sync = reinterpret_cast<volatile std::atomic<uint64_t> *>(&mem[base]);
     }
 
     ~mem_queue_t() {}

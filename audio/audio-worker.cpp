@@ -115,8 +115,8 @@ void audio_worker::run() {
 		t_iter.end_counter();
 
 		iter_count++;
-		if (iter_count % 100 == 0) {
-			printf("[%s] Finished iteration %d, Avg iteration time = %lu.\n", thread_name, iter_count, t_iter.get_total()/iter_count);
+		if (iter_count % 1000 == 0) {
+			printf("[%s] Iter %d, Avg time = %lu.\n", thread_name, iter_count, t_iter.get_total()/iter_count);
 		}
 	}
 

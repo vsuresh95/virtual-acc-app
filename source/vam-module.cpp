@@ -6,6 +6,8 @@ void vam_worker::run() {
     // populate the list of physical accelerators in the system
     probe_accel();
 
+    unsigned vam_sleep = 0;
+
     while (1) {
         // Test if a task is submitted by atomically checking if the state is ONGOING
         hpthread_routine_t *routine = test_hpthread_req();
@@ -20,13 +22,16 @@ void vam_worker::run() {
             ack_hpthread_req(success);
 
             DEBUG(printf("[VAM] Completed the processing for request.\n");)
+
+            // Reset sleep counter after servicing a request
+            vam_sleep = 0;
         } else {
             // Print out the tickets for each hpthread
             for (const auto& thread_ticket_pair : virt_ticket_table) {
                 printf("[VAM] Tickets allocated to %s = %d\n", thread_ticket_pair.first->get_name(), thread_ticket_pair.second);
             }
 
-            sleep(1);
+            sleep(std::min((const int) vam_sleep++, 10));
         }
     }
 }
