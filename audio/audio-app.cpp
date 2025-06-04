@@ -19,11 +19,6 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    if (pthread_mutex_init(&mem_helper_lock, NULL) != 0) {
-        printf("\n mutex init for mem helper has failed\n");
-        return 1;
-    }
-
 	// Declare a list of audio tasks
 	audio_worker **audio = new audio_worker*[MAX_AUDIO_THREADS];
 
@@ -31,6 +26,9 @@ int main(int argc, char **argv) {
     if (argc > 1){
         num_audio_threads = atoi(argv[1]);
     }
+
+	// Initialize app->worker sync variables
+	init_sync_threads(num_audio_threads);
 
 	for (unsigned i = 0; i < num_audio_threads; i++) {
 		char name[100];
@@ -43,11 +41,7 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	printf("Threads launched for VAM and audio\n");
-
-	// Trigger start of audio thread 1
-
-	// Trigger start of audio thread 2
+	printf("[APP] Threads launched for VAM and audio\n");
 
 	// Wait for all threads to return
 	pthread_join(vam_thread, NULL);

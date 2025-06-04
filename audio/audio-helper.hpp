@@ -56,9 +56,6 @@ static void audio_fft_access_cfg(df_node_t *node, esp_access *generic_esp_access
     // Get the queue base from the in/out edges of the FFT node
     audio_fft_desc->input_queue_base = node->in_edges[0]->data->base / sizeof(token_t);
     audio_fft_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
-
-    audio_fft_desc->valid_contexts = valid_contexts;
-    audio_fft_desc->context_quota = 0x10000;
 }
 
 static void audio_fir_access_cfg(df_node_t *node, esp_access *generic_esp_access, unsigned valid_contexts) {
@@ -71,9 +68,6 @@ static void audio_fir_access_cfg(df_node_t *node, esp_access *generic_esp_access
     audio_fir_desc->input_queue_base = node->in_edges[0]->data->base / sizeof(token_t);
     audio_fir_desc->filter_queue_base = node->in_edges[1]->data->base / sizeof(token_t);
     audio_fir_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
-
-    audio_fir_desc->valid_contexts = valid_contexts;
-    audio_fir_desc->context_quota = 0x10000;
 }
 
 static void audio_ffi_access_cfg(df_node_t *node, esp_access *generic_esp_access, unsigned valid_contexts) {
@@ -87,9 +81,6 @@ static void audio_ffi_access_cfg(df_node_t *node, esp_access *generic_esp_access
     audio_ffi_desc->input_queue_base = node->in_edges[0]->data->base / sizeof(token_t);
     audio_ffi_desc->filter_queue_base = node->in_edges[1]->data->base / sizeof(token_t);
     audio_ffi_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
-
-    audio_ffi_desc->valid_contexts = valid_contexts;
-    audio_ffi_desc->context_quota = 0x10000;
 }
 
 struct time_helper {
@@ -122,6 +113,19 @@ struct time_helper {
 
         t_diff = t_end - t_start;
         t_total += t_diff;
+    }
+
+    void lap_counter() {
+        asm volatile (
+            "li t0, 0;"
+            "csrr t0, cycle;"
+            "mv %0, t0"
+            : "=r" (t_end)
+            :
+            : "t0"
+        );
+
+        t_total = t_end - t_start;
     }
 
     uint64_t get_diff() { return t_diff; }

@@ -16,6 +16,7 @@ HPP_FILES := $(patsubst ./%,%,$(HPP_FILES))
 SRCFILES+=vam-module.cpp
 SRCFILES+=vam-df-graph.cpp
 SRCFILES+=vam-hpthread.cpp
+SRCFILES+=vam-mem-helper.cpp
 
 COMMON_OBJ=$(patsubst %.cpp,%.common.o,$(SRCFILES))
 
@@ -53,12 +54,20 @@ ESP_INCDIR += -I$(ESP_ROOT)/accelerators/stratus_hls/audio_ffi_stratus/sw/linux/
 CXXFLAGS += $(ESP_INCDIR) $(ESP_LD_LIBS)
 LD_LIBS += $(ESP_LD_FLAGS)
 
+PP_EXE_FLAGS=-DPIPELINE_FFI
+
 ESP_EXE_DIR = $(ESP_ROOT)/socs/xilinx-vcu118-xcvu9p/soft-build/ariane/sysroot/applications/test/
 
 .PHONY: clean
 
+all: virtual-app.exe virtual-app-pipeline.exe
+
 virtual-app.exe: $(HPP_FILES) $(COMMON_OBJ) $(AUDIO_OBJ) esp-libs
 	$(LD) $(CXXFLAGS) $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)
+	cp $@ ${ESP_EXE_DIR}
+
+virtual-app-pipeline.exe: $(HPP_FILES) $(COMMON_OBJ) $(AUDIO_OBJ) esp-libs
+	$(LD) $(CXXFLAGS) $(PP_EXE_FLAGS) $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)
 	cp $@ ${ESP_EXE_DIR}
 
 %.common.o: source/%.cpp $(HPP_FILES)

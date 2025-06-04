@@ -42,7 +42,7 @@ void audio_worker::run() {
 
 	// configure the parameters for this audio worker
 	{
-		logn_samples = 4; // (rand() % 6) + 6;
+		logn_samples = (rand() % 2) + 4;
 		// This task assumes it's doing the entirety of Audio FFI, therefore, it sets inverse
 		// as 0. But VAM should internally set this as 1 for the IFFT accelerator.
 		do_inverse = 0;
@@ -78,18 +78,52 @@ void audio_worker::run() {
 	);
 
 	// Create an hpthread by requesting the VAM
-	// TODO: eventually this will always succeed where the CPU function is always the backup.
 	while (!hpthread_create(&audio_hpthread, NULL, NULL)) {
-		usleep(1000000);
+		sleep(1);
 	}
 
 	DEBUG(printf("[%s] Successfully received hpthread.\n", thread_name);)
 
+	sync_threads();
+
 	unsigned iter_count = 0;
-	time_helper t_accel;
 	time_helper t_iter;
 	unsigned errors;
 
+	#ifdef PIPELINE_FFI
+	t_iter.start_counter();
+
+	while (1) {
+		// Wait for FFT (consumer) to be ready.
+		if (input_queue->is_full()) {
+			sched_yield();
+		} else {
+			DEBUG(printf("[%s] Starting iteration %d.\n", thread_name, iter_count);)
+
+			// Write input data for FFT.
+			// init_buf();
+			// Inform FFT (consumer) to start.
+			filter_queue->enqueue();
+			input_queue->enqueue();
+		}
+
+		// Wait for IFFT (producer) to send output
+		if (output_queue->is_full()) {
+			// Read back output from IFFT
+			// errors = validate_buf();
+			// Inform IFFT (producer) - ready for next iteration.
+			output_queue->dequeue();
+			t_iter.lap_counter();
+
+			iter_count++;
+			if (iter_count % 100 == 0) {
+				printf("[%s] Iter %d, Avg time = %lu.\n", thread_name, iter_count, t_iter.get_total()/iter_count);
+			}
+		} else {
+			sched_yield();
+		}
+	}
+	#else
 	while (1) {
 		DEBUG(printf("[%s] Starting iteration %d.\n", thread_name, iter_count);)
 
@@ -102,11 +136,8 @@ void audio_worker::run() {
 		filter_queue->enqueue();
 		input_queue->enqueue();
 
-		t_accel.start_counter();
 		// Wait for IFFT (producer) to send output.
 		while(!output_queue->is_full()) { sched_yield(); };
-		t_accel.end_counter();
-		DEBUG(printf("[%s] Accel time = %lu.\n", thread_name, t_accel.get_diff());)
 
 		// Read back output from IFFT
 		// errors = validate_buf();
@@ -115,10 +146,11 @@ void audio_worker::run() {
 		t_iter.end_counter();
 
 		iter_count++;
-		if (iter_count % 1000 == 0) {
+		if (iter_count % 100 == 0) {
 			printf("[%s] Iter %d, Avg time = %lu.\n", thread_name, iter_count, t_iter.get_total()/iter_count);
 		}
 	}
+	#endif
 
 	printf("[%s] Errors = %d.\n", thread_name, errors);
 

@@ -27,9 +27,11 @@ void vam_worker::run() {
             vam_sleep = 0;
         } else {
             // Print out the tickets for each hpthread
+            printf("[VAM] Tickets allocated to ");
             for (const auto& thread_ticket_pair : virt_ticket_table) {
-                printf("[VAM] Tickets allocated to %s = %d\n", thread_ticket_pair.first->get_name(), thread_ticket_pair.second);
+                printf("%s = %d, ", thread_ticket_pair.first->get_name(), thread_ticket_pair.second);
             }
+            printf("\n");
 
             sleep(std::min((const int) vam_sleep++, 10));
         }
@@ -300,6 +302,8 @@ void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel, unsig
             generic_esp_access->ddr_node = contig_to_most_allocated(*handle);
             generic_esp_access->alloc_policy = policy;
             generic_esp_access->context_id = context;
+            generic_esp_access->valid_contexts = accel->valid_contexts.to_ulong();
+            generic_esp_access->context_quota = 0x10000;
         }
 
         // Call function for configuring other accel-dependent fields
@@ -331,6 +335,8 @@ void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel, unsig
             generic_esp_access->src_offset = 0;
             generic_esp_access->dst_offset = 0;
             generic_esp_access->context_id = 0;
+            generic_esp_access->valid_contexts = 0x1;
+            generic_esp_access->context_quota = 0x10000;
         }
 
         // Call function for configuring other accel-dependent fields
