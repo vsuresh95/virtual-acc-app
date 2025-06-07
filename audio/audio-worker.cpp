@@ -1,4 +1,5 @@
 #include <audio-worker.hpp>
+#include <audio-offline-prof.hpp>
 
 void audio_worker::init_buf() {
 	unsigned local_len = 2 * (1 << logn_samples);
@@ -42,7 +43,6 @@ void audio_worker::run() {
 
 	// configure the parameters for this audio worker
 	{
-		logn_samples = (rand() % 2) + 4;
 		// This task assumes it's doing the entirety of Audio FFI, therefore, it sets inverse
 		// as 0. But VAM should internally set this as 1 for the IFFT accelerator.
 		do_inverse = 0;
@@ -116,7 +116,7 @@ void audio_worker::run() {
 			t_iter.lap_counter();
 
 			iter_count++;
-			if (iter_count % 100 == 0) {
+			if (iter_count % 1000 == 0) {
 				printf("[%s] Iter %d, Avg time = %lu.\n", thread_name, iter_count, t_iter.get_total()/iter_count);
 			}
 		} else {
@@ -129,7 +129,7 @@ void audio_worker::run() {
 
 		t_iter.start_counter();
 		// Wait for FFT (consumer) to be ready.
-		while(input_queue->is_full()) { sched_yield(); };
+		while(input_queue->is_full());
 		// Write input data for FFT.
 		// init_buf();
 		// Inform FFT (consumer) to start.
@@ -137,7 +137,7 @@ void audio_worker::run() {
 		input_queue->enqueue();
 
 		// Wait for IFFT (producer) to send output.
-		while(!output_queue->is_full()) { sched_yield(); };
+		while(!output_queue->is_full());
 
 		// Read back output from IFFT
 		// errors = validate_buf();
@@ -146,7 +146,7 @@ void audio_worker::run() {
 		t_iter.end_counter();
 
 		iter_count++;
-		if (iter_count % 100 == 0) {
+		if (iter_count % 1000 == 0) {
 			printf("[%s] Iter %d, Avg time = %lu.\n", thread_name, iter_count, t_iter.get_total()/iter_count);
 		}
 	}

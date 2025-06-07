@@ -30,10 +30,13 @@ int main(int argc, char **argv) {
 	// Initialize app->worker sync variables
 	init_sync_threads(num_audio_threads);
 
+	unsigned logn_samples[MAX_AUDIO_THREADS] = {6, 7, 8, 9, 10, 6, 7, 8};
+
 	for (unsigned i = 0; i < num_audio_threads; i++) {
 		char name[100];
 		sprintf(name, "AUDIO %d", i);
 	 	audio[i] = (audio_worker *) new audio_worker(name);
+		audio[i]->logn_samples = logn_samples[i];
 
 		if (pthread_create(&(audio[i]->audio_thread), NULL, audio[i]->run, (void *) (audio[i])) != 0) {
 			perror("Failed to create audio thread");

@@ -23,15 +23,35 @@ void vam_worker::run() {
 
             DEBUG(printf("[VAM] Completed the processing for request.\n");)
 
+            // Re-evaluate all the virtual instance ticket allocations
+            if (success) eval_ticket_alloc();
+
             // Reset sleep counter after servicing a request
             vam_sleep = 0;
         } else {
-            // Print out the tickets for each hpthread
-            printf("[VAM] Tickets allocated to ");
-            for (const auto& thread_ticket_pair : virt_ticket_table) {
-                printf("%s = %d, ", thread_ticket_pair.first->get_name(), thread_ticket_pair.second);
+            for (physical_accel_t accel : accel_list) {
+                struct avu_mon_desc mon;
+
+
+                printf("[VAM] Utilization of %s: ", accel.get_name());
+                if (ioctl(accel.fd, ESP_IOC_MON, &mon)) {
+                    perror("ioctl");
+                    exit(EXIT_FAILURE);
+                }
+
+                float total_util = 0.0;
+
+                for (int i = 0; i < MAX_CONTEXTS; i++) {
+                    unsigned elapsed_cycles = (unsigned) get_counter() - accel.context_start_cycles[i];
+                    if (accel.valid_contexts[i]) {
+                        float util = (float) mon.util[i]/elapsed_cycles;
+                        total_util += util;
+                        printf("C%d=%f, ", i, util);
+                    }
+                }
+                
+                printf("total=%f\n", total_util);
             }
-            printf("\n");
 
             sleep(std::min((const int) vam_sleep++, 10));
         }
@@ -280,9 +300,6 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
         }
     }
 
-    // Re-evaluate all the virtual instance ticket allocations
-    eval_ticket_alloc();
-
     // If we reached this point, we successfully allocated accelerators to all tasks in the DFG.
     return true;
 }
@@ -303,7 +320,6 @@ void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel, unsig
             generic_esp_access->alloc_policy = policy;
             generic_esp_access->context_id = context;
             generic_esp_access->valid_contexts = accel->valid_contexts.to_ulong();
-            generic_esp_access->context_quota = 0x10000;
         }
 
         // Call function for configuring other accel-dependent fields
@@ -313,6 +329,9 @@ void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel, unsig
             perror("ioctl");
             exit(EXIT_FAILURE);
         }
+
+        // Read the current time for when the accelerator is started.
+        accel->context_start_cycles[context] = (unsigned) get_counter();
     } else {
         DEBUG(printf("[VAM] Initializing accel %s for node %s in routine %s\n", accel->get_name(), node->dump_prim(), node->get_root()->get_name());)
 
@@ -336,7 +355,6 @@ void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel, unsig
             generic_esp_access->dst_offset = 0;
             generic_esp_access->context_id = 0;
             generic_esp_access->valid_contexts = 0x1;
-            generic_esp_access->context_quota = 0x10000;
         }
 
         // Call function for configuring other accel-dependent fields
@@ -348,6 +366,9 @@ void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel, unsig
         }
 
         accel->init_done = true;
+
+        // Read the current time for when the accelerator is started.
+        accel->context_start_cycles[0] = (unsigned) get_counter();
     }
 }
 

@@ -44,6 +44,8 @@ struct fir_params_t : public node_params_t {
     }
 };
 
+extern std::map<primitive_t, std::map<unsigned, unsigned>> audio_offline_prof;
+
 // Device-dependent configuration functions
 static void audio_fft_access_cfg(df_node_t *node, esp_access *generic_esp_access, unsigned valid_contexts) {
     fft_params_t *params = (fft_params_t *) node->get_params();
@@ -56,6 +58,8 @@ static void audio_fft_access_cfg(df_node_t *node, esp_access *generic_esp_access
     // Get the queue base from the in/out edges of the FFT node
     audio_fft_desc->input_queue_base = node->in_edges[0]->data->base / sizeof(token_t);
     audio_fft_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
+
+    generic_esp_access->context_quota = audio_offline_prof[AUDIO_FFT][params->logn_samples];
 }
 
 static void audio_fir_access_cfg(df_node_t *node, esp_access *generic_esp_access, unsigned valid_contexts) {
@@ -68,6 +72,8 @@ static void audio_fir_access_cfg(df_node_t *node, esp_access *generic_esp_access
     audio_fir_desc->input_queue_base = node->in_edges[0]->data->base / sizeof(token_t);
     audio_fir_desc->filter_queue_base = node->in_edges[1]->data->base / sizeof(token_t);
     audio_fir_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
+
+    generic_esp_access->context_quota = 0x10000;
 }
 
 static void audio_ffi_access_cfg(df_node_t *node, esp_access *generic_esp_access, unsigned valid_contexts) {
@@ -81,6 +87,8 @@ static void audio_ffi_access_cfg(df_node_t *node, esp_access *generic_esp_access
     audio_ffi_desc->input_queue_base = node->in_edges[0]->data->base / sizeof(token_t);
     audio_ffi_desc->filter_queue_base = node->in_edges[1]->data->base / sizeof(token_t);
     audio_ffi_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
+
+    generic_esp_access->context_quota = audio_offline_prof[AUDIO_FFI][params->logn_samples];
 }
 
 struct time_helper {
