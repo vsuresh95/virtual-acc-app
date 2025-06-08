@@ -32,7 +32,6 @@ void vam_worker::run() {
             for (physical_accel_t accel : accel_list) {
                 struct avu_mon_desc mon;
 
-
                 printf("[VAM] Utilization of %s: ", accel.get_name());
                 if (ioctl(accel.fd, ESP_IOC_MON, &mon)) {
                     perror("ioctl");
@@ -40,11 +39,12 @@ void vam_worker::run() {
                 }
 
                 float total_util = 0.0;
+                uint64_t *mon_extended = (uint64_t *) mon.util;
 
                 for (int i = 0; i < MAX_CONTEXTS; i++) {
-                    unsigned elapsed_cycles = (unsigned) get_counter() - accel.context_start_cycles[i];
+                    uint64_t elapsed_cycles = get_counter() - accel.context_start_cycles[i];
                     if (accel.valid_contexts[i]) {
-                        float util = (float) mon.util[i]/elapsed_cycles;
+                        float util = (float) mon_extended[i]/elapsed_cycles;
                         total_util += util;
                         printf("C%d=%f, ", i, util);
                     }
@@ -331,7 +331,7 @@ void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel, unsig
         }
 
         // Read the current time for when the accelerator is started.
-        accel->context_start_cycles[context] = (unsigned) get_counter();
+        accel->context_start_cycles[context] = get_counter();
     } else {
         DEBUG(printf("[VAM] Initializing accel %s for node %s in routine %s\n", accel->get_name(), node->dump_prim(), node->get_root()->get_name());)
 
@@ -368,7 +368,7 @@ void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel, unsig
         accel->init_done = true;
 
         // Read the current time for when the accelerator is started.
-        accel->context_start_cycles[0] = (unsigned) get_counter();
+        accel->context_start_cycles[0] = get_counter();
     }
 }
 
