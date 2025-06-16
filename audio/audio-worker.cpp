@@ -84,16 +84,19 @@ void audio_worker::run() {
 
 	DEBUG(printf("[%s] Successfully received hpthread.\n", thread_name);)
 
-	sync_threads();
-
 	unsigned iter_count = 0;
 	time_helper t_iter;
-	unsigned errors;
 
-	#ifdef PIPELINE_FFI
 	t_iter.start_counter();
 
 	while (1) {
+		// Wait for FIR (consumer) to be ready.
+		if (filter_queue->is_full()) {
+			sched_yield();
+		} else {
+			filter_queue->enqueue();
+		}
+
 		// Wait for FFT (consumer) to be ready.
 		if (input_queue->is_full()) {
 			sched_yield();
@@ -103,7 +106,6 @@ void audio_worker::run() {
 			// Write input data for FFT.
 			// init_buf();
 			// Inform FFT (consumer) to start.
-			filter_queue->enqueue();
 			input_queue->enqueue();
 		}
 
@@ -117,42 +119,25 @@ void audio_worker::run() {
 
 			iter_count++;
 			if (iter_count % 1000 == 0) {
-				printf("[%s] Iter %d, Avg time = %lu.\n", thread_name, iter_count, t_iter.get_total()/iter_count);
+				uint64_t total_cycles = t_iter.get_total();
+				uint64_t iter_cycles = total_cycles/1000;
+				uint64_t iter_ns = iter_cycles * 12.8;
+				double ips = (double) pow(10, 9)/iter_ns;
+				printf("[%s] Iter %dK, Avg time = %lu, IPS = %0.2f\n", thread_name, iter_count/1000, iter_cycles, ips);
+				t_iter.reset_total();
+				t_iter.start_counter();
 			}
 		} else {
 			sched_yield();
 		}
+
+		if (recv_thread_signal(thread_id) == audio_cmd_t::END) break;
 	}
-	#else
-	while (1) {
-		DEBUG(printf("[%s] Starting iteration %d.\n", thread_name, iter_count);)
 
-		t_iter.start_counter();
-		// Wait for FFT (consumer) to be ready.
-		while(input_queue->is_full());
-		// Write input data for FFT.
-		// init_buf();
-		// Inform FFT (consumer) to start.
-		filter_queue->enqueue();
-		input_queue->enqueue();
-
-		// Wait for IFFT (producer) to send output.
-		while(!output_queue->is_full());
-
-		// Read back output from IFFT
-		// errors = validate_buf();
-		// Inform IFFT (producer) - ready for next iteration.
-		output_queue->dequeue();
-		t_iter.end_counter();
-
-		iter_count++;
-		if (iter_count % 1000 == 0) {
-			printf("[%s] Iter %d, Avg time = %lu.\n", thread_name, iter_count, t_iter.get_total()/iter_count);
-		}
+	// Release the hpthread
+	while (!hpthread_join(&audio_hpthread)) {
+		sleep(1);
 	}
-	#endif
-
-	printf("[%s] Errors = %d.\n", thread_name, errors);
 
 	delete input_queue;
 	delete output_queue;
@@ -231,4 +216,50 @@ void audio_worker::create_audio_dfg(hpthread_routine_t *routine_dfg) {
 	audio_fft->set_sw_impl(audio_fft_sw_impl);
 	audio_fir->set_sw_impl(audio_fir_sw_impl);
 	audio_ifft->set_sw_impl(audio_fft_sw_impl);
+}
+
+
+// Device-dependent configuration functions
+void audio_fft_access_cfg(df_node_t *node, esp_access *generic_esp_access, unsigned valid_contexts) {
+    fft_params_t *params = (fft_params_t *) node->get_params();
+    struct audio_fft_stratus_access *audio_fft_desc = (struct audio_fft_stratus_access *) generic_esp_access;
+
+    audio_fft_desc->logn_samples = params->logn_samples;
+    audio_fft_desc->do_shift = params->do_shift;
+    audio_fft_desc->do_inverse = params->do_inverse;
+
+    // Get the queue base from the in/out edges of the FFT node
+    audio_fft_desc->input_queue_base = node->in_edges[0]->data->base / sizeof(token_t);
+    audio_fft_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
+
+    generic_esp_access->context_quota = audio_offline_prof[AUDIO_FFT][params->logn_samples];
+}
+
+void audio_fir_access_cfg(df_node_t *node, esp_access *generic_esp_access, unsigned valid_contexts) {
+    fir_params_t *params = (fir_params_t *) node->get_params();
+    struct audio_fir_stratus_access *audio_fir_desc = (struct audio_fir_stratus_access *) generic_esp_access;
+
+    audio_fir_desc->logn_samples = params->logn_samples;
+
+    // Get the queue base from the in/out edges of the FIR node
+    audio_fir_desc->input_queue_base = node->in_edges[0]->data->base / sizeof(token_t);
+    audio_fir_desc->filter_queue_base = node->in_edges[1]->data->base / sizeof(token_t);
+    audio_fir_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
+
+    generic_esp_access->context_quota = audio_offline_prof[AUDIO_FIR][params->logn_samples];
+}
+
+void audio_ffi_access_cfg(df_node_t *node, esp_access *generic_esp_access, unsigned valid_contexts) {
+    ffi_params_t *params = (ffi_params_t *) node->get_params();
+    struct audio_ffi_stratus_access *audio_ffi_desc = (struct audio_ffi_stratus_access *) generic_esp_access;
+
+    audio_ffi_desc->logn_samples = params->logn_samples;
+    audio_ffi_desc->do_shift = params->do_shift;
+
+    // Get the queue base from the in/out edges of the FFI node
+    audio_ffi_desc->input_queue_base = node->in_edges[0]->data->base / sizeof(token_t);
+    audio_ffi_desc->filter_queue_base = node->in_edges[1]->data->base / sizeof(token_t);
+    audio_ffi_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
+
+    generic_esp_access->context_quota = audio_offline_prof[AUDIO_FFI][params->logn_samples];
 }

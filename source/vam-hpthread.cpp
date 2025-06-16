@@ -53,6 +53,7 @@ bool hpthread_create(hpthread_t *__newthread,
 
 	// Submit an hpthread routine
 	hpthread_intf.set_routine(__newthread->routine_dfg);
+	hpthread_intf.req = hpthread_req_t::CREATE;
 
 	// If the interface state is DONE, update to IDLE.
 	while (!hpthread_intf.CAS_intf_state(DONE, IDLE)) sched_yield();;
@@ -63,16 +64,31 @@ bool hpthread_create(hpthread_t *__newthread,
 	return hpthread_intf.rsp_code;
 }
 
-void hpthread_join() {
-    // Not yet implemented
+bool hpthread_join(hpthread_t *__newthread) {
+	// If the interface state is IDLE, update to ONGOING.
+	while (!hpthread_intf.CAS_intf_state(IDLE, ONGOING)) sched_yield();;
+	
+	DEBUG(printf("[HPTHREAD] Deleting hpthread for %s.\n", __newthread->hpthread_id);)
+
+	// Submit an hpthread routine
+	hpthread_intf.set_routine(__newthread->routine_dfg);
+	hpthread_intf.req = hpthread_req_t::JOIN;
+
+	// If the interface state is DONE, update to IDLE.
+	while (!hpthread_intf.CAS_intf_state(DONE, IDLE)) sched_yield();;
+	
+	DEBUG(printf("[HPTHREAD] Deleted hpthread for %s.\n", __newthread->hpthread_id);)
+
+	// For now, the get accel is not returning anything, but eventually you want to return more useful info.
+	return hpthread_intf.rsp_code;    
 }
 
-hpthread_routine_t *test_hpthread_req() {
+hpthread_routine_t *test_hpthread_req(hpthread_req_t *r) {
     // wait until there is a request on the interface
     if (hpthread_intf.test_intf_state() == ONGOING) {
+        *r = hpthread_intf.req;
         return hpthread_intf.test_routine();
     } else {
-        sched_yield();
         return NULL;
     }
 }

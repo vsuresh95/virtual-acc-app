@@ -1,5 +1,9 @@
 #include <vam-module.hpp>
 
+extern void audio_fft_access_cfg(df_node_t *node, esp_access *generic_esp_access, unsigned valid_contexts);
+extern void audio_fir_access_cfg(df_node_t *node, esp_access *generic_esp_access, unsigned valid_contexts);
+extern void audio_ffi_access_cfg(df_node_t *node, esp_access *generic_esp_access, unsigned valid_contexts);
+
 void vam_worker::run() {
 	printf("[VAM] Hello from vam_worker!\n");
 
@@ -10,29 +14,53 @@ void vam_worker::run() {
 
     while (1) {
         // Test if a task is submitted by atomically checking if the state is ONGOING
-        hpthread_routine_t *routine = test_hpthread_req();
+        hpthread_req_t req;
+        hpthread_routine_t *routine = test_hpthread_req(&req);
 
         if (routine != NULL) {
-            DEBUG(printf("[VAM] Received a request for hpthread %s\n", routine->get_name());)
+            switch (req) {
+                case hpthread_req_t::CREATE: {
+                    DEBUG(printf("[VAM] Received a request for creating hpthread %s\n", routine->get_name());)
 
-            // search the available accelerators if any can satisfy the request
-            bool success = search_accel(routine);
+                    // search the available accelerators if any can satisfy the request
+                    bool success = search_accel(routine);
 
-            // Acknowledge the request with the success code
-            ack_hpthread_req(success);
+                    // Acknowledge the request with the success code
+                    ack_hpthread_req(success);
 
-            DEBUG(printf("[VAM] Completed the processing for request.\n");)
+                    DEBUG(printf("[VAM] Completed the processing for request.\n");)
 
-            // Re-evaluate all the virtual instance ticket allocations
-            if (success) eval_ticket_alloc();
+                    // Re-evaluate all the virtual instance ticket allocations
+                    if (success) eval_ticket_alloc();
+                    break;
+                }
+                case hpthread_req_t::JOIN: {
+                    DEBUG(printf("[VAM] Received a request for joining hpthread %s\n", routine->get_name());)
+
+                    // search the available accelerators if any can satisfy the request
+                    bool success = release_accel(routine);
+
+                    // Acknowledge the request with the success code
+                    ack_hpthread_req(success);
+
+                    DEBUG(printf("[VAM] Completed the processing for request.\n");)
+
+                    // Re-evaluate all the virtual instance ticket allocations
+                    if (success) eval_ticket_alloc();
+                    break;
+                }
+                default: {
+                    break;
+                }
+            }
 
             // Reset sleep counter after servicing a request
             vam_sleep = 0;
         } else {
-            for (physical_accel_t accel : accel_list) {
+            for (physical_accel_t &accel : accel_list) {
                 struct avu_mon_desc mon;
 
-                printf("[VAM] Utilization of %s: ", accel.get_name());
+                printf("[VAM] Util of %s: ", accel.get_name());
                 if (ioctl(accel.fd, ESP_IOC_MON, &mon)) {
                     perror("ioctl");
                     exit(EXIT_FAILURE);
@@ -42,15 +70,21 @@ void vam_worker::run() {
                 uint64_t *mon_extended = (uint64_t *) mon.util;
 
                 for (int i = 0; i < MAX_CONTEXTS; i++) {
-                    uint64_t elapsed_cycles = get_counter() - accel.context_start_cycles[i];
                     if (accel.valid_contexts[i]) {
-                        float util = (float) mon_extended[i]/elapsed_cycles;
+                        // Get the utilization in the previous monitor period
+                        uint64_t elapsed_cycles = get_counter() - accel.context_start_cycles[i];
+                        uint64_t util_cycles = mon_extended[i] - accel.context_active_cycles[i];
+                        float util = (float) util_cycles/elapsed_cycles;
+                        if (util_cycles > elapsed_cycles) util = 0.0;
                         total_util += util;
-                        printf("C%d=%f, ", i, util);
+                        printf("C%d=%0.2f%%, ", i, util * 100);
+                        // Set the cycles for the next period
+                        accel.context_start_cycles[i] = get_counter();
+                        accel.context_active_cycles[i] = mon_extended[i];
                     }
                 }
                 
-                printf("total=%f\n", total_util);
+                printf("total=%0.2f%%\n", total_util * 100);
             }
 
             sleep(std::min((const int) vam_sleep++, 10));
@@ -249,7 +283,7 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
                 candidate_accel.first->valid_contexts.set(cur_context);
                 std::strcpy(candidate_accel.first->thread_id[cur_context], current->get_root()->get_name());
 
-                printf("[VAM] Allocated device %s:%d to node %s of routine %s!\n", candidate_accel.first->get_name(), cur_context, current->dump_prim(), current->get_root()->get_name());
+                DEBUG(printf("[VAM] Temporarily allocated device %s:%d to node %s of routine %s!\n", candidate_accel.first->get_name(), cur_context, current->dump_prim(), current->get_root()->get_name());)
 
                 // Increment the total tickets allocated with this candidate accel
                 tickets_allocated += candidate_accel.second;
@@ -290,7 +324,7 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
 
     // Iterate through all the nodes in the virt to phy mapping to configure the accelerators
     std::unordered_map<df_node_t *, std::pair<physical_accel_t *, unsigned>> accel_candidates = virt_to_phy_mapping[routine];
-    for (const auto& node_accel_pair : accel_candidates) {
+    for (const auto &node_accel_pair : accel_candidates) {
         std::pair<physical_accel_t *, unsigned> accel = node_accel_pair.second;
 
         if (accel.first->prim == NONE) {
@@ -306,7 +340,7 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
 
 void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel, unsigned context) {
     if (accel->init_done) {
-        DEBUG(printf("[VAM] Adding to accel %s for node %s in routine %s\n", accel->get_name(), node->dump_prim(), node->get_root()->get_name());)
+        printf("[VAM] Adding to accel %s for node %s in routine %s\n", accel->get_name(), node->dump_prim(), node->get_root()->get_name());
 
         // ESP defined data type for the pointer to the memory pool for accelerators.
         enum contig_alloc_policy policy;
@@ -332,8 +366,9 @@ void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel, unsig
 
         // Read the current time for when the accelerator is started.
         accel->context_start_cycles[context] = get_counter();
+        accel->context_active_cycles[context] = 0;
     } else {
-        DEBUG(printf("[VAM] Initializing accel %s for node %s in routine %s\n", accel->get_name(), node->dump_prim(), node->get_root()->get_name());)
+        printf("[VAM] Initializing accel %s for node %s in routine %s\n", accel->get_name(), node->dump_prim(), node->get_root()->get_name());
 
         // ESP defined data type for the pointer to the memory pool for accelerators.
         enum contig_alloc_policy policy;
@@ -369,11 +404,12 @@ void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel, unsig
 
         // Read the current time for when the accelerator is started.
         accel->context_start_cycles[0] = get_counter();
+        accel->context_active_cycles[0] = 0;
     }
 }
 
 void vam_worker::configure_cpu(df_node_t *node, physical_accel_t *accel) {
-    DEBUG(printf("[VAM] Configuring CPU for node %s in routine %s\n", node->dump_prim(), node->get_root()->get_name());)
+    printf("[VAM] Configuring CPU for node %s in routine %s\n", node->dump_prim(), node->get_root()->get_name());
 
     // Create a new CPU thread for the SW implementation of this node.
     pthread_t cpu_thread;
@@ -389,7 +425,7 @@ void vam_worker::configure_cpu(df_node_t *node, physical_accel_t *accel) {
 }
 
 void vam_worker::eval_ticket_alloc() {
-    for (const auto& routine_map_pair : virt_to_phy_mapping) {
+    for (const auto &routine_map_pair : virt_to_phy_mapping) {
         df_int_node_t *routine = routine_map_pair.first;
         std::unordered_map<df_node_t *, std::pair<physical_accel_t *, unsigned>> mapping = routine_map_pair.second;
 
@@ -402,4 +438,40 @@ void vam_worker::eval_ticket_alloc() {
 
         DEBUG(printf("[VAM] Re-evaluated tickets for %s = %d\n", routine->get_name(), virt_ticket_table[routine]);)
     }
+}
+
+bool vam_worker::release_accel(hpthread_routine_t *routine) {
+    if (!virt_to_phy_mapping.count(routine)) return false;
+
+    std::unordered_map<df_node_t *, std::pair<physical_accel_t *, unsigned>> &accel_mapping = virt_to_phy_mapping[routine];
+
+    for (const auto &node_accel_pair : accel_mapping) {
+        std::pair<physical_accel_t *, unsigned> accel_context_pair = node_accel_pair.second;
+        physical_accel_t *accel = accel_context_pair.first;
+        unsigned context = accel_context_pair.second;
+
+        printf("[VAM] Releasing accel %s for node %s in routine %s\n", accel->get_name(), node_accel_pair.first->dump_prim(), routine->get_name());
+
+        // Configring all the device-independent fields in the esp desc
+        esp_access *generic_esp_access = (esp_access *) accel->esp_access_desc;
+        {
+            generic_esp_access->context_id = context;
+            generic_esp_access->valid_contexts = accel->valid_contexts.reset(context).to_ulong();
+        }
+
+        if (ioctl(accel->fd, accel->del_ctxt_ioctl, accel->esp_access_desc)) {
+            perror("ioctl");
+            exit(EXIT_FAILURE);
+        }
+
+        // Delete the entry for this context on the physical accel map
+        phy_to_virt_mapping[accel][context] = NULL;
+
+        // TODO: only considering accelerator mappings for now. Need to fix CPU.
+    }
+
+    // Delete the map entry for the routine
+    virt_to_phy_mapping.erase(routine);
+
+    return true;
 }

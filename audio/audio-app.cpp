@@ -1,6 +1,27 @@
 #include <audio-worker.hpp>
 #include <vam-module.hpp>
 
+typedef enum {
+	ADD_THREAD = 0,
+	DEL_THREAD = 1,
+	WAIT = 2,
+	TERMINATE = 3,
+	NOOP = 4,
+} trace_cmd_t;
+
+typedef struct {
+	unsigned thread_id;
+	unsigned logn_samples;
+	unsigned delay;
+} cmd_opts_t;
+
+trace_cmd_t read_next_trace(cmd_opts_t *cmd_opts);
+
+FILE *input_trace = NULL;
+
+// Interface for communicating between main thread and worker threads
+audio_thread_intf_t audio_intf;
+
 int main(int argc, char **argv) {
 	printf("\n-------------------------\n");
 	printf("Starting Audio App\n");
@@ -22,35 +43,114 @@ int main(int argc, char **argv) {
 	// Declare a list of audio tasks
 	audio_worker **audio = new audio_worker*[MAX_AUDIO_THREADS];
 
-    unsigned num_audio_threads = 1;
-    if (argc > 1){
-        num_audio_threads = atoi(argv[1]);
-    }
+	// Initialize the audio thread command interface
+	audio_intf.valid_cmd.store(false, std::memory_order_seq_cst);
 
-	// Initialize app->worker sync variables
-	init_sync_threads(num_audio_threads);
+	char *trace_file;
+    if (argc > 1) {
+		trace_file = argv[1];
+	} else {
+		trace_file = (char *) "trace.txt";
+	}
 
-	unsigned logn_samples[MAX_AUDIO_THREADS] = {6, 7, 8, 9, 10, 6, 7, 8};
+	input_trace = fopen(trace_file, "r");
+	if (!input_trace)
+	{
+		perror("Failed to read trace file");
+		return 1;
+	}
 
-	for (unsigned i = 0; i < num_audio_threads; i++) {
-		char name[100];
-		sprintf(name, "AUDIO %d", i);
-	 	audio[i] = (audio_worker *) new audio_worker(name);
-		audio[i]->logn_samples = logn_samples[i];
+	unsigned cur_thread_id = 0;
+	cmd_opts_t cmd_opts;
 
-		if (pthread_create(&(audio[i]->audio_thread), NULL, audio[i]->run, (void *) (audio[i])) != 0) {
-			perror("Failed to create audio thread");
-			return 1;
+	while (true) {
+		switch (read_next_trace(&cmd_opts)) {
+			case ADD_THREAD:
+				char name[100];
+				sprintf(name, "AUDIO %d", cur_thread_id);
+				audio[cur_thread_id] = (audio_worker *) new audio_worker(name);
+				audio[cur_thread_id]->logn_samples = cmd_opts.logn_samples;
+				audio[cur_thread_id]->thread_id = cmd_opts.thread_id;
+
+				if (pthread_create(&(audio[cur_thread_id]->audio_thread), NULL, audio[cur_thread_id]->run, (void *) (audio[cur_thread_id])) != 0) {
+					perror("Failed to create audio thread");
+					return 1;
+				}
+
+				cur_thread_id++;
+				break;
+			case DEL_THREAD:
+				send_thread_signal(audio_cmd_t::END, cmd_opts.thread_id);
+				pthread_join(audio[cmd_opts.thread_id]->audio_thread, NULL);
+				break;
+			case WAIT:
+				sleep(cmd_opts.delay);
+				break;
+			case TERMINATE:
+				break;
+			default:
+				break;
 		}
 	}
 
-	printf("[APP] Threads launched for VAM and audio\n");
+	return 0;
+}
 
-	// Wait for all threads to return
-	pthread_join(vam_thread, NULL);
-	for (unsigned i = 0; i < num_audio_threads; i++) {
-		pthread_join(audio[i]->audio_thread, NULL);
+trace_cmd_t read_next_trace(cmd_opts_t *cmd_opts) {
+	char in_line_buf[256]; // Mxx 256 characters in one line
+	void* fres = fgets(in_line_buf, 256, input_trace);
+
+	if (fres == NULL) {
+		printf("FGETS returned NULL - feof = %u\n", feof(input_trace));
+		exit(1);
 	}
 
-	return 0;
+	if ((strlen(in_line_buf) > 0) && (in_line_buf[strlen (in_line_buf) - 1] == '\n')) {
+		in_line_buf[strlen(in_line_buf) - 1] = '\0';
+	}
+
+	DEBUG(printf("[APP] IN LINE = %s\n", in_line_buf));
+
+	// Check first letter of trace line
+	char cmd = in_line_buf[0];
+	switch(cmd) {
+		case 'A': // ADD
+			sscanf(in_line_buf+2, "%d %d", &(cmd_opts->thread_id), &(cmd_opts->logn_samples));
+			return trace_cmd_t::ADD_THREAD;
+		case 'D': // DELETE
+			sscanf(in_line_buf+2, "%d", &(cmd_opts->thread_id));
+			return trace_cmd_t::DEL_THREAD;
+		case 'W': // WAIT
+			sscanf(in_line_buf+2, "%d", &(cmd_opts->delay));
+			return trace_cmd_t::WAIT;
+		case 'T': // TERMINATE
+			return trace_cmd_t::TERMINATE;
+		case '#': // NOOP 
+			return trace_cmd_t::NOOP;
+		default:
+			printf("[APP] Bad character read at 0!");
+			return trace_cmd_t::TERMINATE;
+	}
+}
+
+void send_thread_signal(audio_cmd_t c, unsigned t) {
+	audio_intf.cmd = c;
+	audio_intf.thread_id = t;
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+	audio_intf.valid_cmd.store(true, std::memory_order_seq_cst);
+}
+
+audio_cmd_t recv_thread_signal(unsigned t) {
+	if (!audio_intf.valid_cmd.load(std::memory_order_seq_cst)) {
+		return audio_cmd_t::EMPTY;
+	}
+
+	std::atomic_thread_fence(std::memory_order_seq_cst);
+	
+	if (audio_intf.thread_id == t) {
+		audio_intf.valid_cmd.store(false, std::memory_order_seq_cst);
+		return audio_intf.cmd;
+	} else {
+		return audio_cmd_t::EMPTY;
+	}
 }

@@ -12,6 +12,7 @@ class audio_worker {
 			// Thread name and pthread associated with this object
 			char thread_name[100];
 			pthread_t audio_thread;
+			unsigned thread_id;
 
 			unsigned logn_samples;
 			unsigned do_inverse;

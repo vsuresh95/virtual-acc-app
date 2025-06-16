@@ -47,6 +47,9 @@ class vam_worker {
             // Evaluate tickets allocated to each routine
             void eval_ticket_alloc();
 
+            // Relase all accelerators allocated for the DFG
+            bool release_accel(hpthread_routine_t *routine);
+
             // Main run method -- which runs forever
             void run();
 

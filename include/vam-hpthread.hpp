@@ -18,6 +18,8 @@ struct hpthread_t {
 
 typedef enum { IDLE = 0, ONGOING = 1, DONE = 2 } hpthread_intf_state_t;
 
+typedef enum { CREATE = 0, JOIN = 1, REPORT = 2 } hpthread_req_t;
+
 // Globally visible interface to request for a thread
 struct hpthread_intf_t {
     // Interface synchronization variable
@@ -28,6 +30,9 @@ struct hpthread_intf_t {
 
     // hpthread routine
     std::atomic<hpthread_routine_t *> routine;
+
+    // Type of hpthread request
+    hpthread_req_t req;
 
 	// Atomically compare the interface state and swap
     bool CAS_intf_state(hpthread_intf_state_t expected_value, hpthread_intf_state_t new_value);
@@ -52,10 +57,11 @@ bool hpthread_create(hpthread_t *__newthread,
     void *(*__start_routine) (void *),
     void *__restrict __arg);
 
-// Not yet implemented
-void hpthread_join();
+// API for joining hpthread
+bool hpthread_join(hpthread_t *__newthread);
 
-hpthread_routine_t *test_hpthread_req();
+// API for reading back routine in hpthread interface
+hpthread_routine_t *test_hpthread_req(hpthread_req_t *r);
 
 void ack_hpthread_req(bool success);
 

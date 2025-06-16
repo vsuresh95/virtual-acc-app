@@ -29,6 +29,7 @@ typedef struct {
     // AccelTileID tile_id; // Physical tile ID (for optimizing data movement)
     std::bitset<MAX_CONTEXTS> valid_contexts; // Is the context currently allocated?
     uint64_t context_start_cycles[MAX_CONTEXTS]; // Start counter for the context to use for utilization
+    uint64_t context_active_cycles[MAX_CONTEXTS]; // Active cycles for the context to use for utilization
     char thread_id[MAX_CONTEXTS][100]; // If allocated, what is the thread ID of the context?
     unsigned tickets;
     // ESP-relevant variables

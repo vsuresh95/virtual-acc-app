@@ -46,51 +46,6 @@ struct fir_params_t : public node_params_t {
 
 extern std::map<primitive_t, std::map<unsigned, unsigned>> audio_offline_prof;
 
-// Device-dependent configuration functions
-static void audio_fft_access_cfg(df_node_t *node, esp_access *generic_esp_access, unsigned valid_contexts) {
-    fft_params_t *params = (fft_params_t *) node->get_params();
-    struct audio_fft_stratus_access *audio_fft_desc = (struct audio_fft_stratus_access *) generic_esp_access;
-
-    audio_fft_desc->logn_samples = params->logn_samples;
-    audio_fft_desc->do_shift = params->do_shift;
-    audio_fft_desc->do_inverse = params->do_inverse;
-
-    // Get the queue base from the in/out edges of the FFT node
-    audio_fft_desc->input_queue_base = node->in_edges[0]->data->base / sizeof(token_t);
-    audio_fft_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
-
-    generic_esp_access->context_quota = audio_offline_prof[AUDIO_FFT][params->logn_samples];
-}
-
-static void audio_fir_access_cfg(df_node_t *node, esp_access *generic_esp_access, unsigned valid_contexts) {
-    fir_params_t *params = (fir_params_t *) node->get_params();
-    struct audio_fir_stratus_access *audio_fir_desc = (struct audio_fir_stratus_access *) generic_esp_access;
-
-    audio_fir_desc->logn_samples = params->logn_samples;
-
-    // Get the queue base from the in/out edges of the FIR node
-    audio_fir_desc->input_queue_base = node->in_edges[0]->data->base / sizeof(token_t);
-    audio_fir_desc->filter_queue_base = node->in_edges[1]->data->base / sizeof(token_t);
-    audio_fir_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
-
-    generic_esp_access->context_quota = 0x10000;
-}
-
-static void audio_ffi_access_cfg(df_node_t *node, esp_access *generic_esp_access, unsigned valid_contexts) {
-    ffi_params_t *params = (ffi_params_t *) node->get_params();
-    struct audio_ffi_stratus_access *audio_ffi_desc = (struct audio_ffi_stratus_access *) generic_esp_access;
-
-    audio_ffi_desc->logn_samples = params->logn_samples;
-    audio_ffi_desc->do_shift = params->do_shift;
-
-    // Get the queue base from the in/out edges of the FFI node
-    audio_ffi_desc->input_queue_base = node->in_edges[0]->data->base / sizeof(token_t);
-    audio_ffi_desc->filter_queue_base = node->in_edges[1]->data->base / sizeof(token_t);
-    audio_ffi_desc->output_queue_base = node->out_edges[0]->data->base / sizeof(token_t);
-
-    generic_esp_access->context_quota = audio_offline_prof[AUDIO_FFI][params->logn_samples];
-}
-
 struct time_helper {
     // Time variables
     uint64_t t_start;
@@ -138,6 +93,7 @@ struct time_helper {
 
     uint64_t get_diff() { return t_diff; }
     uint64_t get_total() { return t_total; }
+    void reset_total() { t_total = 0; }
 
     time_helper() { t_total = 0; }
 };
@@ -150,5 +106,20 @@ void fft_comp(token_t *in_data, token_t *out_data, unsigned int logn, int sign, 
 void fir_comp(unsigned len, token_t *in_data, token_t *out_data, token_t *filters, token_t *twiddles, token_t *tmpbuf);
 unsigned int fft_rev(unsigned int v);
 void fft_bit_reverse(float *w, unsigned int n, unsigned int bits);
+
+// Data structures used for communicating between main thread and worker threads
+typedef enum { EMPTY = 0, END = 1 } audio_cmd_t;
+
+typedef struct {
+    audio_cmd_t cmd;
+    unsigned thread_id;
+    std::atomic<bool> valid_cmd;
+} audio_thread_intf_t;
+
+// Helper function for main thread to send commands to worker threads
+void send_thread_signal(audio_cmd_t c, unsigned t);
+
+// Helper function for worker threads to receive commands from main thread
+audio_cmd_t recv_thread_signal(unsigned t);
 
 #endif /* __AUDIO_HELPER_H__ */
