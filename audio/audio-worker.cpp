@@ -84,7 +84,9 @@ void audio_worker::run() {
 
 	DEBUG(printf("[%s] Successfully received hpthread.\n", thread_name);)
 
-	unsigned iter_count = 0;
+	unsigned in_count = 0;
+	unsigned flt_count = 0;
+	unsigned out_count = 0;
 	time_helper t_iter;
 
 	t_iter.start_counter();
@@ -94,19 +96,22 @@ void audio_worker::run() {
 		if (filter_queue->is_full()) {
 			sched_yield();
 		} else {
+			// Inform FIR (consumer) to start.
 			filter_queue->enqueue();
+			flt_count++;
 		}
 
 		// Wait for FFT (consumer) to be ready.
 		if (input_queue->is_full()) {
 			sched_yield();
 		} else {
-			DEBUG(printf("[%s] Starting iteration %d.\n", thread_name, iter_count);)
+			DEBUG(printf("[%s] Starting iteration %d.\n", thread_name, in_count);)
 
 			// Write input data for FFT.
 			// init_buf();
 			// Inform FFT (consumer) to start.
 			input_queue->enqueue();
+			in_count++;
 		}
 
 		// Wait for IFFT (producer) to send output
@@ -117,13 +122,13 @@ void audio_worker::run() {
 			output_queue->dequeue();
 			t_iter.lap_counter();
 
-			iter_count++;
-			if (iter_count % 1000 == 0) {
+			out_count++;
+			if (out_count % 1000 == 0) {
 				uint64_t total_cycles = t_iter.get_total();
 				uint64_t iter_cycles = total_cycles/1000;
 				uint64_t iter_ns = iter_cycles * 12.8;
 				double ips = (double) pow(10, 9)/iter_ns;
-				printf("[%s] Iter %dK, Avg time = %lu, IPS = %0.2f\n", thread_name, iter_count/1000, iter_cycles, ips);
+				printf("[%s] Iter %dK, Avg time = %lu, IPS = %0.2f\n", thread_name, out_count/1000, iter_cycles, ips);
 				t_iter.reset_total();
 				t_iter.start_counter();
 			}
@@ -132,6 +137,34 @@ void audio_worker::run() {
 		}
 
 		if (recv_thread_signal(thread_id) == audio_cmd_t::END) break;
+	}
+
+	unsigned max_count = std::max({in_count, flt_count, out_count});
+	unsigned in_left = max_count - in_count;
+	unsigned flt_left = max_count - flt_count;
+	unsigned out_left = max_count - out_count;
+
+	while (in_left != 0 || flt_left != 0 || out_left != 0) {
+		if (in_left != 0) {
+			if (!input_queue->is_full()) {
+				input_queue->enqueue();
+				in_left--;
+			}
+		}
+		
+		if (flt_left != 0) {
+			if (!filter_queue->is_full()) {
+				filter_queue->enqueue();
+				flt_left--;
+			}
+		}
+
+		if (out_left != 0) {
+			if (output_queue->is_full()) {
+				output_queue->dequeue();
+				out_left--;
+			}
+		}
 	}
 
 	// Release the hpthread

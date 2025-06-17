@@ -340,7 +340,7 @@ bool vam_worker::search_accel(hpthread_routine_t *routine) {
 
 void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel, unsigned context) {
     if (accel->init_done) {
-        printf("[VAM] Adding to accel %s for node %s in routine %s\n", accel->get_name(), node->dump_prim(), node->get_root()->get_name());
+        printf("[VAM] Adding to accel %s:%d for node %s in routine %s\n", accel->get_name(), context, node->dump_prim(), node->get_root()->get_name());
 
         // ESP defined data type for the pointer to the memory pool for accelerators.
         enum contig_alloc_policy policy;
@@ -368,7 +368,7 @@ void vam_worker::configure_accel(df_node_t *node, physical_accel_t *accel, unsig
         accel->context_start_cycles[context] = get_counter();
         accel->context_active_cycles[context] = 0;
     } else {
-        printf("[VAM] Initializing accel %s for node %s in routine %s\n", accel->get_name(), node->dump_prim(), node->get_root()->get_name());
+        printf("[VAM] Initializing accel %s:0 for node %s in routine %s\n", accel->get_name(), node->dump_prim(), node->get_root()->get_name());
 
         // ESP defined data type for the pointer to the memory pool for accelerators.
         enum contig_alloc_policy policy;
@@ -450,7 +450,7 @@ bool vam_worker::release_accel(hpthread_routine_t *routine) {
         physical_accel_t *accel = accel_context_pair.first;
         unsigned context = accel_context_pair.second;
 
-        printf("[VAM] Releasing accel %s for node %s in routine %s\n", accel->get_name(), node_accel_pair.first->dump_prim(), routine->get_name());
+        printf("[VAM] Releasing accel %s:%d for node %s in routine %s\n", accel->get_name(), context, node_accel_pair.first->dump_prim(), routine->get_name());
 
         // Configring all the device-independent fields in the esp desc
         esp_access *generic_esp_access = (esp_access *) accel->esp_access_desc;

@@ -101,7 +101,7 @@ trace_cmd_t read_next_trace(cmd_opts_t *cmd_opts) {
 	void* fres = fgets(in_line_buf, 256, input_trace);
 
 	if (fres == NULL) {
-		printf("FGETS returned NULL - feof = %u\n", feof(input_trace));
+		printf("FGETS returned EOF = %u\n", feof(input_trace));
 		exit(1);
 	}
 

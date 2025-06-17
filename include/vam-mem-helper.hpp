@@ -15,7 +15,6 @@ struct mem_pool_t {
 struct mem_queue_t {
     volatile uint8_t *mem;
     size_t base;
-    volatile std::atomic<uint64_t> *sync;
 
     void enqueue();
 

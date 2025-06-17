@@ -27,15 +27,55 @@ void init_mem_helper() {
 }
 
 void mem_queue_t::enqueue() {
-    sync->store(1, std::memory_order_seq_cst);
+    volatile uint64_t *sync = (volatile uint64_t *) &(mem[base]);
+    uint64_t old_val;
+    uint64_t value = 1;
+
+    asm volatile (
+        "mv t0, %2;"
+        "mv t2, %1;"
+        "amoswap.d.aqrl t1, t0, (t2);"
+        "mv %0, t1"
+        : "=r" (old_val)
+        : "r" (sync), "r" (value)
+        : "t0", "t1", "t2", "memory"
+        );
+
+    // return (old_val == 0);
 }
 
 void mem_queue_t::dequeue() {
-    sync->store(0, std::memory_order_seq_cst);
+    volatile uint64_t *sync = (volatile uint64_t *) &(mem[base]);
+    uint64_t old_val;
+    uint64_t value = 0;
+
+    asm volatile (
+        "mv t0, %2;"
+        "mv t2, %1;"
+        "amoswap.d.aqrl t1, t0, (t2);"
+        "mv %0, t1"
+        : "=r" (old_val)
+        : "r" (sync), "r" (value)
+        : "t0", "t1", "t2", "memory"
+        );
+
+    // return (old_val == 1);
 }
 
 bool mem_queue_t::is_full() {
-    return (sync->load(std::memory_order_seq_cst) == 1);
+    volatile uint64_t *sync = (volatile uint64_t *) &(mem[base]);
+    uint64_t val;
+
+    asm volatile (
+        "mv t0, %0;"
+        "lr.d.aq t1, (t0);"
+        "mv %0, t1"
+        : "=r" (val)
+        : "r" (sync)
+        : "t0", "t1", "memory"
+        );
+
+    return (val == 1);
 }
 
 volatile uint8_t *mem_queue_t::get_payload_base() { return &(mem[base + PAYLOAD_OFFSET]); }
@@ -47,8 +87,6 @@ mem_queue_t::mem_queue_t(mem_pool_t *mem_pool, size_t payload_size) {
     // Zero out payload offset so queue is initialized to be empty.
     volatile __uint128_t *offset = (volatile __uint128_t *) &(mem[base]);
     offset[0] = 0;
-
-    sync = reinterpret_cast<volatile std::atomic<uint64_t> *>(&mem[base]);
 }
 
 std::atomic<unsigned> thread_barrier;
