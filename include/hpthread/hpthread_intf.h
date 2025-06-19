@@ -3,16 +3,20 @@
 
 #include <hpthread.h>
 
-typedef enum { 
-    VAM_RESET = 0,
-    VAM_WAKEUP = 1,
-    VAM_IDLE = 2,
-    VAM_BUSY = 3,
-    VAM_CREATE = 4,
-    VAM_JOIN = 5,
-    VAM_DONE = 6
-} vam_state_t;
+////////////////////////////////////
+// State enumeration for hpthread request interface
+enum class vam_state_t { 
+    RESET = 0,
+    WAKEUP = 1,
+    IDLE = 2,
+    BUSY = 3,
+    CREATE = 4,
+    JOIN = 5,
+    DONE = 6
+};
 
+////////////////////////////////////
+// hpthread interface definition
 typedef struct {
     // Interface synchronization variable
     std::atomic<vam_state_t> state;

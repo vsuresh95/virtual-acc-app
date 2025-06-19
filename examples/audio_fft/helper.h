@@ -2,7 +2,7 @@
 #define __HELPER_H__
 
 #include <stdio.h>
-#include <common_defines.h>
+#include <common_helper.h>
 #include <hpthread.h>
 #include <audio_fft_hpthread_args.h>
 

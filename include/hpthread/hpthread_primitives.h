@@ -4,9 +4,15 @@
 /////////////////////////////////////////
 // Declaration of all supported primitives for hpthread
 
-typedef enum {
+enum class hpthread_prim_t {
     NONE = 0,
     AUDIO_FFT = 1,
-} hpthread_prim_t;
+    AUDIO_FIR = 2,
+    AUDIO_FFI = 3,
+};
+
+// Helper function for printing primitive names
+// -- Defined in hpthread.cpp
+const char *get_prim_name(hpthread_prim_t p);
 
 #endif // __HPTHREAD_PRIMITIVES_H__

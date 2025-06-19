@@ -5,6 +5,7 @@
 
 /////////////////////////////////////////
 // hpthread types
+// These are part of the hpthread struct (for now)
 
 // Attributes are used to convey information useful to VAM for 
 // allocation and scheduling.

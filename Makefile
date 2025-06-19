@@ -5,6 +5,7 @@ LD=riscv64-unknown-linux-gnu-g++
 ROOT_DIR=$(ESP_ROOT)/soft/ariane/virtual-acc-app
 LIB_DIR=$(ROOT_DIR)/lib
 INCLUDE_DIR=$(ROOT_DIR)/include
+ACCEL_DIR=$(ROOT_DIR)/accel_def
 
 CFLAGS+=-Wall -fPIC -O3
 CXXFLAGS+=-std=c++17 -Wall -fPIC -Wno-overloaded-virtual
@@ -16,14 +17,18 @@ CXXFLAGS+=-I$(ROOT_DIR)/include/common
 CXXFLAGS+=-I$(ROOT_DIR)/include/hpthread
 CXXFLAGS+=-I$(ROOT_DIR)/include/vam
 
-CXXFLAGS+=-I$(ROOT_DIR)/accel_def/audio_fft
-
 LIB_FILES+=$(LIB_DIR)/hpthread/hpthread.cpp
 LIB_FILES+=$(LIB_DIR)/hpthread/hpthread_intf.cpp
 LIB_FILES+=$(LIB_DIR)/vam/vam_backend.cpp
 
+ACCEL_FILES+=$(ACCEL_DIR)/audio_fft/audio_fft_def.cpp
+CXXFLAGS+=-I$(ACCEL_DIR)/audio_fft
+
 LIB_OBJ=$(patsubst $(LIB_DIR)/%.cpp,$(BUILD_DIR)/%.lib.o,$(LIB_FILES))
 DBG_LIB_OBJ=$(patsubst $(LIB_DIR)/%.cpp,$(BUILD_DIR)/%.dbg.lib.o,$(LIB_FILES))
+
+ACCEL_OBJ=$(patsubst $(ACCEL_DIR)/%.cpp,$(BUILD_DIR)/%.accel.o,$(ACCEL_FILES))
+DBG_ACCEL_OBJ=$(patsubst $(ACCEL_DIR)/%.cpp,$(BUILD_DIR)/%.dbg.accel.o,$(ACCEL_FILES))
 
 CROSS_COMPILE ?= riscv64-unknown-linux-gnu-
 
@@ -66,12 +71,14 @@ all: build $(BUILD_DIR)/virtual-app.exe $(BUILD_DIR)/dbg-virtual-app.exe
 build:
 	@mkdir -p $(BUILD_DIR)/hpthread
 	@mkdir -p $(BUILD_DIR)/vam
+	@mkdir -p $(BUILD_DIR)/audio_fft
+	echo $(ACCEL_OBJ)
 
-$(BUILD_DIR)/virtual-app.exe: $(HPP_FILES) $(LIB_OBJ) $(APP_OBJ) esp-libs
+$(BUILD_DIR)/virtual-app.exe: $(HPP_FILES) $(LIB_OBJ) $(ACCEL_OBJ) $(APP_OBJ) esp-libs
 	$(LD) $(CXXFLAGS) $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)
 	cp $@ ${ESP_EXE_DIR}
 
-$(BUILD_DIR)/dbg-virtual-app.exe: $(HPP_FILES) $(DBG_LIB_OBJ) $(DBG_APP_OBJ) esp-libs
+$(BUILD_DIR)/dbg-virtual-app.exe: $(HPP_FILES) $(DBG_LIB_OBJ) $(DBG_ACCEL_OBJ) $(DBG_APP_OBJ) esp-libs
 	$(LD) $(CXXFLAGS) -DVERBOSE $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)
 	cp $@ ${ESP_EXE_DIR}
 
@@ -79,6 +86,12 @@ $(BUILD_DIR)/%.lib.o: $(LIB_DIR)/%.cpp $(HPP_FILES)
 	$(CXX) $(CXXFLAGS) $< -c -o $@
 
 $(BUILD_DIR)/%.dbg.lib.o: $(LIB_DIR)/%.cpp $(HPP_FILES)
+	$(CXX) $(CXXFLAGS) -DVERBOSE $< -c -o $@
+
+$(BUILD_DIR)/%.accel.o: $(ACCEL_DIR)/%.cpp $(HPP_FILES)
+	$(CXX) $(CXXFLAGS) $< -c -o $@
+
+$(BUILD_DIR)/%.dbg.accel.o: $(ACCEL_DIR)/%.cpp $(HPP_FILES)
 	$(CXX) $(CXXFLAGS) -DVERBOSE $< -c -o $@
 
 clean: esp-build-distclean
@@ -101,7 +114,7 @@ esp-build:
 	@ln -sf $(ESP_DRV_LINUX)/../common $(ESP_BUILD_DRIVERS)/../
 
 esp-build-distclean:
-	$(QUIET_CLEAN)$(RM) -rf esp-build
+	$(QUIET_CLEAN)$(RM) -rf $(BUILD_DIR)/esp-build
 
 esp-libs: esp-build
 	CROSS_COMPILE=$(CROSS_COMPILE) DRIVERS=$(ESP_DRV_LINUX) $(MAKE) -C $(ESP_BUILD_DRIVERS)/contig_alloc/ libcontig.a

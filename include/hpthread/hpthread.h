@@ -2,8 +2,12 @@
 #define __HPTHREAD_H__
 
 #include <hpthread_types.h>
-#include <common_defines.h>
+#include <common_helper.h>
 
+////////////////////////////////////
+// Definition for hpthread -- the layout is
+// similar to pthread, however, it deviates
+// in some aspects
 typedef struct {
     ////////////////////////////////////
     // Member variables defining the thread
@@ -18,7 +22,7 @@ typedef struct {
     void *(*start_routine) (void *);
 
     // Additional operational arguments for this routine
-    void *arg;
+    void *args;
 
     ////////////////////////////////////
     // Member functions serving as user APIs
@@ -26,7 +30,7 @@ typedef struct {
     // API for user to create a hpthread
     int create(
         void *(*start_routine) (void *),
-        void *arg);
+        void *args);
 
     // API for user to join a hpthread
     int join();
@@ -48,6 +52,9 @@ typedef struct {
 
     // get name of thread    
     char *get_name() { return attr->name; }
+
+    // get primitive of thread    
+    hpthread_prim_t get_prim() { return attr->prim; }
 } hpthread_t;
 
 #endif // __HPTHREAD_H__

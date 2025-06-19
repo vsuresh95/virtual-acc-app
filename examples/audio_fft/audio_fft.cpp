@@ -1,6 +1,10 @@
 #include <helper.h>
 #include <sw_func.h>
 
+////////////////////////////////////
+// Example application using Audio FFT
+// accelerator using the hpthread interface
+
 const unsigned logn_samples = LOGN_SAMPLES;
 const unsigned do_inverse = DO_INVERSE;
 const unsigned do_shift = DO_SHIFT;
@@ -85,7 +89,7 @@ int main(int argc, char **argv) {
     // Declare hpthread and assign attributes
     hpthread_t *th = new hpthread_t;
     th->attr_setname("AUDIO_FFT");
-    th->attr_setprimitive(AUDIO_FFT);
+    th->attr_setprimitive(hpthread_prim_t::AUDIO_FFT);
 
     // Assign arguments for the FFT task -- this will be used by the accelerator
     // or SW function to perform FFT and communicate with the SW.

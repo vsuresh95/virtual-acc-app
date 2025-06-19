@@ -55,21 +55,6 @@ class vam_worker {
 
             // TODO: you need a query function in the VAM that applications would use to
             // get a list of devices available in the system. Like the /etc/cpuinfo app in Linux.
-
-            // Helper function to get cycle counter
-            uint64_t get_counter() {
-                uint64_t t;
-                asm volatile (
-                    "li t0, 0;"
-                    "csrr t0, cycle;"
-                    "mv %0, t0"
-                    : "=r" (t)
-                    :
-                    : "t0"
-                );
-
-                return t;
-            }
 };
 
 

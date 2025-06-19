@@ -1,16 +1,22 @@
 #ifndef __VAM_BACKEND_H__
 #define __VAM_BACKEND_H__
 
-#include <common_defines.h>
+#include <common_helper.h>
 #include <hpthread_intf.h>
+#include <vam_physical_accel.h>
+#include <vam_accel_def.h>
 
+////////////////////////////////////
+// VAM backend is responsible for map virutal hpthreads
+// to physical accelerators (or CPU threads) and tracking
+// utilization of these mappings
 class vam_backend {
 public:
     ////////////////////////////////////
     // Member variables for tracking the mapping
 
-    // // List of physical devices in the system
-    // std::vector<physical_accel_t *> accel_list;
+    // List of physical devices in the system
+    std::vector<physical_accel_t> accel_list;
 
     // // Mapping from physical accelerators to hpthreads
     // std::unordered_map<physical_accel_t *, std::array<hpthread_t *, MAX_CONTEXTS>> phy_to_virt_mapping;
@@ -22,8 +28,8 @@ public:
     ////////////////////////////////////
     // Member functions
 
-    // // Probe the ESP system for available physical accelerators
-    // void probe_accel();
+    // Probe the ESP system for available physical accelerators
+    void probe_accel();
 
     // // Search for accelerator candidates for each node in a DFG
     // bool search_accel(hpthread_t *th);
