@@ -2,48 +2,50 @@ CC=riscv64-unknown-linux-gnu-gcc
 CXX=riscv64-unknown-linux-gnu-g++
 LD=riscv64-unknown-linux-gnu-g++
 
-CFLAGS=-Wall -fPIC -I./include -O3
-CXXFLAGS=-std=c++17 -Wall -fPIC -I./include -I./portaudio/include -Wno-overloaded-virtual
-LD_LIBS=-lpthread -pthread
+ROOT_DIR=$(ESP_ROOT)/soft/ariane/virtual-acc-app
+LIB_DIR=$(ROOT_DIR)/lib
+INCLUDE_DIR=$(ROOT_DIR)/include
 
-HPP_FILES := $(shell find -L . -name '*.hpp')
-HPP_FILES := $(patsubst ./%,%,$(HPP_FILES))
+CFLAGS+=-Wall -fPIC -O3
+CXXFLAGS+=-std=c++17 -Wall -fPIC -Wno-overloaded-virtual
+LD_LIBS+=-lpthread -pthread
 
-SRCFILES+=vam-module.cpp
-SRCFILES+=vam-df-graph.cpp
-SRCFILES+=vam-hpthread.cpp
-SRCFILES+=vam-mem-helper.cpp
+HPP_FILES := $(shell find -L $(ROOT_DIR) -name '*.h')
 
-COMMON_OBJ=$(patsubst %.cpp,%.common.o,$(SRCFILES))
-DBG_COMMON_OBJ=$(patsubst %.cpp,%.dbg.common.o,$(SRCFILES))
+CXXFLAGS+=-I$(ROOT_DIR)/include/common
+CXXFLAGS+=-I$(ROOT_DIR)/include/hpthread
+CXXFLAGS+=-I$(ROOT_DIR)/include/vam
 
-# AUDIO CHANGES
-CXXFLAGS+=-I./audio
-AUDIOSRCFILES+=audio-worker.cpp
-AUDIOSRCFILES+=audio-app.cpp
-AUDIOSRCFILES+=audio-sw-func.cpp
+CXXFLAGS+=-I$(ROOT_DIR)/accel_def/audio_fft
 
-AUDIO_OBJ=$(patsubst %.cpp,%.audio.o,$(AUDIOSRCFILES))
-DBG_AUDIO_OBJ=$(patsubst %.cpp,%.dbg.audio.o,$(AUDIOSRCFILES))
+LIB_FILES+=$(LIB_DIR)/hpthread/hpthread.cpp
+LIB_FILES+=$(LIB_DIR)/hpthread/hpthread_intf.cpp
+LIB_FILES+=$(LIB_DIR)/vam/vam_backend.cpp
+
+LIB_OBJ=$(patsubst $(LIB_DIR)/%.cpp,$(BUILD_DIR)/%.lib.o,$(LIB_FILES))
+DBG_LIB_OBJ=$(patsubst $(LIB_DIR)/%.cpp,$(BUILD_DIR)/%.dbg.lib.o,$(LIB_FILES))
 
 CROSS_COMPILE ?= riscv64-unknown-linux-gnu-
 
-ESP_BUILD_DRIVERS = ${PWD}/esp-build/drivers
+ESP_BUILD_DRIVERS = $(BUILD_DIR)/esp-build/drivers
 
 ESP_DRIVERS ?= $(ESP_ROOT)/soft/common/drivers
 ESP_DRV_LINUX = $(ESP_DRIVERS)/linux
 
 ESP_INCDIR += -I${ESP_DRIVERS}/common/include
 ESP_INCDIR += -I${ESP_DRIVERS}/linux/include
+ESP_INCDIR += -I${ESP_DRIVERS}/common/include/utils
 
 ESP_LD_LIBS += -L$(ESP_BUILD_DRIVERS)/contig_alloc
 ESP_LD_LIBS += -L$(ESP_BUILD_DRIVERS)/test
 ESP_LD_LIBS += -L$(ESP_BUILD_DRIVERS)/libesp
+ESP_LD_LIBS += -L$(ESP_BUILD_DRIVERS)/utils
 
 ESP_LD_FLAGS += -lrt
 ESP_LD_FLAGS += -lesp
 ESP_LD_FLAGS += -ltest
 ESP_LD_FLAGS += -lcontig
+ESP_LD_FLAGS += -lutils
 
 ESP_INCDIR += -I$(ESP_ROOT)/accelerators/stratus_hls/audio_fft_stratus/sw/linux/include
 ESP_INCDIR += -I$(ESP_ROOT)/accelerators/stratus_hls/audio_fir_stratus/sw/linux/include
@@ -59,30 +61,28 @@ MAKEFLAGS += -j$(NPROCS)
 
 .PHONY: clean
 
-all: virtual-app.exe dbg-virtual-app.exe
+all: build $(BUILD_DIR)/virtual-app.exe $(BUILD_DIR)/dbg-virtual-app.exe
 
-virtual-app.exe: $(HPP_FILES) $(COMMON_OBJ) $(AUDIO_OBJ) esp-libs
+build:
+	@mkdir -p $(BUILD_DIR)/hpthread
+	@mkdir -p $(BUILD_DIR)/vam
+
+$(BUILD_DIR)/virtual-app.exe: $(HPP_FILES) $(LIB_OBJ) $(APP_OBJ) esp-libs
 	$(LD) $(CXXFLAGS) $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)
 	cp $@ ${ESP_EXE_DIR}
 
-dbg-virtual-app.exe: $(HPP_FILES) $(DBG_COMMON_OBJ) $(DBG_AUDIO_OBJ) esp-libs
+$(BUILD_DIR)/dbg-virtual-app.exe: $(HPP_FILES) $(DBG_LIB_OBJ) $(DBG_APP_OBJ) esp-libs
 	$(LD) $(CXXFLAGS) -DVERBOSE $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)
 	cp $@ ${ESP_EXE_DIR}
 
-%.common.o: source/%.cpp $(HPP_FILES)
-	$(CXX) $(CXXFLAGS) $(PP_EXE_FLAGS) $< -c -o $@
+$(BUILD_DIR)/%.lib.o: $(LIB_DIR)/%.cpp $(HPP_FILES)
+	$(CXX) $(CXXFLAGS) $< -c -o $@
 
-%.audio.o: audio/%.cpp $(HPP_FILES)
-	$(CXX) $(CXXFLAGS) $(PP_EXE_FLAGS) $< -c -o $@
-
-%.dbg.common.o: source/%.cpp $(HPP_FILES)
-	$(CXX) $(CXXFLAGS) -DVERBOSE $< -c -o $@
-
-%.dbg.audio.o: audio/%.cpp $(HPP_FILES)
+$(BUILD_DIR)/%.dbg.lib.o: $(LIB_DIR)/%.cpp $(HPP_FILES)
 	$(CXX) $(CXXFLAGS) -DVERBOSE $< -c -o $@
 
 clean: esp-build-distclean
-	rm -rf *.o *.exe
+	rm -rf $(BUILD_DIR)
 
 esp-build:
 	@mkdir -p $(ESP_BUILD_DRIVERS)/contig_alloc
@@ -98,7 +98,7 @@ esp-build:
 	@ln -sf $(ESP_DRV_LINUX)/esp_cache/* $(ESP_BUILD_DRIVERS)/esp_cache
 	@ln -sf $(ESP_DRV_LINUX)/driver.mk $(ESP_BUILD_DRIVERS)
 	@ln -sf $(ESP_DRV_LINUX)/include $(ESP_BUILD_DRIVERS)
-	@ln -sf $(ESP_DRV_LINUX)/../common $(ESP_BUILD_DRIVERS)/../common
+	@ln -sf $(ESP_DRV_LINUX)/../common $(ESP_BUILD_DRIVERS)/../
 
 esp-build-distclean:
 	$(QUIET_CLEAN)$(RM) -rf esp-build

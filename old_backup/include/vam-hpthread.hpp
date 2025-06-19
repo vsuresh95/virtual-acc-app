@@ -16,14 +16,14 @@ struct hpthread_t {
     void dump() { routine_dfg->dump(); }
 };
 
-typedef enum { IDLE = 0, ONGOING = 1, DONE = 2 } hpthread_intf_state_t;
+typedef enum { IDLE = 0, ONGOING = 1, DONE = 2 } hpthread_intf_vam_state_t;
 
 typedef enum { CREATE = 0, JOIN = 1, REPORT = 2 } hpthread_req_t;
 
 // Globally visible interface to request for a thread
 struct hpthread_intf_t {
     // Interface synchronization variable
-    std::atomic<hpthread_intf_state_t> intf_state;
+    std::atomic<hpthread_intf_vam_state_t> intf_state;
 
     // Result of previous task
     bool rsp_code;
@@ -35,13 +35,13 @@ struct hpthread_intf_t {
     hpthread_req_t req;
 
 	// Atomically compare the interface state and swap
-    bool CAS_intf_state(hpthread_intf_state_t expected_value, hpthread_intf_state_t new_value);
+    bool CAS_intf_state(hpthread_intf_vam_state_t expected_value, hpthread_intf_vam_state_t new_value);
 
 	// Atomically test the interface state
-    hpthread_intf_state_t test_intf_state();
+    hpthread_intf_vam_state_t test_intf_state();
 
 	// Atomically set the interface state
-    void set_intf_state(hpthread_intf_state_t s);
+    void set_intf_state(hpthread_intf_vam_state_t s);
 
 	// Atomically set the hpthread routine
     void set_routine(hpthread_routine_t *r);

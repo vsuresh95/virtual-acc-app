@@ -9,17 +9,17 @@ hpthread_t::hpthread_t(const char *name, primitive_t prim) {
 }
 
 // Atomically compare the interface state and swap
-bool hpthread_intf_t::CAS_intf_state(hpthread_intf_state_t expected_value, hpthread_intf_state_t new_value) {
+bool hpthread_intf_t::CAS_intf_state(hpthread_intf_vam_state_t expected_value, hpthread_intf_vam_state_t new_value) {
     return intf_state.compare_exchange_strong(expected_value, new_value, std::memory_order_seq_cst);
 }
 
 // Atomically test the interface state
-hpthread_intf_state_t hpthread_intf_t::test_intf_state() {
+hpthread_intf_vam_state_t hpthread_intf_t::test_intf_state() {
     return intf_state.load(std::memory_order_seq_cst);
 }
 
 // Atomically set the interface state
-void hpthread_intf_t::set_intf_state(hpthread_intf_state_t s) {
+void hpthread_intf_t::set_intf_state(hpthread_intf_vam_state_t s) {
     intf_state.store(s, std::memory_order_seq_cst);
 }
 
