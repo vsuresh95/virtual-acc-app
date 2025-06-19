@@ -19,6 +19,7 @@
 #include <iostream>
 #include <bitset>
 #include <utility>
+#include <climits>
 
 // ASI synchronization variable size and offsets (in bytes)
 #define VALID_OFFSET 0

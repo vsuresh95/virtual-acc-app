@@ -20,13 +20,13 @@ int validate_buffer(token_t *mem, native_t *gold)
         native_t val = fixed32_to_float(mem[j], FX_IL);
 
         if ((fabs(gold[j] - val) / fabs(gold[j])) > ERR_TH) {
-            if (errors < 2) { printf("\tGOLD[%u] = %f vs %f = out[%u]\n", j, gold[j], val, j); }
+            if (errors < 2) { DEBUG(printf("\tGOLD[%u] = %f vs %f = out[%u]\n", j, gold[j], val, j);) }
             errors++;
         }
     }
 
-    printf("\tRelative error > %.02f for %d values out of %d\n", ERR_TH, errors,
-           2 * num_samples);
+    DEBUG(printf("\tRelative error > %.02f for %d values out of %d\n", ERR_TH, errors,
+           2 * num_samples);)
 
     return errors;
 }
@@ -56,24 +56,25 @@ void init_buffer(token_t *mem, native_t *gold)
 }
 
 int main(int argc, char **argv) {
-    printf("[AUDIO FFT] Starting app!\n");
+    printf("[APP] Starting app: AUDIO FFT single threaded!\n");
 
     // Compute memory layout parameters
     unsigned num_samples = 1 << logn_samples;
-    unsigned in_len = 2 * num_samples;
-    unsigned out_len = 2 * num_samples;
-    unsigned in_offset = 0;
-    unsigned out_offset = in_len;
-    unsigned in_size = (in_offset + PAYLOAD_OFFSET + in_len) * sizeof(token_t); // Adding space for sync flags
-    unsigned out_size = (out_offset + PAYLOAD_OFFSET + out_len) * sizeof(token_t); // Adding space for sync flags
-    unsigned mem_size = in_size + out_size;
-    unsigned in_valid_offset = in_offset + VALID_OFFSET;
-    unsigned out_valid_offset = out_offset + VALID_OFFSET;
+    unsigned flag_len = PAYLOAD_OFFSET/sizeof(token_t); // Number of token_t elements reserved for flags
+    unsigned in_len = flag_len + 2 * num_samples;
+    unsigned out_len = flag_len + 2 * num_samples;
+    unsigned in_offset = flag_len;
+    unsigned out_offset = in_len + flag_len;
+    unsigned mem_size = (in_len + out_len) * sizeof(token_t);
+    unsigned in_valid_offset = VALID_OFFSET;
+    unsigned out_valid_offset = in_len + VALID_OFFSET;
 
     // Allocate sufficient memory for this hpthread
     // Note: for composable, complex functions, VAM will allocate additional memory
     // within this memory pool -- therefore, it is necessary to allocate extra.
     token_t *mem = (token_t *) esp_alloc(mem_size);
+
+    DEBUG(printf("[APP] Memory allocated for size %d\n", mem_size));
     
     // Reference output for comparison
     native_t *gold = new float[out_len];
@@ -85,11 +86,6 @@ int main(int argc, char **argv) {
     sync_t *output_full = reinterpret_cast<sync_t *>(&mem[out_valid_offset]);
     input_full->store(0);
     output_full->store(0);
-
-    // Declare hpthread and assign attributes
-    hpthread_t *th = new hpthread_t;
-    th->attr_setname("AUDIO_FFT");
-    th->attr_setprimitive(hpthread_prim_t::AUDIO_FFT);
 
     // Assign arguments for the FFT task -- this will be used by the accelerator
     // or SW function to perform FFT and communicate with the SW.
@@ -103,8 +99,18 @@ int main(int argc, char **argv) {
         out_valid_offset
     };
 
+    // Declare hpthread and assign attributes
+    hpthread_t *th = new hpthread_t;
+    th->setroutine(sw_audio_fft);
+    th->setargs(args);
+    th->attr_init();
+    th->attr_setname("AUDIO_FFT");
+    th->attr_setprimitive(hpthread_prim_t::AUDIO_FFT);
+    
+    DEBUG(printf("[APP] Before hpthread create request...\n"));
+
     // Create a hpthread
-    if (th->create(sw_audio_fft, &args)) {
+    if (th->create()) {
         perror("error in hpthread_create!");
         exit(1);
     }
@@ -112,29 +118,33 @@ int main(int argc, char **argv) {
     // --- At this point you have a virtual compute resource in hpthread th
     // capable of performing FFT and invoked through shared memory synchronization.
 
-    const unsigned iterations = 10;
+    const unsigned iterations = 1000;
     unsigned errors = 0;
 
     for (unsigned i = 0; i < iterations; i++) {
-        printf("[AUDIO FFT] Starting iteration %d!\n", i);
+        DEBUG(printf("[APP] Starting iteration %d!\n", i);)
 
 		// Accelerator is implicitly ready because computation is chained
-        init_buffer(&mem[in_offset + PAYLOAD_OFFSET], gold);
+        init_buffer(&mem[in_offset], gold);
 		// Inform the accelerator to start.
 		input_full->store(1);
 
 		// Wait for the accelerator to send output.
 		while(output_full->load() != 1);
-		errors += validate_buffer(&mem[out_offset + PAYLOAD_OFFSET], gold);
+		errors += validate_buffer(&mem[out_offset], gold);
 
 		// Reset for next iteration.
 		output_full->store(0);
+
+        if (i % 100 == 0) {
+            printf("[APP] Iter %d done!\n", i);
+        }
     }
 
     if (errors) {
-        printf("\n\tFAIL: errors = %d!\n", errors);
+        printf("[APP] FAIL: errors = %d!\n", errors);
     } else {
-        printf("\n\tPASS: no errors!");
+        printf("[APP] PASS: no errors!\n");
     }
 
     th->join();

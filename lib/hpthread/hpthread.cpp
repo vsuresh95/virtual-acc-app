@@ -12,10 +12,7 @@ extern void wakeup_vam();
 static unsigned thread_count = 0;
 
 // API for user to create a hpthread
-int hpthread_t::create(
-    void *(*start_routine) (void *),
-	void *args) {
-
+int hpthread_t::create() {
 	DEBUG(printf("[HPTHREAD] Requested hpthread for %s.\n", attr->name);)
 
 	// Assign a thread ID
@@ -32,8 +29,6 @@ int hpthread_t::create(
 	while (!intf.swap(vam_state_t::IDLE, vam_state_t::BUSY)) sched_yield();
 
 	// Write the hpthread request to the interface
-	this->start_routine = start_routine;
-	this->args = args;
 	intf.th = this;
 
 	// Set the interface state to CREATE
@@ -69,6 +64,16 @@ int hpthread_t::join() {
 	DEBUG(printf("[HPTHREAD] Join hpthread complete for %s.\n", attr->name);)
 
 	return 0;
+}
+
+// API for setting the start routine
+void hpthread_t::setroutine(void *(*s) (void *)) {
+	start_routine = s;
+}
+
+// API for setting the arguments for the routine
+void hpthread_t::setargs(hpthread_args *a) {
+	args = a;
 }
 
 // API for initializing hpthread_attr

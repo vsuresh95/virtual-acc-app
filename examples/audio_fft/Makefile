@@ -12,6 +12,6 @@ ESP_INCDIR += -I$(ESP_ROOT)/accelerators/stratus_hls/audio_fft_stratus/sw/linux/
 	$(CXX) $(CXXFLAGS) $< -c -o $@
 
 %.app.dbg.o: ./audio_fft.cpp $(HPP_FILES)
-	$(CXX) $(CXXFLAGS) $< -c -o $@
+	$(CXX) $(CXXFLAGS) -DVERBOSE $< -c -o $@
 
 include ../../Makefile 

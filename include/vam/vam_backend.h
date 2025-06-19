@@ -18,9 +18,9 @@ public:
     // List of physical devices in the system
     std::vector<physical_accel_t> accel_list;
 
-    // // Mapping from physical accelerators to hpthreads
-    // std::unordered_map<physical_accel_t *, std::array<hpthread_t *, MAX_CONTEXTS>> phy_to_virt_mapping;
-    // std::unordered_map<hpthread_t *, std::pair<physical_accel_t *, unsigned>> virt_to_phy_mapping;
+    // Mapping from physical accelerators to hpthreads
+    std::unordered_map<physical_accel_t *, std::array<hpthread_t *, MAX_CONTEXTS>> phy_to_virt_mapping;
+    std::unordered_map<hpthread_t *, std::pair<physical_accel_t *, unsigned>> virt_to_phy_mapping;
 
     // List of CPU pthreads that we can launch a SW kernel from
     std::vector<pthread_t> cpu_thread_list;
@@ -31,14 +31,17 @@ public:
     // Probe the ESP system for available physical accelerators
     void probe_accel();
 
-    // // Search for accelerator candidates for each node in a DFG
-    // bool search_accel(hpthread_t *th);
+    // Search for accelerator candidates for the hpthread
+    void search_accel(hpthread_t *th);
 
-    // // Once accelerator candidates are identified, configure each accelerator
-    // void configure_accel(hpthread_t *th, physical_accel_t *accel, unsigned context);
+    // Once accelerator candidate is identified, configure the accelerator
+    void configure_accel(hpthread_t *th, physical_accel_t *accel, unsigned context);
 
-    // // Similar as accelerator counterpart; this function launches a pthread.
-    // void configure_cpu(hpthread_t *th, physical_accel_t *accel);
+    // Similar as accelerator counterpart; this function launches a pthread.
+    void configure_cpu(hpthread_t *th, physical_accel_t *accel);
+
+    // Relase the accelerator allocated for the hpthread
+    bool release_accel(hpthread_t *th);
 
     // Main run method
     void run_backend();

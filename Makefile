@@ -59,7 +59,7 @@ ESP_INCDIR += -I$(ESP_ROOT)/accelerators/stratus_hls/audio_ffi_stratus/sw/linux/
 CXXFLAGS += $(ESP_INCDIR) $(ESP_LD_LIBS)
 LD_LIBS += $(ESP_LD_FLAGS)
 
-ESP_EXE_DIR = $(ESP_ROOT)/socs/xilinx-vcu118-xcvu9p/soft-build/ariane/sysroot/applications/test/
+ESP_EXE_DIR = $(ESP_ROOT)/socs/xilinx-vcu118-xcvu9p/soft-build/ariane/sysroot/applications/test
 
 NPROCS = $(shell nproc || printf 1)
 MAKEFLAGS += -j$(NPROCS)
@@ -67,6 +67,13 @@ MAKEFLAGS += -j$(NPROCS)
 .PHONY: clean
 
 all: build $(BUILD_DIR)/virtual-app.exe $(BUILD_DIR)/dbg-virtual-app.exe
+	@echo ""
+	@echo "===================================================="
+	@echo "  SUCCESS! Executables have been copied to: ";
+	@echo "  OPT:${ESP_EXE_DIR}/virtual-app.exe"
+	@echo "  DBG:${ESP_EXE_DIR}/dbg-virtual-app.exe"
+	@echo "===================================================="
+	@echo ""
 
 build:
 	@mkdir -p $(BUILD_DIR)/hpthread

@@ -22,18 +22,22 @@ typedef struct {
     void *(*start_routine) (void *);
 
     // Additional operational arguments for this routine
-    void *args;
+    hpthread_args *args;
 
     ////////////////////////////////////
     // Member functions serving as user APIs
 
     // API for user to create a hpthread
-    int create(
-        void *(*start_routine) (void *),
-        void *args);
+    int create();
 
     // API for user to join a hpthread
     int join();
+
+    // API for setting the start routine
+    void setroutine(void *(*s) (void *));
+
+    // API for setting the arguments for the routine
+    void setargs(hpthread_args *a);
 
     // API for initializing hpthread_attr
     void attr_init();

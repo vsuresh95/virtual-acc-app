@@ -16,6 +16,7 @@ typedef struct {
     uint64_t context_start_cycles[MAX_CONTEXTS]; // Start counter for the context to use for utilization
     uint64_t context_active_cycles[MAX_CONTEXTS]; // Active cycles for the context to use for utilization
     int thread_id[MAX_CONTEXTS]; // If allocated, what is the hpthread ID of the context?
+    unsigned context_quota[MAX_CONTEXTS]; // Time quota assigned to each context
     unsigned tickets;
 
     ////////////////////////////////////
@@ -31,24 +32,35 @@ typedef struct {
     // Variables used for configuration and context
 
     void *esp_access_desc; // Generic pointer to the access struct.
-	void (*device_cfg)(hpthread_t *, esp_access *, unsigned); // configure device-dependent fields
+	void (*device_cfg)(hpthread_t *, esp_access *, unsigned, unsigned *); // configure device-dependent fields
     bool init_done; // Flag to identify whether the device was initialized in the past
 
     ////////////////////////////////////
     // Helper functions for internal use
 
+    // Print function
     void dump() {
-        printf("\taccel_id = %d\n", accel_id);
-        printf("\tprimitive = %s\n", get_prim_name(prim));
-        printf("\tis_allocated = 0x%lu\n", valid_contexts.to_ulong());
-        printf("\tthread_id = ");
+        printf("\t- accel_id = %d\n", accel_id);
+        printf("\t- primitive = %s\n", get_prim_name(prim));
+        printf("\t- is_allocated = 0x%lu\n", valid_contexts.to_ulong());
+        printf("\t- thread_id = ");
         for (int &id : thread_id)
             printf("%d ", id);
         printf("\n");
-        printf("\tdevname = %s\n", devname);
+        printf("\t- devname = %s\n", devname);
     }
 
+    // Get name of the device
     char *get_name() { return devname; }
+
+    // Get the total current assigned quota for this device
+    unsigned get_total_quota() {
+        unsigned total_quota = 0;
+        for (int i = 0; i < MAX_CONTEXTS; i++) {
+            total_quota += context_quota[i];
+        }
+        return total_quota;
+    }
 } physical_accel_t;
 
 #endif // __VAM_PHYSICAL_ACCEL_H__
