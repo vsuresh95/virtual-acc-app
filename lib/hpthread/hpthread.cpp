@@ -13,10 +13,10 @@ static unsigned thread_count = 0;
 
 // API for user to create a hpthread
 int hpthread_t::create() {
-	DEBUG(printf("[HPTHREAD] Requested hpthread for %s.\n", attr->name);)
-
 	// Assign a thread ID
 	this->id = thread_count++;
+
+	DEBUG(printf("[HPTHREAD] Requested hpthread %d for %s.\n", this->id, attr->name);)
 
     // If VAM has not yet been started (i.e., interface is in vam_state_t::RESET, start one thread now)
 	if (intf.swap(vam_state_t::RESET, vam_state_t::WAKEUP)) {

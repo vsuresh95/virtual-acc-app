@@ -227,7 +227,7 @@ void vam_backend::search_accel(hpthread_t *th) {
 
     // Configure the device allocated
     if (accel_allocated) {
-        configure_accel(th, candidate_accel.first, candidate_accel.second);
+        configure_accel(th, candidate_accel.first, cur_context);
     } else {
         configure_cpu(th, candidate_accel.first);
     }

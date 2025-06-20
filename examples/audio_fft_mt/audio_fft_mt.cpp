@@ -2,12 +2,16 @@
 #include <sw_func.h>
 
 ////////////////////////////////////
-// Example application using Audio FFT
-// accelerator with the hpthread interface
+// Multithreaded version of the example
+// application using Audio FFT accelerator
+// with the hpthread interface.
 
 const unsigned logn_samples = LOGN_SAMPLES;
 const unsigned do_inverse = DO_INVERSE;
 const unsigned do_shift = DO_SHIFT;
+
+// Mutex variable for thread synchronization
+std::mutex worker_mutex;
 
 // Compare accelerator output with golden output
 // -- Reused from ESP master FFT2 test
@@ -55,8 +59,8 @@ void init_buffer(token_t *mem, native_t *gold)
     fft2_comp(gold, 1 /* num_ffts */, num_samples, logn_samples, do_inverse, do_shift);
 }
 
-int main(int argc, char **argv) {
-    printf("[APP] Starting app: AUDIO FFT single threaded!\n");
+void audio_fft_mt_worker(unsigned worker_id) {
+    printf("[APP%d] Starting worker %d!\n", worker_id, worker_id);
 
     // Compute memory layout parameters
     unsigned num_samples = 1 << logn_samples;
@@ -72,9 +76,11 @@ int main(int argc, char **argv) {
     // Allocate sufficient memory for this hpthread
     // Note: for composable, complex functions, VAM will allocate additional memory
     // within this memory pool -- therefore, it is necessary to allocate extra.
+    worker_mutex.lock();
     token_t *mem = (token_t *) esp_alloc(mem_size);
+    worker_mutex.unlock();
 
-    DEBUG(printf("[APP] Memory allocated for size %d\n", mem_size));
+    DEBUG(printf("[APP%d] Memory allocated for size %d\n", worker_id, mem_size));
     
     // Reference output for comparison
     native_t *gold = new float[out_len];
@@ -104,10 +110,12 @@ int main(int argc, char **argv) {
     th->setroutine(sw_audio_fft);
     th->setargs(args);
     th->attr_init();
-    th->attr_setname("AUDIO_FFT");
+    char name[100];
+    sprintf(name, "AUDIO_FFT%d", worker_id);
+    th->attr_setname(name);
     th->attr_setprimitive(hpthread_prim_t::AUDIO_FFT);
     
-    DEBUG(printf("[APP] Before hpthread create request...\n"));
+    DEBUG(printf("[APP%d] Before hpthread create request...\n", worker_id));
 
     // Create a hpthread
     if (th->create()) {
@@ -122,7 +130,7 @@ int main(int argc, char **argv) {
     unsigned errors = 0;
 
     for (unsigned i = 0; i < iterations; i++) {
-        DEBUG(printf("[APP] Starting iteration %d!\n", i);)
+        DEBUG(printf("[APP%d] Starting iteration %d!\n", worker_id, i);)
 
 		// Accelerator is implicitly ready because computation is chained
         init_buffer(&mem[in_offset], gold);
@@ -137,20 +145,36 @@ int main(int argc, char **argv) {
 		output_full->store(0);
 
         if (i % 100 == 0) {
-            printf("[APP] Iter %d done!\n", i);
+            printf("[APP%d] Iter %d done!\n", worker_id, i);
         }
     }
 
     if (errors) {
-        printf("[APP] FAIL: errors = %d!\n", errors);
+        printf("[APP%d] FAIL: errors = %d!\n", worker_id, errors);
     } else {
-        printf("[APP] PASS: no errors!\n");
+        printf("[APP%d] PASS: no errors!\n", worker_id);
     }
 
     th->join();
 
     delete gold;
     esp_free(mem);
+}
 
-    return errors;
+int main(int argc, char **argv) {
+    printf("[APP] Starting app: AUDIO FFT multi threaded!\n");
+
+    std::thread th[NUM_THREADS];
+
+    // Start NUM_THREADS (default 4) threads for the same function
+    for (int i = 0; i < NUM_THREADS; i++) {
+        th[i] = std::thread(&audio_fft_mt_worker, i);
+    }
+
+    // Join all threads when done
+    for (int i = 0; i < NUM_THREADS; i++) {
+        th[i].join();
+    }
+
+    return 0;
 }
