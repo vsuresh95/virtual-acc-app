@@ -30,8 +30,7 @@ void audio_fft_probe(physical_accel_t *accel) {
 }
 
 // Device-dependent configuration function
-// TODO Should the quota be assigned here and sent back to backend?
-void audio_fft_cfg(hpthread_t *th, esp_access *generic_esp_access, unsigned valid_contexts, unsigned *quota_assigned) {
+void audio_fft_cfg(hpthread_t *th, esp_access *generic_esp_access, unsigned valid_contexts) {
     audio_fft_hpthread_args *args = (audio_fft_hpthread_args *) th->args;
     struct audio_fft_stratus_access *audio_fft_desc = (struct audio_fft_stratus_access *) generic_esp_access;
 
@@ -44,9 +43,10 @@ void audio_fft_cfg(hpthread_t *th, esp_access *generic_esp_access, unsigned vali
     audio_fft_desc->output_queue_base = args->output_queue_base;
 
     // Time quota for the accelerator is determined by the offline profiling runtime
+    unsigned prio = th->attr->prio;
     // TODO This needs to be more intelligent in considering FPS as well when integrated
     // with a frontend scheduler.
-    generic_esp_access->context_quota = audio_fft_offline_prof[args->logn_samples];
+    generic_esp_access->context_quota = prio * audio_fft_offline_prof[args->logn_samples];
     // Send the quota back to VAM
-    *quota_assigned = audio_fft_offline_prof[args->logn_samples];
+    th->assigned_quota = generic_esp_access->context_quota;
 }

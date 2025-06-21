@@ -17,7 +17,7 @@ typedef struct {
     uint64_t context_active_cycles[MAX_CONTEXTS]; // Active cycles for the context to use for utilization
     int thread_id[MAX_CONTEXTS]; // If allocated, what is the hpthread ID of the context?
     unsigned context_quota[MAX_CONTEXTS]; // Time quota assigned to each context
-    unsigned tickets;
+    float context_util[MAX_CONTEXTS]; // Actual utilization of the accele
 
     ////////////////////////////////////
     // ESP-relevant variables
@@ -32,7 +32,7 @@ typedef struct {
     // Variables used for configuration and context
 
     void *esp_access_desc; // Generic pointer to the access struct.
-	void (*device_cfg)(hpthread_t *, esp_access *, unsigned, unsigned *); // configure device-dependent fields
+	void (*device_cfg)(hpthread_t *, esp_access *, unsigned); // configure device-dependent fields
     bool init_done; // Flag to identify whether the device was initialized in the past
 
     ////////////////////////////////////
@@ -48,16 +48,20 @@ typedef struct {
             printf("%d ", id);
         printf("\n");
         printf("\t- devname = %s\n", devname);
+        printf("\t- context_quota = ");
+        for (unsigned &q : context_quota)
+            printf("%d ", q);
+        printf("\n");        
     }
 
     // Get name of the device
     char *get_name() { return devname; }
 
     // Get the total current assigned quota for this device
-    unsigned get_total_quota() {
+    unsigned get_total_quota() const {
         unsigned total_quota = 0;
         for (int i = 0; i < MAX_CONTEXTS; i++) {
-            total_quota += context_quota[i];
+            total_quota += (unsigned) (context_quota[i] * context_util[i]);
         }
         return total_quota;
     }

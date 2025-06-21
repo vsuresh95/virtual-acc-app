@@ -24,6 +24,9 @@ typedef struct {
     // Additional operational arguments for this routine
     hpthread_args *args;
 
+    // Used for load tracking within VAM 
+    unsigned assigned_quota;
+
     ////////////////////////////////////
     // Member functions serving as user APIs
 

@@ -27,7 +27,7 @@ void vam_backend::run_backend() {
     // populate the list of physical accelerators in the system
     probe_accel();
 
-    unsigned vam_sleep = 0;
+    unsigned vam_sleep = VAM_SLEEP_MIN;
 
     // Run loop will run forever
     while (1) {
@@ -36,38 +36,15 @@ void vam_backend::run_backend() {
 
         switch(state) {
             case vam_state_t::IDLE: {
-                // Iterate through all accelerators in the system and report the utilization
-                for (physical_accel_t &accel : accel_list) {
-                    struct avu_mon_desc mon;
+                // Examine the load across all accelerators in the system
+                if (check_load_balance()) {
+                    printf("[VAM BE] Trigerring load balancer...\n");
 
-                    printf("[VAM BE] Util of %s: ", accel.get_name());
-                    if (ioctl(accel.fd, ESP_IOC_MON, &mon)) {
-                        perror("ioctl");
-                        exit(EXIT_FAILURE);
-                    }
-
-                    float total_util = 0.0;
-                    uint64_t *mon_extended = (uint64_t *) mon.util;
-
-                    for (int i = 0; i < MAX_CONTEXTS; i++) {
-                        if (accel.valid_contexts[i]) {
-                            // Get the utilization in the previous monitor period
-                            uint64_t elapsed_cycles = get_counter() - accel.context_start_cycles[i];
-                            uint64_t util_cycles = mon_extended[i] - accel.context_active_cycles[i];
-                            float util = (float) util_cycles/elapsed_cycles;
-                            if (util_cycles > elapsed_cycles) util = 0.0;
-                            total_util += util;
-                            printf("C%d=%0.2f%%, ", i, util * 100);
-                            // Set the cycles for the next period
-                            accel.context_start_cycles[i] = get_counter();
-                            accel.context_active_cycles[i] = mon_extended[i];
-                        }
-                    }
-                    
-                    printf("total=%0.2f%%\n", total_util * 100);
+                    // Start the load balancing algorithm
+                    load_balance();
                 }
-
-                sleep(std::min((const int) vam_sleep++, 10));
+                
+                sleep(std::min((const int) vam_sleep++, VAM_SLEEP_MAX));
                 break;
             }
             case vam_state_t::CREATE: {
@@ -81,7 +58,7 @@ void vam_backend::run_backend() {
                 DEBUG(printf("[VAM BE] Completed the processing of request.\n");)
 
                 // Reset sleep counter after servicing a request
-                vam_sleep = 0;
+                vam_sleep = VAM_SLEEP_MIN;
                 break;
             }
             case vam_state_t::JOIN: {
@@ -98,7 +75,7 @@ void vam_backend::run_backend() {
                 DEBUG(printf("[VAM BE] Completed the processing of request.\n");)
 
                 // Reset sleep counter after servicing a request
-                vam_sleep = 0;
+                vam_sleep = VAM_SLEEP_MIN;
                 break;
             }
             default: 
@@ -131,6 +108,7 @@ void vam_backend::probe_accel() {
                 accel_temp.context_quota[i] = 0;
                 accel_temp.context_start_cycles[i] = 0;
                 accel_temp.context_active_cycles[i] = 0;
+                accel_temp.context_util[i] = 0.0;
             }
             std::strcpy(accel_temp.devname, entry->d_name);
             accel_temp.init_done = false;
@@ -162,7 +140,7 @@ void vam_backend::probe_accel() {
 }
 
 void vam_backend::search_accel(hpthread_t *th) {
-    DEBUG(printf("[VAM BE] Searching accelerator for hpthread %s\n", th->get_name()));
+    DEBUG(printf("[VAM BE] Searching accelerator for hpthread %s\n", th->get_name());)
 
     // We will find a candidate accelerator that has the lowest allocated weighted by priorities.
     // If no accelerator candidates are found, we will consider the CPU as the only candidate.
@@ -200,7 +178,7 @@ void vam_backend::search_accel(hpthread_t *th) {
         candidate_accel = {cpu_thread, 0};
     }
 
-    DEBUG(printf("[VAM BE] Candidate for hpthread %s = %s!\n", th->get_name(), candidate_accel.first->get_name()));
+    DEBUG(printf("[VAM BE] Candidate for hpthread %s = %s!\n", th->get_name(), candidate_accel.first->get_name());)
 
     // Identify the valid context to allocate
     unsigned cur_context = 0;
@@ -261,13 +239,11 @@ void vam_backend::configure_accel(hpthread_t *th, physical_accel_t *accel, unsig
         generic_esp_access->valid_contexts = accel->valid_contexts.to_ulong();
     }
 
-    // Retrieve quota assigned from device-dependent cfg function
-    unsigned assigned_quota;
-
     // Call function for configuring other device-dependent fields
-    accel->device_cfg(th, generic_esp_access, accel->valid_contexts.to_ulong(), &assigned_quota);
+    accel->device_cfg(th, generic_esp_access, accel->valid_contexts.to_ulong());
 
-    accel->context_quota[context] = assigned_quota;
+    // Retrieve quota assigned from device-dependent cfg function
+    accel->context_quota[context] = th->assigned_quota;
 
     if (accel->init_done) {
         printf("[VAM BE] Adding to accel %s:%d for hpthread %s\n", accel->get_name(), context, th->get_name());
@@ -339,4 +315,192 @@ bool vam_backend::release_accel(hpthread_t *th) {
     virt_to_phy_mapping.erase(th);
 
     return true;
+}
+
+bool vam_backend::check_load_balance() {
+    // First, retrieve the active utilization of each accelerator
+    for (physical_accel_t &accel : accel_list) {
+        struct avu_mon_desc mon;
+
+        printf("[VAM BE] Util of %s: ", accel.get_name());
+        if (ioctl(accel.fd, ESP_IOC_MON, &mon)) {
+            perror("ioctl");
+            exit(EXIT_FAILURE);
+        }
+
+        float total_util = 0.0;
+        uint64_t *mon_extended = (uint64_t *) mon.util;
+
+        for (int i = 0; i < MAX_CONTEXTS; i++) {
+            if (accel.valid_contexts[i]) {
+                // Get the utilization in the previous monitor period
+                uint64_t elapsed_cycles = get_counter() - accel.context_start_cycles[i];
+                uint64_t util_cycles = mon_extended[i] - accel.context_active_cycles[i];
+                float util = (float) util_cycles/elapsed_cycles;
+                if (util_cycles > elapsed_cycles) util = 0.0;
+                total_util += util;
+                printf("C%d=%0.2f%%, ", i, util * 100);
+                // Set the cycles for the next period
+                accel.context_start_cycles[i] = get_counter();
+                accel.context_active_cycles[i] = mon_extended[i];
+                accel.context_util[i] = util;
+            }
+        }
+        
+        printf("total=%0.2f%%, util quota = %d\n", total_util * 100, accel.get_total_quota());
+    }
+
+    // Check whether there is load imbalance across accelerators
+    // - calculate average and max/min load across all accelerators with non-zero quota assigned
+    float average_quota = 0;
+    unsigned count = 0;
+    unsigned max_quota = 0;
+    unsigned min_quota = INT_MAX;
+    const float imbalance_limit = 0.1;
+
+    for (physical_accel_t &accel : accel_list) {
+        unsigned cur_quota = accel.get_total_quota();
+        if (cur_quota == 0) continue;
+        if (cur_quota < min_quota) min_quota = cur_quota;
+        if (cur_quota > max_quota) max_quota = cur_quota;
+        average_quota += cur_quota;
+        count++;
+        DEBUG(printf("[VAM BE] Current load of %s = %d\n", accel.get_name(), cur_quota);)
+    }
+    
+    average_quota = average_quota/count;
+
+    DEBUG(printf("[VAM BE] Max quota = %d, min quota = %d, avg quota = %0.2f\n", max_quota, min_quota, average_quota);)
+
+    return (max_quota - min_quota > (unsigned) (imbalance_limit * average_quota));
+}
+
+// Custom comparator for min-heap based on total_quota assigned
+struct AccelCompare {
+    bool operator()(const physical_accel_t a, const physical_accel_t b) const {
+        return a.get_total_quota() > b.get_total_quota(); // min-heap: less total_quota comes first
+    }
+};
+
+void vam_backend::load_balance() {
+    // Per-primitive vectors sorted by the quota
+    std::unordered_map<hpthread_prim_t, std::vector<hpthread_t *>> active_thread_list;
+
+    // Add all the active hpthreads to active_thread_list
+    for (const auto &accel_mapping : virt_to_phy_mapping) {
+        hpthread_t *th = accel_mapping.first;
+        active_thread_list[th->attr->prim].push_back(th);
+    }
+
+    // Iterate through the thread list for each primitive
+    for (auto &prim_list : active_thread_list) {
+        std::vector<hpthread_t *> &list = prim_list.second;
+        hpthread_prim_t prim = prim_list.first;
+        DEBUG(printf("[VAM BE] Starting load balancer for %s...\n", get_prim_name(prim));)
+
+        // Sort the list in active_thread_list by assigned_quota
+        std::sort(list.begin(), list.end(),
+                [](const hpthread_t *a, const hpthread_t *b) {
+                    return a->assigned_quota > b->assigned_quota;
+                });
+        
+        DEBUG(
+            printf("[VAM BE] Sorted hpthreads for %s:\n", get_prim_name(prim));
+            for (hpthread_t *th: list) {
+                printf("\t- %s (old map: %s)\n", th->get_name(), virt_to_phy_mapping[th].first->get_name());
+            }
+        )
+
+        // Create a temporary list of the physical accelerators with the same accel IDs
+        std::priority_queue<physical_accel_t, std::vector<physical_accel_t>, AccelCompare> accel_queue;
+
+        // Create new duplicate accelerators for accel_list and add to the quota sorted queue
+        for (physical_accel_t &accel : accel_list) {
+            if (accel.prim == prim) {
+                physical_accel_t a;
+                a.accel_id = accel.accel_id;
+                accel_queue.push(a);
+            }
+        }
+
+        // Assign each thread using a greedy longest processing time algorithm.
+        // Also, check which hpthreads need to be released for new accel
+        // and create smaller new_mapping.
+        std::vector<hpthread_t *> del_threads;
+        std::unordered_map<hpthread_t *, physical_accel_t *> new_mapping;
+        DEBUG(printf("[VAM BE] Running LPT for %s...\n", get_prim_name(prim));)
+        while (!list.empty()) {
+            // Get the least loaded device
+            physical_accel_t accel = accel_queue.top(); accel_queue.pop();
+            // Get the highest quota hpthread
+            hpthread_t *th = list.front();
+            list.erase(list.begin());
+
+            DEBUG(printf("[VAM BE] Map %s to %s\n", th->get_name(), accel_list[accel.accel_id].get_name());)            
+            
+            // Get the original mapping for this hpthread
+            std::pair<physical_accel_t *, unsigned> old_mapping = virt_to_phy_mapping[th];
+            if (old_mapping.first->accel_id == accel.accel_id) {
+                // Mapped to the same accelerator currently.
+                // Do nothing
+            } else {
+                // Need to release this hpthread and remap
+                del_threads.push_back(th);
+                new_mapping[th] = &accel_list[accel.accel_id];
+            }
+            
+            // Add to the lowest empty context of accel
+            // -- this is only for LPT and not used after this loop
+            for (unsigned i = 0; i < MAX_CONTEXTS; i++) {
+                if (!accel.valid_contexts[i]) {
+                    accel.context_quota[i] = th->assigned_quota;
+                    accel.valid_contexts.set(i);
+                    break;
+                }
+            }
+
+            // Don't push it back into the queue if it is full
+            if (!accel.valid_contexts.all())
+                accel_queue.push(accel);
+        }
+
+        // First, release threads in the del_threads vector
+        for (hpthread_t *th : del_threads) {
+            // Need to release th from the accelerator
+            if (!release_accel(th)) {
+                perror("hpthread unmapped earlier!");
+                exit(1);
+            }
+        }
+
+        // Next, reconfigure threads in the new_mapping map 
+        for (auto &n : new_mapping) {
+            hpthread_t *th = n.first;
+            physical_accel_t *accel = n.second;
+
+            // Identify the valid context to allocate
+            unsigned cur_context = 0;
+            for (unsigned i = 0; i < MAX_CONTEXTS; i++) {
+                if (!accel->valid_contexts[i]) {
+                    cur_context = i;
+                    break;
+                }
+            }
+
+            // Update the phy->virt for the chosen context with the hpthread
+            phy_to_virt_mapping[accel][cur_context] = th;
+
+            // Update the virt->phy for the hpthread
+            virt_to_phy_mapping[th] = std::make_pair(accel, cur_context);
+
+            // Mark the device as allocated.
+            accel->valid_contexts.set(cur_context);
+
+            // Assign the thread ID to this accelerator's context
+            accel->thread_id[cur_context] = th->id;
+
+            // Configure the device allocated
+            configure_accel(th, accel, cur_context);
+        }
+    }
 }

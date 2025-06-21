@@ -13,7 +13,7 @@ const unsigned do_shift = DO_SHIFT;
 // Mutex variable for thread synchronization
 std::mutex worker_mutex;
 
-void audio_fft_mt_worker(unsigned worker_id) {
+void audio_fft_pp_worker(unsigned worker_id) {
     printf("[APP%d] Starting worker %d!\n", worker_id, worker_id);
 
     // Compute memory layout parameters
@@ -66,6 +66,7 @@ void audio_fft_mt_worker(unsigned worker_id) {
     sprintf(name, "AUDIO_FFT%d", worker_id);
     th->attr_setname(name);
     th->attr_setprimitive(hpthread_prim_t::AUDIO_FFT);
+    th->attr_setpriority((worker_id%4)+1);
     
     DEBUG(printf("[APP%d] Before hpthread create request...\n", worker_id));
 
@@ -78,26 +79,34 @@ void audio_fft_mt_worker(unsigned worker_id) {
     // --- At this point you have a virtual compute resource in hpthread th
     // capable of performing FFT and invoked through shared memory synchronization.
 
-    const unsigned iterations = 10000;
+    const unsigned iterations = 50000;
 
     unsigned inputs_remaining = iterations;
     unsigned outputs_remaining = iterations;
 
     // Note: this app does not write inputs/read outputs to lighten CPU load
     while (inputs_remaining != 0 || outputs_remaining != 0) {
-        if (inputs_remaining && input_full->load() == 0) {
-            // Inform the accelerator to start.
-            input_full->store(1);
-            inputs_remaining--;
-        }
-        if (outputs_remaining && output_full->load() == 1) {
-            // Reset for next iteration.
-            output_full->store(0);
-            DEBUG(printf("[APP%d] Starting iteration %d!\n", worker_id, iterations-outputs_remaining);)
-            if (outputs_remaining % 1000 == 0) {
-                printf("[APP%d] Iter %d done!\n", worker_id, iterations-outputs_remaining);
+        if (inputs_remaining) {
+            if (input_full->load() == 0) {
+                // Inform the accelerator to start.
+                input_full->store(1);
+                inputs_remaining--;
+            } else {
+                sched_yield();
             }
-            outputs_remaining--;
+        } 
+        if (outputs_remaining) {
+            if (output_full->load() == 1) {
+                // Reset for next iteration.
+                output_full->store(0);
+                DEBUG(printf("[APP%d] Starting iteration %d!\n", worker_id, iterations-outputs_remaining);)
+                if (outputs_remaining % 1000 == 0) {
+                    printf("[APP%d] Iter %d done!\n", worker_id, iterations-outputs_remaining);
+                }
+                outputs_remaining--;
+            } else {
+                sched_yield();
+            }
         }
     }
 
@@ -110,13 +119,13 @@ void audio_fft_mt_worker(unsigned worker_id) {
 }
 
 int main(int argc, char **argv) {
-    printf("[APP] Starting app: AUDIO FFT pipelined wiht priority!\n");
+    printf("[APP] Starting app: AUDIO FFT pipelined with priority!\n");
 
     std::thread th[NUM_THREADS];
 
     // Start NUM_THREADS (default 4) threads for the same function
     for (int i = 0; i < NUM_THREADS; i++) {
-        th[i] = std::thread(&audio_fft_mt_worker, i);
+        th[i] = std::thread(&audio_fft_pp_worker, i);
     }
 
     // Join all threads when done

@@ -23,7 +23,7 @@ typedef volatile std::atomic<uint64_t> sync_t;
 
 const float ERR_TH = 0.05;
 
-#define NUM_THREADS 4
+#define NUM_THREADS 8
 
 #ifndef LOGN_SAMPLES
 #define LOGN_SAMPLES 10

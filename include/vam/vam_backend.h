@@ -6,6 +6,9 @@
 #include <vam_physical_accel.h>
 #include <vam_accel_def.h>
 
+#define VAM_SLEEP_MIN 0
+#define VAM_SLEEP_MAX 10
+
 ////////////////////////////////////
 // VAM backend is responsible for map virutal hpthreads
 // to physical accelerators (or CPU threads) and tracking
@@ -42,6 +45,12 @@ public:
 
     // Relase the accelerator allocated for the hpthread
     bool release_accel(hpthread_t *th);
+
+    // Runs the load balancing algorithm across all accelerators
+    void load_balance();
+    
+    // Checks whether the load is balanced across all acclerators
+    bool check_load_balance();
 
     // Main run method
     void run_backend();
