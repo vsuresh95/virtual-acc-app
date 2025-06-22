@@ -244,6 +244,7 @@ void vam_backend::configure_accel(hpthread_t *th, physical_accel_t *accel, unsig
 
     // Retrieve quota assigned from device-dependent cfg function
     accel->context_quota[context] = th->assigned_quota;
+    th->active_load = th->assigned_quota;
 
     if (accel->init_done) {
         printf("[VAM BE] Adding to accel %s:%d for hpthread %s\n", accel->get_name(), context, th->get_name());
@@ -344,6 +345,7 @@ bool vam_backend::check_load_balance() {
                 accel.context_start_cycles[i] = get_counter();
                 accel.context_active_cycles[i] = mon_extended[i];
                 accel.context_util[i] = util;
+                phy_to_virt_mapping[&accel][i]->active_load = util * accel.context_quota[i];
             }
         }
         
@@ -401,7 +403,7 @@ void vam_backend::load_balance() {
         // Sort the list in active_thread_list by assigned_quota
         std::sort(list.begin(), list.end(),
                 [](const hpthread_t *a, const hpthread_t *b) {
-                    return a->assigned_quota > b->assigned_quota;
+                    return a->active_load > b->active_load;
                 });
         
         DEBUG(
@@ -453,7 +455,7 @@ void vam_backend::load_balance() {
             // -- this is only for LPT and not used after this loop
             for (unsigned i = 0; i < MAX_CONTEXTS; i++) {
                 if (!accel.valid_contexts[i]) {
-                    accel.context_quota[i] = th->assigned_quota;
+                    accel.context_quota[i] = th->active_load;
                     accel.valid_contexts.set(i);
                     break;
                 }
