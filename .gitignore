@@ -1,4 +1,5 @@
 esp-build
+build
 *.o
 .vscode
 *.exe
