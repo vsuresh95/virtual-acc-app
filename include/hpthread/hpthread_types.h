@@ -16,8 +16,8 @@ struct hpthread_attr_t {
     // PRIMITIVE: defined in hpthread_primitives.hpp
     hpthread_prim_t prim;
     
-    // PRIORITY: RANGE 1 - 10
-    unsigned prio;
+    // PRIORITY: RANGE 1 (HIGHEST) - 10 (LOWEST)
+    unsigned nprio;
 } ;
 
 // Arguments required for operation of the hpthread

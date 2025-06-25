@@ -64,14 +64,17 @@ ESP_EXE_DIR = $(ESP_ROOT)/socs/xilinx-vcu118-xcvu9p/soft-build/ariane/sysroot/ap
 NPROCS = $(shell nproc || printf 1)
 MAKEFLAGS += -j$(NPROCS)
 
+APP_NAME ?= APP_NAME
+
 .PHONY: clean
 
-all: build $(BUILD_DIR)/virtual-app.exe $(BUILD_DIR)/dbg-virtual-app.exe
+all: build $(BUILD_DIR)/$(APP_NAME)/opt.exe $(BUILD_DIR)/$(APP_NAME)/dbg.exe
+	cp -rf $(BUILD_DIR)/$(APP_NAME) ${ESP_EXE_DIR}
 	@echo ""
 	@echo "===================================================="
 	@echo "  SUCCESS! Executables have been copied to: ";
-	@echo "  OPT:${ESP_EXE_DIR}/virtual-app.exe"
-	@echo "  DBG:${ESP_EXE_DIR}/dbg-virtual-app.exe"
+	@echo "  OPT:${ESP_EXE_DIR}/$(APP_NAME)/opt.exe"
+	@echo "  DBG:${ESP_EXE_DIR}/$(APP_NAME)/dbg.exe"
 	@echo "===================================================="
 	@echo ""
 
@@ -79,15 +82,14 @@ build:
 	@mkdir -p $(BUILD_DIR)/hpthread
 	@mkdir -p $(BUILD_DIR)/vam
 	@mkdir -p $(BUILD_DIR)/audio_fft
+	@mkdir -p $(BUILD_DIR)/$(APP_NAME)
 	echo $(ACCEL_OBJ)
 
-$(BUILD_DIR)/virtual-app.exe: $(HPP_FILES) $(LIB_OBJ) $(ACCEL_OBJ) $(APP_OBJ) esp-libs
+$(BUILD_DIR)/$(APP_NAME)/opt.exe: $(HPP_FILES) $(LIB_OBJ) $(ACCEL_OBJ) $(APP_OBJ) esp-libs
 	$(LD) $(CXXFLAGS) $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)
-	cp $@ ${ESP_EXE_DIR}
 
-$(BUILD_DIR)/dbg-virtual-app.exe: $(HPP_FILES) $(DBG_LIB_OBJ) $(DBG_ACCEL_OBJ) $(DBG_APP_OBJ) esp-libs
+$(BUILD_DIR)/$(APP_NAME)/dbg.exe: $(HPP_FILES) $(DBG_LIB_OBJ) $(DBG_ACCEL_OBJ) $(DBG_APP_OBJ) esp-libs
 	$(LD) $(CXXFLAGS) -DVERBOSE $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)
-	cp $@ ${ESP_EXE_DIR}
 
 $(BUILD_DIR)/%.lib.o: $(LIB_DIR)/%.cpp $(HPP_FILES)
 	$(CXX) $(CXXFLAGS) $< -c -o $@

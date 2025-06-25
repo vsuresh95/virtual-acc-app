@@ -6,8 +6,12 @@
 #include <vam_physical_accel.h>
 #include <vam_accel_def.h>
 
-#define VAM_SLEEP_MIN 0
+#define VAM_SLEEP_MIN 1
+#define VAM_SLEEP_TRIG_LB 2
 #define VAM_SLEEP_MAX 10
+
+// Approximate scaling factor for total scheduling period of AVU
+#define NUM_SCHED_INTERVALS 20
 
 ////////////////////////////////////
 // VAM backend is responsible for map virutal hpthreads
@@ -45,6 +49,9 @@ public:
 
     // Relase the accelerator allocated for the hpthread
     bool release_accel(hpthread_t *th);
+
+    // Update utilization metrics for all accelerators
+    void check_utilization();
 
     // Runs the load balancing algorithm across all accelerators
     void load_balance();

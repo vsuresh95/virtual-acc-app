@@ -42,11 +42,6 @@ void audio_fft_cfg(hpthread_t *th, esp_access *generic_esp_access, unsigned vali
     audio_fft_desc->input_queue_base = args->input_queue_base;
     audio_fft_desc->output_queue_base = args->output_queue_base;
 
-    // Time quota for the accelerator is determined by the offline profiling runtime
-    unsigned prio = th->attr->prio;
-    // TODO This needs to be more intelligent in considering FPS as well when integrated
-    // with a frontend scheduler.
-    generic_esp_access->context_quota = prio * audio_fft_offline_prof[args->logn_samples];
-    // Send the quota back to VAM
-    th->assigned_quota = generic_esp_access->context_quota;
+    // Send the predicted load back to VAM, from the offline profiled runtime
+    th->assigned_load = audio_fft_offline_prof[args->logn_samples];
 }

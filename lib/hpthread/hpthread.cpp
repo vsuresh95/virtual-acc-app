@@ -82,7 +82,9 @@ void hpthread_t::attr_init() {
 	// Set attribute fields to default values
 	std::strcpy(attr->name, "No name");
 	attr->prim = hpthread_prim_t::NONE;
-	attr->prio = 1; // Lowest priority
+	attr->nprio = 1; // Lowest priority
+	attr->assigned_load = 0;
+	attr->active_load = 0;
 }
 
 // API for setting the primitive computation for this hpthread
@@ -97,7 +99,7 @@ void hpthread_t::attr_setprimitive(hpthread_prim_t p) {
 
 // API for setting the priority for this hpthread
 void hpthread_t::attr_setpriority(unsigned p) {
-	attr->prio = p;
+	attr->nprio = p;
 }
 
 // Helper function for printing hpthread primitive

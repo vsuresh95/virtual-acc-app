@@ -2,9 +2,9 @@
 #include <sw_func.h>
 
 ////////////////////////////////////
-// Multithreaded version of the example
-// application using Audio FFT accelerator
-// with the hpthread interface.
+// Pipelined version of the example
+// application with priorities using
+// Audio FFT accelerator with the hpthread interface.
 
 const unsigned logn_samples = LOGN_SAMPLES;
 const unsigned do_inverse = DO_INVERSE;
@@ -14,6 +14,10 @@ const unsigned do_shift = DO_SHIFT;
 std::mutex worker_mutex;
 
 void audio_fft_pp_worker(unsigned worker_id) {
+    srand((unsigned int) time(NULL) * (worker_id + 1));
+    unsigned sleep_time = rand() % NUM_THREADS;
+    sleep(sleep_time);
+
     printf("[APP%d] Starting worker %d!\n", worker_id, worker_id);
 
     // Compute memory layout parameters
@@ -79,7 +83,8 @@ void audio_fft_pp_worker(unsigned worker_id) {
     // --- At this point you have a virtual compute resource in hpthread th
     // capable of performing FFT and invoked through shared memory synchronization.
 
-    const unsigned iterations = 50000;
+    unsigned iter_factor = (rand() % 2) + 1;
+    const unsigned iterations = 10000 * iter_factor;
 
     unsigned inputs_remaining = iterations;
     unsigned outputs_remaining = iterations;

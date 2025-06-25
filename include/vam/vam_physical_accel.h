@@ -16,7 +16,7 @@ typedef struct {
     uint64_t context_start_cycles[MAX_CONTEXTS]; // Start counter for the context to use for utilization
     uint64_t context_active_cycles[MAX_CONTEXTS]; // Active cycles for the context to use for utilization
     int thread_id[MAX_CONTEXTS]; // If allocated, what is the hpthread ID of the context?
-    unsigned context_quota[MAX_CONTEXTS]; // Time quota assigned to each context
+    unsigned context_load[MAX_CONTEXTS]; // Assigned (predicted) load for each context
     float context_util[MAX_CONTEXTS]; // Actual utilization of the accele
 
     ////////////////////////////////////
@@ -48,22 +48,25 @@ typedef struct {
             printf("%d ", id);
         printf("\n");
         printf("\t- devname = %s\n", devname);
-        printf("\t- context_quota = ");
-        for (unsigned &q : context_quota)
-            printf("%d ", q);
+        printf("\t- context_load = ");
+        for (unsigned &l : context_load)
+            printf("%d ", l);
         printf("\n");        
+        printf("\t- total_load = %d\n", get_total_load());
     }
 
     // Get name of the device
     char *get_name() { return devname; }
 
-    // Get the total current assigned quota for this device
-    unsigned get_total_quota() const {
-        unsigned total_quota = 0;
+    // Get the total current assigned load for this device
+    unsigned get_total_load() const {
+        unsigned total_load = 0;
         for (int i = 0; i < MAX_CONTEXTS; i++) {
-            total_quota += (unsigned) (context_quota[i] * context_util[i]);
+            if (valid_contexts[i]) {
+                total_load += (unsigned) (context_load[i] * context_util[i]);
+            }
         }
-        return total_quota;
+        return total_load;
     }
 } physical_accel_t;
 
