@@ -8,7 +8,7 @@ std::thread vam_th;
 
 // Function to wake up VAM for the first time
 void wakeup_vam() {
-	printf("[VAM BE] Launching a new thread for VAM BACKEND!\n");
+	LOW_DEBUG(printf("[VAM BE] Launching a new thread for VAM BACKEND!\n");)
 
     // Create an object of VAM and launch a std::thread for VAM
     vam_backend *be = new vam_backend;
@@ -102,6 +102,20 @@ void vam_backend::run_backend() {
                 start_time = get_counter();
                 vam_sleep = VAM_SLEEP_MIN;
                 break;
+            }
+            case vam_state_t::REPORT: {
+                HIGH_DEBUG(printf("\n[VAM BE] Received a report request\n");)
+
+                print_report();
+
+                // Set the interface state to DONE
+                intf.set(vam_state_t::DONE);
+
+                HIGH_DEBUG(printf("[VAM BE] Completed the processing of request.\n");)
+
+                // Reset trigger delay after servicing a request
+                start_time = get_counter();
+                vam_sleep = VAM_SLEEP_MIN;
             }
             default:
                 break;
@@ -418,6 +432,9 @@ bool vam_backend::check_load_balance() {
     // First, update the active utilization of each accelerator
     check_utilization();
 
+    std::unordered_map<physical_accel_t *, std::array<float, MAX_CONTEXTS>> util_map;
+    epoch_utilization.push_back(util_map);
+
     // Print out the total utilization
     for (physical_accel_t &accel : accel_list) {
         float total_util = 0.0;
@@ -428,6 +445,7 @@ bool vam_backend::check_load_balance() {
                 LOW_DEBUG(printf("C%d(%d)=%0.2f%%, ", i, th->attr->nprio, accel.context_util[i] * 100);)
                 total_util += accel.context_util[i];
                 th->active_load = accel.context_util[i] * accel.context_load[i];
+                epoch_utilization.back()[&accel][i] = accel.context_util[i];
             }
         }
         LOW_DEBUG(printf("total=%0.2f%%, load = %d\n", total_util * 100, accel.get_total_load());)
@@ -587,3 +605,24 @@ void vam_backend::load_balance() {
         }
     }
 }
+
+void vam_backend::print_report() {
+    // Print out the total utilization
+    printf("------------------------------------------------------------------------\n");
+    printf("  #\tAccel\t\t\tC0\tC1\tC2\tC3\tTotal\n");
+    printf("------------------------------------------------------------------------\n");
+    for (size_t i = 0; i < epoch_utilization.size(); i++) {
+        printf("  %lu", i);
+        for (physical_accel_t &accel : accel_list) {
+            printf("\t%s\t", accel.get_name());
+            float total_util = 0.0;
+            for (int j = 0; j < MAX_CONTEXTS; j++) {
+                total_util += epoch_utilization[i][&accel][j];
+                printf("%0.2f%%\t", epoch_utilization[i][&accel][j]*100);
+            }
+            printf("%0.2f%%\n", total_util*100);
+        }
+    }
+    epoch_utilization.clear();
+}
+   

@@ -13,6 +13,9 @@ const unsigned do_shift = DO_SHIFT;
 // Mutex variable for thread synchronization
 std::mutex worker_mutex;
 
+// Tracking iterations per second across epochs
+std::array<std::array<float, NUM_ITERATIONS>, NUM_THREADS> ips_report;
+
 void audio_fft_pp_worker(unsigned worker_id) {
     LOW_DEBUG(printf("[APP%d] Starting worker %d!\n", worker_id, worker_id);)
 
@@ -79,16 +82,14 @@ void audio_fft_pp_worker(unsigned worker_id) {
     // --- At this point you have a virtual compute resource in hpthread th
     // capable of performing FFT and invoked through shared memory synchronization.
 
-    const unsigned iterations = 20000;
-
-    unsigned inputs_remaining = iterations;
-    unsigned outputs_remaining = iterations;
+    unsigned inputs_remaining = NUM_ITERATIONS;
+    unsigned outputs_remaining = NUM_ITERATIONS;
 
     uint64_t start_time = get_counter();
 
     // Note: this app does not write inputs/read outputs to lighten CPU load
     while (inputs_remaining != 0 || outputs_remaining != 0) {
-        if (inputs_remaining) {
+        if (inputs_remaining != 0) {
             if (input_full->load() == 0) {
                 // Inform the accelerator to start.
                 input_full->store(1);
@@ -97,19 +98,20 @@ void audio_fft_pp_worker(unsigned worker_id) {
                 sched_yield();
             }
         }
-        if (outputs_remaining) {
+        if (outputs_remaining != 0) {
             if (output_full->load() == 1) {
                 // Reset for next iteration.
                 output_full->store(0);
                 outputs_remaining--;
-                unsigned iterations_done = iterations-outputs_remaining;
+                unsigned iterations_done = NUM_ITERATIONS-outputs_remaining;
                 HIGH_DEBUG(printf("[APP%d] Finshed iteration %d!\n", worker_id, iterations_done);)
                 if (iterations_done % 1000 == 0) {
                     double ips = (double) pow(10, 9)/((get_counter() - start_time)/1000*12.8);
                     LOW_DEBUG(printf("[APP%d] %d; IPS=%0.2f\n", worker_id, iterations_done, ips);)
+                    ips_report[worker_id][(iterations_done/1000)-1] = ips;
                     start_time = get_counter();
                 }
-                if (iterations_done == iterations / 2) {
+                if (iterations_done == NUM_ITERATIONS / 2) {
                     th->attr_setpriority(4-(worker_id%4));
                     printf("[APP%d] HALFWAY!\n", worker_id);
                 }
@@ -143,6 +145,21 @@ int main(int argc, char **argv) {
     }
 
     hpthread_t::report();
+    
+    // Print out the iterations per second report
+    printf("-------------------------------------------------------------------\n");
+    printf("  #\t");
+    for (int i = 0; i < NUM_THREADS; i++) {
+        printf("%d\t", i);
+    }
+    printf("\n-------------------------------------------------------------------\n");
+    for (int j = 0; j < NUM_ITERATIONS/1000; j++) {
+        printf("  %d\t", j);
+        for (int i = 0; i < NUM_THREADS; i++) {
+            printf("%0.2f\t", ips_report[i][j]);
+        }
+        printf("\n");
+    }
 
     return 0;
 }

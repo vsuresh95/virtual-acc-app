@@ -25,6 +25,8 @@ const float ERR_TH = 0.05;
 
 #define NUM_THREADS 8
 
+#define NUM_ITERATIONS 20000
+
 #ifndef LOGN_SAMPLES
 #define LOGN_SAMPLES 10
 #endif

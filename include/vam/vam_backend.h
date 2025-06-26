@@ -31,6 +31,9 @@ public:
     // List of CPU pthreads that we can launch a SW kernel from
     std::vector<pthread_t> cpu_thread_list;
 
+    // Tracking utilization across epochs
+    std::vector<std::unordered_map<physical_accel_t *, std::array<float, MAX_CONTEXTS>>> epoch_utilization;
+
     ////////////////////////////////////
     // Member functions
 
@@ -60,6 +63,9 @@ public:
 
     // Checks whether the load is balanced across all acclerators
     bool check_load_balance();
+
+    // Print out the utilization metrics for the previous epochs in a pretty format
+    void print_report();
 
     // Main run method
     void run_backend();
