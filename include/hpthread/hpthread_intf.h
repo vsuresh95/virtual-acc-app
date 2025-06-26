@@ -5,14 +5,16 @@
 
 ////////////////////////////////////
 // State enumeration for hpthread request interface
-enum class vam_state_t { 
+enum class vam_state_t {
     RESET = 0,
     WAKEUP = 1,
     IDLE = 2,
     BUSY = 3,
     CREATE = 4,
     JOIN = 5,
-    DONE = 6
+    SETPRIO = 6,
+    DONE = 7,
+    REPORT = 8
 };
 
 ////////////////////////////////////

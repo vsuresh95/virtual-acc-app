@@ -6,9 +6,8 @@
 #include <vam_physical_accel.h>
 #include <vam_accel_def.h>
 
-#define VAM_SLEEP_MIN 1
-#define VAM_SLEEP_TRIG_LB 2
-#define VAM_SLEEP_MAX 10
+#define VAM_SLEEP_MIN   78125000 // ~1 seconds
+#define VAM_SLEEP_MAX   781250000 // ~10 seconds
 
 // Approximate scaling factor for total scheduling period of AVU
 #define NUM_SCHED_INTERVALS 20
@@ -47,15 +46,18 @@ public:
     // Similar as accelerator counterpart; this function launches a pthread.
     void configure_cpu(hpthread_t *th, physical_accel_t *accel);
 
-    // Relase the accelerator allocated for the hpthread
+    // Release the accelerator allocated to the hpthread
     bool release_accel(hpthread_t *th);
+
+    // Set a new priority for the accelerator allocated to the hpthread
+    bool setprio_accel(hpthread_t *th);
 
     // Update utilization metrics for all accelerators
     void check_utilization();
 
     // Runs the load balancing algorithm across all accelerators
     void load_balance();
-    
+
     // Checks whether the load is balanced across all acclerators
     bool check_load_balance();
 

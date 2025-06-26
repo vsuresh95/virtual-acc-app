@@ -26,6 +26,7 @@ typedef struct {
 	int init_ioctl; // IOCTL access code for initialization
 	int add_ctxt_ioctl; // IOCTL access code for adding context
 	int del_ctxt_ioctl; // IOCTL access code for deleting context
+	int setprio_ioctl; // IOCTL access code for changing priority
     int fd; // File descriptor of the device, when open
 
     ////////////////////////////////////
@@ -51,7 +52,7 @@ typedef struct {
         printf("\t- context_load = ");
         for (unsigned &l : context_load)
             printf("%d ", l);
-        printf("\n");        
+        printf("\n");
         printf("\t- total_load = %d\n", get_total_load());
     }
 

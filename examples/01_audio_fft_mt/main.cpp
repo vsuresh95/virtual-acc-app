@@ -24,12 +24,12 @@ int validate_buffer(token_t *mem, native_t *gold)
         native_t val = fixed32_to_float(mem[j], FX_IL);
 
         if ((fabs(gold[j] - val) / fabs(gold[j])) > ERR_TH) {
-            if (errors < 2) { DEBUG(printf("\tGOLD[%u] = %f vs %f = out[%u]\n", j, gold[j], val, j);) }
+            if (errors < 2) { HIGH_DEBUG(printf("\tGOLD[%u] = %f vs %f = out[%u]\n", j, gold[j], val, j);) }
             errors++;
         }
     }
 
-    DEBUG(printf("\tRelative error > %.02f for %d values out of %d\n", ERR_TH, errors,
+    HIGH_DEBUG(printf("\tRelative error > %.02f for %d values out of %d\n", ERR_TH, errors,
            2 * num_samples);)
 
     return errors;
@@ -38,7 +38,7 @@ int validate_buffer(token_t *mem, native_t *gold)
 // Initialize input and calculate golden output
 // -- Reused from ESP master FFT2 test
 void init_buffer(token_t *mem, native_t *gold)
-{   
+{
     const float LO = -2.0;
     const float HI = 2.0;
     const unsigned num_samples = (1 << logn_samples);
@@ -80,8 +80,8 @@ void audio_fft_mt_worker(unsigned worker_id) {
     token_t *mem = (token_t *) esp_alloc(mem_size);
     worker_mutex.unlock();
 
-    DEBUG(printf("[APP%d] Memory allocated for size %d\n", worker_id, mem_size));
-    
+    HIGH_DEBUG(printf("[APP%d] Memory allocated for size %d\n", worker_id, mem_size));
+
     // Reference output for comparison
     native_t *gold = new float[out_len];
 
@@ -114,15 +114,15 @@ void audio_fft_mt_worker(unsigned worker_id) {
     sprintf(name, "AUDIO_FFT%d", worker_id);
     th->attr_setname(name);
     th->attr_setprimitive(hpthread_prim_t::AUDIO_FFT);
-    
-    DEBUG(printf("[APP%d] Before hpthread create request...\n", worker_id));
+
+    HIGH_DEBUG(printf("[APP%d] Before hpthread create request...\n", worker_id));
 
     // Create a hpthread
     if (th->create()) {
         perror("error in hpthread_create!");
         exit(1);
     }
-    
+
     // --- At this point you have a virtual compute resource in hpthread th
     // capable of performing FFT and invoked through shared memory synchronization.
 
@@ -130,7 +130,7 @@ void audio_fft_mt_worker(unsigned worker_id) {
     unsigned errors = 0;
 
     for (unsigned i = 0; i < iterations; i++) {
-        DEBUG(printf("[APP%d] Starting iteration %d!\n", worker_id, i);)
+        HIGH_DEBUG(printf("[APP%d] Starting iteration %d!\n", worker_id, i);)
 
 		// Accelerator is implicitly ready because computation is chained
         init_buffer(&mem[in_offset], gold);

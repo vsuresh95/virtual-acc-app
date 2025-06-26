@@ -24,8 +24,11 @@ typedef struct {
     // Additional operational arguments for this routine
     hpthread_args *args;
 
-    // Used for static and dynamic load tracking within VAM 
+    // Used for static and dynamic load tracking within VAM
     unsigned assigned_load, active_load;
+
+    // Used for static and dynamic load tracking within VAM
+    bool active;
 
     ////////////////////////////////////
     // Member functions serving as user APIs
@@ -54,13 +57,16 @@ typedef struct {
     // API for setting the priority for this hpthread
     void attr_setpriority(unsigned p);
 
+    // API for reporting the utilization of current reporting period
+    static void report();
+
     ////////////////////////////////////
     // Helper functions for mostly internal use
 
-    // get name of thread    
+    // get name of thread
     char *get_name() { return attr->name; }
 
-    // get primitive of thread    
+    // get primitive of thread
     hpthread_prim_t get_prim() { return attr->prim; }
 } hpthread_t;
 

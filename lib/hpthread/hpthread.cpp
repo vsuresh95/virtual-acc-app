@@ -16,7 +16,7 @@ int hpthread_t::create() {
 	// Assign a thread ID
 	this->id = thread_count++;
 
-	DEBUG(printf("[HPTHREAD] Requested hpthread %d for %s.\n", this->id, attr->name);)
+	HIGH_DEBUG(printf("[HPTHREAD] Requested hpthread %s (ID:%d).\n", attr->name, this->id);)
 
     // If VAM has not yet been started (i.e., interface is in vam_state_t::RESET, start one thread now)
 	if (intf.swap(vam_state_t::RESET, vam_state_t::WAKEUP)) {
@@ -37,14 +37,17 @@ int hpthread_t::create() {
 	// Block until the request is complete (interface state is DONE), then swap to IDLE
 	while (!intf.swap(vam_state_t::DONE, vam_state_t::IDLE)) sched_yield();
 
-	DEBUG(printf("[HPTHREAD] Received hpthread for %s.\n", attr->name);)
+	// Set hpthread as active
+	active = true;
+
+	HIGH_DEBUG(printf("[HPTHREAD] Received hpthread %s.\n", attr->name);)
 
 	return 0;
 }
 
 // API for user to join a hpthread
 int hpthread_t::join() {
-	DEBUG(printf("[HPTHREAD] Joining hpthread for %s.\n", attr->name);)
+	HIGH_DEBUG(printf("[HPTHREAD] Joining hpthread %s.\n", attr->name);)
 
 	// If the interface is vam_state_t::RESET, return an error
     if (intf.test() == vam_state_t::RESET) return 1;
@@ -61,7 +64,10 @@ int hpthread_t::join() {
 	// Block until the request is complete (interface state is DONE), then swap to IDLE
 	while (!intf.swap(vam_state_t::DONE, vam_state_t::IDLE)) sched_yield();
 
-	DEBUG(printf("[HPTHREAD] Join hpthread complete for %s.\n", attr->name);)
+	// Set hpthread as inactive
+	active = false;
+
+	HIGH_DEBUG(printf("[HPTHREAD] Join hpthread complete %s.\n", attr->name);)
 
 	return 0;
 }
@@ -83,8 +89,9 @@ void hpthread_t::attr_init() {
 	std::strcpy(attr->name, "No name");
 	attr->prim = hpthread_prim_t::NONE;
 	attr->nprio = 1; // Lowest priority
-	attr->assigned_load = 0;
-	attr->active_load = 0;
+	assigned_load = 0;
+	active_load = 0;
+	active = false;
 }
 
 // API for setting the primitive computation for this hpthread
@@ -100,6 +107,24 @@ void hpthread_t::attr_setprimitive(hpthread_prim_t p) {
 // API for setting the priority for this hpthread
 void hpthread_t::attr_setpriority(unsigned p) {
 	attr->nprio = p;
+	// If the thread is active, you need to inform VAM so the hardware can be configured
+	if (active) {	
+		HIGH_DEBUG(printf("[HPTHREAD] Requested change of priority to %d for hpthread %s.\n", p, attr->name);)
+
+		// Check if the interface is IDLE. If yes, swap to CREATE. If not, block until it is
+		while (!intf.swap(vam_state_t::IDLE, vam_state_t::BUSY)) sched_yield();
+
+		// Write the hpthread request to the interface
+		intf.th = this;
+
+		// Set the interface state to CREATE
+		intf.set(vam_state_t::SETPRIO);
+
+		// Block until the request is complete (interface state is DONE), then swap to IDLE
+		while (!intf.swap(vam_state_t::DONE, vam_state_t::IDLE)) sched_yield();
+
+		HIGH_DEBUG(printf("[HPTHREAD] Change of priority to %d complete for hpthread %s.\n", p, attr->name);)	
+	}
 }
 
 // Helper function for printing hpthread primitive
@@ -112,4 +137,20 @@ const char *get_prim_name(hpthread_prim_t p) {
         case hpthread_prim_t::AUDIO_FFI: return (const char *) "AUDIO_FFI";
         default: return (const char *) "Unknown primitive";
     }
+}
+
+// API for reporting the utilization of current reporting period
+void hpthread_t::report() {
+	HIGH_DEBUG(printf("[HPTHREAD] Requested report from VAM.\n");)
+
+	// Check if the interface is IDLE. If yes, swap to CREATE. If not, block until it is
+	while (!intf.swap(vam_state_t::IDLE, vam_state_t::BUSY)) sched_yield();
+
+	// Set the interface state to CREATE
+	intf.set(vam_state_t::REPORT);
+
+	// Block until the request is complete (interface state is DONE), then swap to IDLE
+	while (!intf.swap(vam_state_t::DONE, vam_state_t::IDLE)) sched_yield();
+
+	HIGH_DEBUG(printf("[HPTHREAD] Report complete.\n");)	
 }

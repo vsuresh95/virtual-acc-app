@@ -24,11 +24,13 @@ LIB_FILES+=$(LIB_DIR)/vam/vam_backend.cpp
 ACCEL_FILES+=$(ACCEL_DIR)/audio_fft/audio_fft_def.cpp
 CXXFLAGS+=-I$(ACCEL_DIR)/audio_fft
 
-LIB_OBJ=$(patsubst $(LIB_DIR)/%.cpp,$(BUILD_DIR)/%.lib.o,$(LIB_FILES))
-DBG_LIB_OBJ=$(patsubst $(LIB_DIR)/%.cpp,$(BUILD_DIR)/%.dbg.lib.o,$(LIB_FILES))
+OPT_LIB_OBJ=$(patsubst $(LIB_DIR)/%.cpp,$(BUILD_DIR)/%.lib.opt.o,$(LIB_FILES))
+LOW_DBG_LIB_OBJ=$(patsubst $(LIB_DIR)/%.cpp,$(BUILD_DIR)/%.lib.low.o,$(LIB_FILES))
+HIGH_DBG_LIB_OBJ=$(patsubst $(LIB_DIR)/%.cpp,$(BUILD_DIR)/%.lib.high.o,$(LIB_FILES))
 
-ACCEL_OBJ=$(patsubst $(ACCEL_DIR)/%.cpp,$(BUILD_DIR)/%.accel.o,$(ACCEL_FILES))
-DBG_ACCEL_OBJ=$(patsubst $(ACCEL_DIR)/%.cpp,$(BUILD_DIR)/%.dbg.accel.o,$(ACCEL_FILES))
+OPT_ACCEL_OBJ=$(patsubst $(ACCEL_DIR)/%.cpp,$(BUILD_DIR)/%.accel.opt.o,$(ACCEL_FILES))
+LOW_DBG_ACCEL_OBJ=$(patsubst $(ACCEL_DIR)/%.cpp,$(BUILD_DIR)/%.accel.low.o,$(ACCEL_FILES))
+HIGH_DBG_ACCEL_OBJ=$(patsubst $(ACCEL_DIR)/%.cpp,$(BUILD_DIR)/%.accel.high.o,$(ACCEL_FILES))
 
 CROSS_COMPILE ?= riscv64-unknown-linux-gnu-
 
@@ -68,13 +70,13 @@ APP_NAME ?= APP_NAME
 
 .PHONY: clean
 
-all: build $(BUILD_DIR)/$(APP_NAME)/opt.exe $(BUILD_DIR)/$(APP_NAME)/dbg.exe
+all: build $(BUILD_DIR)/$(APP_NAME)/opt.exe $(BUILD_DIR)/$(APP_NAME)/low.dbg.exe $(BUILD_DIR)/$(APP_NAME)/high.dbg.exe
 	cp -rf $(BUILD_DIR)/$(APP_NAME) ${ESP_EXE_DIR}
 	@echo ""
 	@echo "===================================================="
 	@echo "  SUCCESS! Executables have been copied to: ";
-	@echo "  OPT:${ESP_EXE_DIR}/$(APP_NAME)/opt.exe"
-	@echo "  DBG:${ESP_EXE_DIR}/$(APP_NAME)/dbg.exe"
+	@echo "  OPT:${ESP_EXE_DIR}/$(APP_NAME)/low.opt.exe"
+	@echo "  DBG:${ESP_EXE_DIR}/$(APP_NAME)/high.dbg.exe"
 	@echo "===================================================="
 	@echo ""
 
@@ -85,23 +87,32 @@ build:
 	@mkdir -p $(BUILD_DIR)/$(APP_NAME)
 	echo $(ACCEL_OBJ)
 
-$(BUILD_DIR)/$(APP_NAME)/opt.exe: $(HPP_FILES) $(LIB_OBJ) $(ACCEL_OBJ) $(APP_OBJ) esp-libs
+$(BUILD_DIR)/$(APP_NAME)/opt.exe: $(HPP_FILES) $(OPT_LIB_OBJ) $(OPT_ACCEL_OBJ) $(OPT_APP_OBJ) esp-libs
 	$(LD) $(CXXFLAGS) $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)
 
-$(BUILD_DIR)/$(APP_NAME)/dbg.exe: $(HPP_FILES) $(DBG_LIB_OBJ) $(DBG_ACCEL_OBJ) $(DBG_APP_OBJ) esp-libs
-	$(LD) $(CXXFLAGS) -DVERBOSE $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)
+$(BUILD_DIR)/$(APP_NAME)/low.dbg.exe: $(HPP_FILES) $(LOW_DBG_LIB_OBJ) $(LOW_DBG_ACCEL_OBJ) $(LOW_DBG_APP_OBJ) esp-libs
+	$(LD) $(CXXFLAGS) -DLOW_VERBOSE $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)
 
-$(BUILD_DIR)/%.lib.o: $(LIB_DIR)/%.cpp $(HPP_FILES)
+$(BUILD_DIR)/$(APP_NAME)/high.dbg.exe: $(HPP_FILES) $(HIGH_DBG_LIB_OBJ) $(HIGH_DBG_ACCEL_OBJ) $(HIGH_DBG_APP_OBJ) esp-libs
+	$(LD) $(CXXFLAGS) -DHIGH_VERBOSE $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)
+
+$(BUILD_DIR)/%.lib.opt.o: $(LIB_DIR)/%.cpp $(HPP_FILES)
 	$(CXX) $(CXXFLAGS) $< -c -o $@
 
-$(BUILD_DIR)/%.dbg.lib.o: $(LIB_DIR)/%.cpp $(HPP_FILES)
-	$(CXX) $(CXXFLAGS) -DVERBOSE $< -c -o $@
+$(BUILD_DIR)/%.lib.low.o: $(LIB_DIR)/%.cpp $(HPP_FILES)
+	$(CXX) $(CXXFLAGS) -DLOW_VERBOSE $< -c -o $@
 
-$(BUILD_DIR)/%.accel.o: $(ACCEL_DIR)/%.cpp $(HPP_FILES)
+$(BUILD_DIR)/%.lib.high.o: $(LIB_DIR)/%.cpp $(HPP_FILES)
+	$(CXX) $(CXXFLAGS) -DHIGH_VERBOSE $< -c -o $@
+
+$(BUILD_DIR)/%.accel.opt.o: $(ACCEL_DIR)/%.cpp $(HPP_FILES)
 	$(CXX) $(CXXFLAGS) $< -c -o $@
 
-$(BUILD_DIR)/%.dbg.accel.o: $(ACCEL_DIR)/%.cpp $(HPP_FILES)
-	$(CXX) $(CXXFLAGS) -DVERBOSE $< -c -o $@
+$(BUILD_DIR)/%.accel.low.o: $(ACCEL_DIR)/%.cpp $(HPP_FILES)
+	$(CXX) $(CXXFLAGS) -DLOW_VERBOSE $< -c -o $@
+
+$(BUILD_DIR)/%.accel.high.o: $(ACCEL_DIR)/%.cpp $(HPP_FILES)
+	$(CXX) $(CXXFLAGS) -DHIGH_VERBOSE $< -c -o $@
 
 clean: esp-build-distclean
 	rm -rf $(BUILD_DIR)

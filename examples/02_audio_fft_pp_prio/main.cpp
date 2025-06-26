@@ -14,11 +14,7 @@ const unsigned do_shift = DO_SHIFT;
 std::mutex worker_mutex;
 
 void audio_fft_pp_worker(unsigned worker_id) {
-    srand((unsigned int) time(NULL) * (worker_id + 1));
-    unsigned sleep_time = rand() % NUM_THREADS;
-    sleep(sleep_time);
-
-    printf("[APP%d] Starting worker %d!\n", worker_id, worker_id);
+    LOW_DEBUG(printf("[APP%d] Starting worker %d!\n", worker_id, worker_id);)
 
     // Compute memory layout parameters
     unsigned num_samples = 1 << logn_samples;
@@ -36,8 +32,8 @@ void audio_fft_pp_worker(unsigned worker_id) {
     token_t *mem = (token_t *) esp_alloc(mem_size);
     worker_mutex.unlock();
 
-    DEBUG(printf("[APP%d] Memory allocated for size %d\n", worker_id, mem_size));
-    
+    HIGH_DEBUG(printf("[APP%d] Memory allocated for size %d\n", worker_id, mem_size));
+
     // Reference output for comparison
     native_t *gold = new float[out_len];
 
@@ -71,23 +67,24 @@ void audio_fft_pp_worker(unsigned worker_id) {
     th->attr_setname(name);
     th->attr_setprimitive(hpthread_prim_t::AUDIO_FFT);
     th->attr_setpriority((worker_id%4)+1);
-    
-    DEBUG(printf("[APP%d] Before hpthread create request...\n", worker_id));
+
+    HIGH_DEBUG(printf("[APP%d] Before hpthread create request...\n", worker_id));
 
     // Create a hpthread
     if (th->create()) {
         perror("error in hpthread_create!");
         exit(1);
     }
-    
+
     // --- At this point you have a virtual compute resource in hpthread th
     // capable of performing FFT and invoked through shared memory synchronization.
 
-    unsigned iter_factor = (rand() % 2) + 1;
-    const unsigned iterations = 10000 * iter_factor;
+    const unsigned iterations = 20000;
 
     unsigned inputs_remaining = iterations;
     unsigned outputs_remaining = iterations;
+
+    uint64_t start_time = get_counter();
 
     // Note: this app does not write inputs/read outputs to lighten CPU load
     while (inputs_remaining != 0 || outputs_remaining != 0) {
@@ -99,23 +96,30 @@ void audio_fft_pp_worker(unsigned worker_id) {
             } else {
                 sched_yield();
             }
-        } 
+        }
         if (outputs_remaining) {
             if (output_full->load() == 1) {
                 // Reset for next iteration.
                 output_full->store(0);
-                DEBUG(printf("[APP%d] Starting iteration %d!\n", worker_id, iterations-outputs_remaining);)
-                if (outputs_remaining % 1000 == 0) {
-                    printf("[APP%d] Iter %d done!\n", worker_id, iterations-outputs_remaining);
-                }
                 outputs_remaining--;
+                unsigned iterations_done = iterations-outputs_remaining;
+                HIGH_DEBUG(printf("[APP%d] Finshed iteration %d!\n", worker_id, iterations_done);)
+                if (iterations_done % 1000 == 0) {
+                    double ips = (double) pow(10, 9)/((get_counter() - start_time)/1000*12.8);
+                    LOW_DEBUG(printf("[APP%d] %d; IPS=%0.2f\n", worker_id, iterations_done, ips);)
+                    start_time = get_counter();
+                }
+                if (iterations_done == iterations / 2) {
+                    th->attr_setpriority(4-(worker_id%4));
+                    printf("[APP%d] HALFWAY!\n", worker_id);
+                }
             } else {
                 sched_yield();
             }
         }
     }
 
-    printf("[APP%d] PASS: no errors!\n", worker_id);
+    printf("[APP%d] COMPLETE!\n", worker_id);
 
     th->join();
 
@@ -124,7 +128,7 @@ void audio_fft_pp_worker(unsigned worker_id) {
 }
 
 int main(int argc, char **argv) {
-    printf("[APP] Starting app: AUDIO FFT pipelined with priority!\n");
+    printf("[APP] Starting app: AUDIO FFT pipelined with priority, with %d threads!\n", NUM_THREADS);
 
     std::thread th[NUM_THREADS];
 
@@ -137,6 +141,8 @@ int main(int argc, char **argv) {
     for (int i = 0; i < NUM_THREADS; i++) {
         th[i].join();
     }
+
+    hpthread_t::report();
 
     return 0;
 }

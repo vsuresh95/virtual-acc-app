@@ -7,7 +7,7 @@
 // hpthread types
 // These are part of the hpthread struct (for now)
 
-// Attributes are used to convey information useful to VAM for 
+// Attributes are used to convey information useful to VAM for
 // allocation and scheduling.
 struct hpthread_attr_t {
     // NAME: optionally for debug purposes within VAM
@@ -15,7 +15,7 @@ struct hpthread_attr_t {
 
     // PRIMITIVE: defined in hpthread_primitives.hpp
     hpthread_prim_t prim;
-    
+
     // PRIORITY: RANGE 1 (HIGHEST) - 10 (LOWEST)
     unsigned nprio;
 } ;

@@ -4,11 +4,11 @@
 // Wrapper for fft2_comp to be mapped for the hpthread
 void* sw_audio_fft(void *a) {
     printf("[SW FUNC] Started software thread for FFT!\n");
-    
+
     audio_fft_hpthread_args *args = (audio_fft_hpthread_args *) a;
 
     // Temporary buffer for floating point data
-    const unsigned num_samples = (1 << args->logn_samples);    
+    const unsigned num_samples = (1 << args->logn_samples);
     native_t *gold = new float[2 * num_samples];
 
     token_t *mem = (token_t *) args->mem;

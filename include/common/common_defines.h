@@ -29,10 +29,15 @@
 //  Number of concurrent contexts possible in a single accelerator
 #define MAX_CONTEXTS 4
 
-#ifdef VERBOSE
-#define DEBUG(x) x
+#if defined(HIGH_VERBOSE)
+#define HIGH_DEBUG(x) x
+#define LOW_DEBUG(x) x
+#elif defined(LOW_VERBOSE)
+#define HIGH_DEBUG(x)
+#define LOW_DEBUG(x) x
 #else
-#define DEBUG(x)
+#define HIGH_DEBUG(x)
+#define LOW_DEBUG(x)
 #endif
 
 #ifdef __cplusplus

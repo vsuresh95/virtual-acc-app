@@ -20,12 +20,12 @@ int validate_buffer(token_t *mem, native_t *gold)
         native_t val = fixed32_to_float(mem[j], FX_IL);
 
         if ((fabs(gold[j] - val) / fabs(gold[j])) > ERR_TH) {
-            if (errors < 2) { DEBUG(printf("\tGOLD[%u] = %f vs %f = out[%u]\n", j, gold[j], val, j);) }
+            if (errors < 2) { HIGH_DEBUG(printf("\tGOLD[%u] = %f vs %f = out[%u]\n", j, gold[j], val, j);) }
             errors++;
         }
     }
 
-    DEBUG(printf("\tRelative error > %.02f for %d values out of %d\n", ERR_TH, errors,
+    HIGH_DEBUG(printf("\tRelative error > %.02f for %d values out of %d\n", ERR_TH, errors,
            2 * num_samples);)
 
     return errors;
@@ -34,7 +34,7 @@ int validate_buffer(token_t *mem, native_t *gold)
 // Initialize input and calculate golden output
 // -- Reused from ESP master FFT2 test
 void init_buffer(token_t *mem, native_t *gold)
-{   
+{
     const float LO = -2.0;
     const float HI = 2.0;
     const unsigned num_samples = (1 << logn_samples);
@@ -74,8 +74,8 @@ int main(int argc, char **argv) {
     // within this memory pool -- therefore, it is necessary to allocate extra.
     token_t *mem = (token_t *) esp_alloc(mem_size);
 
-    DEBUG(printf("[APP] Memory allocated for size %d\n", mem_size));
-    
+    HIGH_DEBUG(printf("[APP] Memory allocated for size %d\n", mem_size));
+
     // Reference output for comparison
     native_t *gold = new float[out_len];
 
@@ -106,15 +106,15 @@ int main(int argc, char **argv) {
     th->attr_init();
     th->attr_setname("AUDIO_FFT");
     th->attr_setprimitive(hpthread_prim_t::AUDIO_FFT);
-    
-    DEBUG(printf("[APP] Before hpthread create request...\n"));
+
+    HIGH_DEBUG(printf("[APP] Before hpthread create request...\n"));
 
     // Create a hpthread
     if (th->create()) {
         perror("error in hpthread_create!");
         exit(1);
     }
-    
+
     // --- At this point you have a virtual compute resource in hpthread th
     // capable of performing FFT and invoked through shared memory synchronization.
 
@@ -122,7 +122,7 @@ int main(int argc, char **argv) {
     unsigned errors = 0;
 
     for (unsigned i = 0; i < iterations; i++) {
-        DEBUG(printf("[APP] Starting iteration %d!\n", i);)
+        HIGH_DEBUG(printf("[APP] Starting iteration %d!\n", i);)
 
 		// Accelerator is implicitly ready because computation is chained
         init_buffer(&mem[in_offset], gold);

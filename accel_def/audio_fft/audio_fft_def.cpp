@@ -22,6 +22,7 @@ void audio_fft_probe(physical_accel_t *accel) {
     accel->init_ioctl = AUDIO_FFT_STRATUS_INIT_IOC_ACCESS;
     accel->add_ctxt_ioctl = AUDIO_FFT_STRATUS_ADD_IOC_ACCESS;
     accel->del_ctxt_ioctl = AUDIO_FFT_STRATUS_DEL_IOC_ACCESS;
+    accel->setprio_ioctl = AUDIO_FFT_STRATUS_PRIO_IOC_ACCESS;
 
     // Create a new access struct and track within the device struct
     struct audio_fft_stratus_access *audio_fft_desc = new struct audio_fft_stratus_access;

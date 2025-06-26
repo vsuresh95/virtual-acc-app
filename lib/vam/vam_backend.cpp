@@ -22,12 +22,13 @@ void wakeup_vam() {
 }
 
 void vam_backend::run_backend() {
-	DEBUG(printf("[VAM BE] Hello from VAM BACKEND!\n");)
+	HIGH_DEBUG(printf("[VAM BE] Hello from VAM BACKEND!\n");)
 
     // populate the list of physical accelerators in the system
     probe_accel();
 
-    unsigned vam_sleep = VAM_SLEEP_MIN;
+    uint64_t start_time = get_counter();
+    uint64_t vam_sleep = VAM_SLEEP_MIN;
 
     // Run loop will run forever
     while (1) {
@@ -36,38 +37,38 @@ void vam_backend::run_backend() {
 
         switch(state) {
             case vam_state_t::IDLE: {
-                // First, update the active utilization of each accelerator
-                check_utilization();
-                
                 // Examine the load across all accelerators in the system
-                // -- triggered after a short delay from the last create/join
-                if (vam_sleep > VAM_SLEEP_TRIG_LB)
+                if (get_counter() - start_time > vam_sleep) {
                     if(check_load_balance()) {
-                        printf("[VAM BE] Trigerring load balancer...\n");
+                        LOW_DEBUG(printf("[VAM BE] Trigerring load balancer...\n");)
 
                         // Start the load balancing algorithm
                         load_balance();
+                        start_time = get_counter();
                     }
-                
-                sleep(std::min((const int) vam_sleep++, VAM_SLEEP_MAX));
+                    start_time = get_counter();
+                    if (vam_sleep < VAM_SLEEP_MAX) vam_sleep += VAM_SLEEP_MIN;
+                }
+                sched_yield();
                 break;
             }
             case vam_state_t::CREATE: {
-                DEBUG(printf("\n[VAM BE] Received a request for creating hpthread %s\n", intf.th->get_name());)
+                HIGH_DEBUG(printf("\n[VAM BE] Received a request for creating hpthread %s\n", intf.th->get_name());)
 
                 search_accel(intf.th);
 
                 // Set the interface state to DONE
                 intf.set(vam_state_t::DONE);
 
-                DEBUG(printf("[VAM BE] Completed the processing of request.\n");)
+                HIGH_DEBUG(printf("[VAM BE] Completed the processing of request.\n");)
 
-                // Reset sleep counter after servicing a request
+                // Reset trigger delay after servicing a request
+                start_time = get_counter();
                 vam_sleep = VAM_SLEEP_MIN;
                 break;
             }
             case vam_state_t::JOIN: {
-                DEBUG(printf("\n[VAM BE] Received a request for joining hpthread %s\n", intf.th->get_name());)
+                HIGH_DEBUG(printf("\n[VAM BE] Received a request for joining hpthread %s\n", intf.th->get_name());)
 
                 if (!release_accel(intf.th)) {
                     perror("hpthread unmapped earlier!");
@@ -77,13 +78,32 @@ void vam_backend::run_backend() {
                 // Set the interface state to DONE
                 intf.set(vam_state_t::DONE);
 
-                DEBUG(printf("[VAM BE] Completed the processing of request.\n");)
+                HIGH_DEBUG(printf("[VAM BE] Completed the processing of request.\n");)
 
-                // Reset sleep counter after servicing a request
+                // Reset trigger delay after servicing a request
+                start_time = get_counter();
                 vam_sleep = VAM_SLEEP_MIN;
                 break;
             }
-            default: 
+            case vam_state_t::SETPRIO: {
+                HIGH_DEBUG(printf("\n[VAM BE] Received a request for changing priority hpthread %s to %d\n", intf.th->get_name(), intf.th->attr->nprio);)
+
+                if (!setprio_accel(intf.th)) {
+                    perror("hpthread unmapped earlier!");
+                    exit(1);
+                }
+
+                // Set the interface state to DONE
+                intf.set(vam_state_t::DONE);
+
+                HIGH_DEBUG(printf("[VAM BE] Completed the processing of request.\n");)
+
+                // Reset trigger delay after servicing a request
+                start_time = get_counter();
+                vam_sleep = VAM_SLEEP_MIN;
+                break;
+            }
+            default:
                 break;
         }
     }
@@ -100,7 +120,7 @@ void vam_backend::probe_accel() {
     // Search for all stratus accelerators and fill into accel_list
     struct dirent *entry;
 
-    DEBUG(printf("[VAM BE] Performing device probe.\n");)
+    HIGH_DEBUG(printf("[VAM BE] Performing device probe.\n");)
 
     unsigned device_id = 0;
     while ((entry = readdir(dir)) != NULL) {
@@ -119,7 +139,7 @@ void vam_backend::probe_accel() {
             accel_temp.init_done = false;
 
             // Print out debug message
-            DEBUG(printf("[VAM BE] Discovered device %d: %s\n", device_id, accel_temp.devname);)
+            HIGH_DEBUG(printf("[VAM BE] Discovered device %d: %s\n", device_id, accel_temp.devname);)
 
             if (fnmatch("audio_fft*", entry->d_name, FNM_NOESCAPE) == 0) {
                 audio_fft_probe(&accel_temp);
@@ -145,7 +165,7 @@ void vam_backend::probe_accel() {
 }
 
 void vam_backend::search_accel(hpthread_t *th) {
-    DEBUG(printf("[VAM BE] Searching accelerator for hpthread %s\n", th->get_name());)
+    HIGH_DEBUG(printf("[VAM BE] Searching accelerator for hpthread %s\n", th->get_name());)
 
     // We will find a candidate accelerator that has the lowest assigned load.
     // If no accelerator candidates are found, we will consider the CPU as the only candidate.
@@ -157,7 +177,7 @@ void vam_backend::search_accel(hpthread_t *th) {
     check_utilization();
 
     for (physical_accel_t &accel : accel_list) {
-        DEBUG(
+        HIGH_DEBUG(
             printf("\n[VAM BE] Checking device %s.\n", accel.get_name());
             accel.dump();
         )
@@ -167,7 +187,7 @@ void vam_backend::search_accel(hpthread_t *th) {
             // Check if this accelerator's total load is less than the previous min
             if (accel.get_total_load() < candidate_accel.second) {
                 candidate_accel = std::make_pair(&accel, accel.get_total_load());
-                DEBUG(printf("[VAM BE] Device %s is a candidate!\n", accel.get_name());)
+                HIGH_DEBUG(printf("[VAM BE] Device %s is a candidate!\n", accel.get_name());)
             }
 
             // Found one accelerator!
@@ -185,7 +205,7 @@ void vam_backend::search_accel(hpthread_t *th) {
         candidate_accel = {cpu_thread, 0};
     }
 
-    DEBUG(printf("[VAM BE] Candidate for hpthread %s = %s!\n", th->get_name(), candidate_accel.first->get_name());)
+    HIGH_DEBUG(printf("[VAM BE] Candidate for hpthread %s = %s!\n", th->get_name(), candidate_accel.first->get_name());)
 
     // Identify the valid context to allocate
     unsigned cur_context = 0;
@@ -222,7 +242,7 @@ void vam_backend::configure_accel(hpthread_t *th, physical_accel_t *accel, unsig
     // Get the arguments for the hpthread
     hpthread_args *args = (hpthread_args *) th->args;
 
-    DEBUG(printf("[VAM BE] Configuring accel...\n");)
+    HIGH_DEBUG(printf("[VAM BE] Configuring accel...\n");)
 
     // ESP defined data type for the pointer to the memory pool for accelerators.
     enum contig_alloc_policy policy;
@@ -255,7 +275,7 @@ void vam_backend::configure_accel(hpthread_t *th, physical_accel_t *accel, unsig
     th->active_load = accel->context_load[context];
 
     if (accel->init_done) {
-        printf("[VAM BE] Adding to accel %s:%d for hpthread %s\n", accel->get_name(), context, th->get_name());
+        LOW_DEBUG(printf("[VAM BE] Adding to accel %s:%d for hpthread %s\n", accel->get_name(), context, th->get_name());)
 
         // The scheduling period for AVU is a multiple of the total load on the accelerator
         generic_esp_access->sched_period = NUM_SCHED_INTERVALS * accel->context_load[context];
@@ -265,7 +285,7 @@ void vam_backend::configure_accel(hpthread_t *th, physical_accel_t *accel, unsig
             exit(EXIT_FAILURE);
         }
     } else {
-        printf("[VAM BE] Initializing accel %s:0 for hpthread %s\n", accel->get_name(), th->get_name());
+        LOW_DEBUG(printf("[VAM BE] Initializing accel %s:0 for hpthread %s\n", accel->get_name(), th->get_name());)
 
         generic_esp_access->sched_period += NUM_SCHED_INTERVALS * accel->context_load[context];
 
@@ -283,7 +303,7 @@ void vam_backend::configure_accel(hpthread_t *th, physical_accel_t *accel, unsig
 }
 
 void vam_backend::configure_cpu(hpthread_t *th, physical_accel_t *accel) {
-    printf("[VAM BE] Configuring CPU for hpthread %s\n", th->get_name());
+    LOW_DEBUG(printf("[VAM BE] Configuring CPU for hpthread %s\n", th->get_name());)
 
     // Create a new CPU thread for the SW implementation of this node.
     pthread_t cpu_thread;
@@ -306,7 +326,7 @@ bool vam_backend::release_accel(hpthread_t *th) {
     physical_accel_t *accel = accel_mapping.first;
     unsigned context = accel_mapping.second;
 
-    printf("[VAM BE] Releasing accel %s:%d for hpthread %s\n", accel->get_name(), context, th->get_name());
+    LOW_DEBUG(printf("[VAM BE] Releasing accel %s:%d for hpthread %s\n", accel->get_name(), context, th->get_name());)
 
     // Configring all the device-independent fields in the esp desc
     esp_access *generic_esp_access = (esp_access *) accel->esp_access_desc;
@@ -331,11 +351,36 @@ bool vam_backend::release_accel(hpthread_t *th) {
     return true;
 }
 
+bool vam_backend::setprio_accel(hpthread_t *th) {
+    if (!virt_to_phy_mapping.count(th)) return false;
+
+    std::pair<physical_accel_t *, unsigned> &accel_mapping = virt_to_phy_mapping[th];
+
+    physical_accel_t *accel = accel_mapping.first;
+    unsigned context = accel_mapping.second;
+
+    LOW_DEBUG(printf("[VAM BE] Setting priority of accel %s:%d to %d for hpthread %s\n", accel->get_name(), context, th->attr->nprio, th->get_name());)
+
+    // Configring all the device-independent fields in the esp desc
+    esp_access *generic_esp_access = (esp_access *) accel->esp_access_desc;
+    {
+        generic_esp_access->context_id = context;
+        generic_esp_access->context_nprio = th->attr->nprio;
+    }
+
+    if (ioctl(accel->fd, accel->setprio_ioctl, accel->esp_access_desc)) {
+        perror("ioctl");
+        exit(EXIT_FAILURE);
+    }
+
+    return true;
+}
+
 void vam_backend::check_utilization() {
     for (physical_accel_t &accel : accel_list) {
         struct avu_mon_desc mon;
 
-        DEBUG(
+        HIGH_DEBUG(
             float total_util = 0.0;
             printf("[VAM BE] Util of %s: ", accel.get_name());
         )
@@ -358,31 +403,34 @@ void vam_backend::check_utilization() {
                 accel.context_active_cycles[i] = mon_extended[i];
                 accel.context_util[i] = util;
 
-                DEBUG(
+                HIGH_DEBUG(
                     hpthread_t *th = phy_to_virt_mapping[&accel][i];
                     total_util += accel.context_util[i];
                     printf("C%d(%d)=%0.2f%%, ", i, th->attr->nprio, accel.context_util[i] * 100);
                 )
             }
         }
-        DEBUG(printf("total=%0.2f%%, load=%d\n", total_util * 100, accel.get_total_load());)
+        HIGH_DEBUG(printf("total=%0.2f%%, load=%d\n", total_util * 100, accel.get_total_load());)
     }
 }
 
 bool vam_backend::check_load_balance() {
+    // First, update the active utilization of each accelerator
+    check_utilization();
+
     // Print out the total utilization
     for (physical_accel_t &accel : accel_list) {
         float total_util = 0.0;
-        printf("[VAM BE] Util of %s: ", accel.get_name());
+        LOW_DEBUG(printf("[VAM BE] Util of %s: ", accel.get_name());)
         for (int i = 0; i < MAX_CONTEXTS; i++) {
             if (accel.valid_contexts[i]) {
                 hpthread_t *th = phy_to_virt_mapping[&accel][i];
-                printf("C%d(%d)=%0.2f%%, ", i, th->attr->nprio, accel.context_util[i] * 100);
+                LOW_DEBUG(printf("C%d(%d)=%0.2f%%, ", i, th->attr->nprio, accel.context_util[i] * 100);)
                 total_util += accel.context_util[i];
                 th->active_load = accel.context_util[i] * accel.context_load[i];
             }
         }
-        printf("total=%0.2f%%, load = %d\n", total_util * 100, accel.get_total_load());
+        LOW_DEBUG(printf("total=%0.2f%%, load = %d\n", total_util * 100, accel.get_total_load());)
     }
 
     // Check whether there is load imbalance across accelerators
@@ -400,12 +448,12 @@ bool vam_backend::check_load_balance() {
         if (cur_load > max_load) max_load = cur_load;
         average_load += cur_load;
         count++;
-        DEBUG(printf("[VAM BE] Current load of %s = %d\n", accel.get_name(), cur_load);)
+        HIGH_DEBUG(printf("[VAM BE] Current load of %s = %d\n", accel.get_name(), cur_load);)
     }
-    
+
     average_load = average_load/count;
 
-    DEBUG(printf("[VAM BE] Max load = %d, min load = %d, avg load = %0.2f\n", max_load, min_load, average_load);)
+    HIGH_DEBUG(printf("[VAM BE] Max load = %d, min load = %d, avg load = %0.2f\n", max_load, min_load, average_load);)
 
     return (max_load - min_load > (unsigned) (imbalance_limit * average_load));
 }
@@ -431,15 +479,15 @@ void vam_backend::load_balance() {
     for (auto &prim_list : active_thread_list) {
         std::vector<hpthread_t *> &list = prim_list.second;
         hpthread_prim_t prim = prim_list.first;
-        DEBUG(printf("[VAM BE] Starting load balancer for %s...\n", get_prim_name(prim));)
+        HIGH_DEBUG(printf("[VAM BE] Starting load balancer for %s...\n", get_prim_name(prim));)
 
         // Sort the list in active_thread_list by active load
         std::sort(list.begin(), list.end(),
                 [](const hpthread_t *a, const hpthread_t *b) {
                     return a->active_load > b->active_load;
                 });
-        
-        DEBUG(
+
+        HIGH_DEBUG(
             printf("[VAM BE] Sorted hpthreads for %s:\n", get_prim_name(prim));
             for (hpthread_t *th: list) {
                 printf("\t- %s (old map: %s)\n", th->get_name(), virt_to_phy_mapping[th].first->get_name());
@@ -463,7 +511,7 @@ void vam_backend::load_balance() {
         // and create smaller new_mapping.
         std::vector<hpthread_t *> del_threads;
         std::unordered_map<hpthread_t *, physical_accel_t *> new_mapping;
-        DEBUG(printf("[VAM BE] Running LPT for %s...\n", get_prim_name(prim));)
+        HIGH_DEBUG(printf("[VAM BE] Running LPT for %s...\n", get_prim_name(prim));)
         while (!list.empty()) {
             // Get the least loaded device
             physical_accel_t accel = accel_queue.top(); accel_queue.pop();
@@ -471,8 +519,8 @@ void vam_backend::load_balance() {
             hpthread_t *th = list.front();
             list.erase(list.begin());
 
-            DEBUG(printf("[VAM BE] Map %s to %s\n", th->get_name(), accel_list[accel.accel_id].get_name());)            
-            
+            HIGH_DEBUG(printf("[VAM BE] Map %s to %s\n", th->get_name(), accel_list[accel.accel_id].get_name());)
+
             // Get the original mapping for this hpthread
             std::pair<physical_accel_t *, unsigned> old_mapping = virt_to_phy_mapping[th];
             if (old_mapping.first->accel_id == accel.accel_id) {
@@ -483,7 +531,7 @@ void vam_backend::load_balance() {
                 del_threads.push_back(th);
                 new_mapping[th] = &accel_list[accel.accel_id];
             }
-            
+
             // Add to the lowest empty context of accel
             // -- this is only for LPT and not used after this loop
             for (unsigned i = 0; i < MAX_CONTEXTS; i++) {
@@ -508,7 +556,7 @@ void vam_backend::load_balance() {
             }
         }
 
-        // Next, reconfigure threads in the new_mapping map 
+        // Next, reconfigure threads in the new_mapping map
         for (auto &n : new_mapping) {
             hpthread_t *th = n.first;
             physical_accel_t *accel = n.second;
