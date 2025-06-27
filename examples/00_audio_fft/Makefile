@@ -9,7 +9,7 @@ HIGH_DBG_APP_OBJ=$(patsubst %.cpp,$(BUILD_DIR)/%.app.high.o,$(APPSRCFILES))
 
 ESP_INCDIR += -I$(ESP_ROOT)/accelerators/stratus_hls/audio_fft_stratus/sw/linux/include
 
-APP_NAME = 01_audio_fft
+APP_NAME ?= 00_audio_fft
 
 %.app.opt.o: ./main.cpp $(HPP_FILES)
 	$(CXX) $(CXXFLAGS) $< -c -o $@

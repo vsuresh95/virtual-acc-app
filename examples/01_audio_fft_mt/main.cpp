@@ -85,13 +85,9 @@ void audio_fft_mt_worker(unsigned worker_id) {
     // Reference output for comparison
     native_t *gold = new float[out_len];
 
-    // We will cast the synchronization flags from *mem to std atomic flags
-    // Note: while this offers correctness, atomic_flag is not optimal in terms of performance
-    // Use custom ASM blocks with amo_swap on void pointers for performance.
-    sync_t *input_full = reinterpret_cast<sync_t *>(&mem[in_valid_offset]);
-    sync_t *output_full = reinterpret_cast<sync_t *>(&mem[out_valid_offset]);
-    input_full->store(0);
-    output_full->store(0);
+    // We will cast the synchronization flags from *mem to custom atomic flags
+    atomic_flag_t input_flag ((volatile uint64_t *) &mem[in_valid_offset]);
+    atomic_flag_t output_flag ((volatile uint64_t *) &mem[out_valid_offset]);
 
     // Assign arguments for the FFT task -- this will be used by the accelerator
     // or SW function to perform FFT and communicate with the SW.
@@ -135,14 +131,14 @@ void audio_fft_mt_worker(unsigned worker_id) {
 		// Accelerator is implicitly ready because computation is chained
         init_buffer(&mem[in_offset], gold);
 		// Inform the accelerator to start.
-		input_full->store(1);
+		input_flag.store(1);
 
 		// Wait for the accelerator to send output.
-		while(output_full->load() != 1);
+		while(output_flag.load() != 1);
 		errors += validate_buffer(&mem[out_offset], gold);
 
 		// Reset for next iteration.
-		output_full->store(0);
+		output_flag.store(0);
 
         if (i % 100 == 0) {
             printf("[APP%d] Iter %d done!\n", worker_id, i);

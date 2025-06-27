@@ -2,6 +2,7 @@
 #define __COMMON_HELPER_H__
 
 #include <common_defines.h>
+#include <atomic_flag.h>
 
 // Helper function to get cycle counter
 static inline uint64_t get_counter() {

@@ -18,14 +18,13 @@ extern "C" {
 
 typedef unsigned token_t;
 typedef float native_t;
-typedef volatile std::atomic<uint64_t> sync_t;
 #define FX_IL 14
 
 const float ERR_TH = 0.05;
 
 #define NUM_THREADS 8
 
-#define NUM_ITERATIONS 20000
+#define NUM_ITERATIONS 10000
 
 #ifndef LOGN_SAMPLES
 #define LOGN_SAMPLES 10

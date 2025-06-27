@@ -18,7 +18,6 @@ extern "C" {
 
 typedef unsigned token_t;
 typedef float native_t;
-typedef volatile std::atomic<uint64_t> sync_t;
 #define FX_IL 14
 
 const float ERR_TH = 0.05;

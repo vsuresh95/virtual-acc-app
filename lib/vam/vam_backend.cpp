@@ -242,7 +242,7 @@ void vam_backend::search_accel(hpthread_t *th) {
     // Update the virt->phy for the hpthread
     virt_to_phy_mapping[th] = std::make_pair(candidate_accel.first, cur_context);
 
-    // Mark the device as allocated.
+    // Mark the context as allocated.
     candidate_accel.first->valid_contexts.set(cur_context);
 
     // Assign the thread ID to this accelerator's context
@@ -346,11 +346,14 @@ bool vam_backend::release_accel(hpthread_t *th) {
 
     LOW_DEBUG(printf("[VAM BE] Releasing accel %s:%d for hpthread %s\n", accel->get_name(), context, th->get_name());)
 
+    // Free the allocated context.
+    accel->valid_contexts.reset(context);
+
     // Configring all the device-independent fields in the esp desc
     esp_access *generic_esp_access = (esp_access *) accel->esp_access_desc;
     {
         generic_esp_access->context_id = context;
-        generic_esp_access->valid_contexts = accel->valid_contexts.reset(context).to_ulong();
+        generic_esp_access->valid_contexts = accel->valid_contexts.to_ulong();
     }
 
     if (ioctl(accel->fd, accel->del_ctxt_ioctl, accel->esp_access_desc)) {

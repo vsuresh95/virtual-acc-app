@@ -43,13 +43,9 @@ void audio_fft_pp_worker(unsigned worker_id) {
     // Reference output for comparison
     native_t *gold = new float[out_len];
 
-    // We will cast the synchronization flags from *mem to std atomic flags
-    // Note: while this offers correctness, atomic_flag is not optimal in terms of performance
-    // Use custom ASM blocks with amo_swap on void pointers for performance.
-    sync_t *input_full = reinterpret_cast<sync_t *>(&mem[in_valid_offset]);
-    sync_t *output_full = reinterpret_cast<sync_t *>(&mem[out_valid_offset]);
-    input_full->store(0);
-    output_full->store(0);
+    // We will cast the synchronization flags from *mem to custom atomic flags
+    atomic_flag_t input_flag ((volatile uint64_t *) &mem[in_valid_offset]);
+    atomic_flag_t output_flag ((volatile uint64_t *) &mem[out_valid_offset]);
 
     // Assign arguments for the FFT task -- this will be used by the accelerator
     // or SW function to perform FFT and communicate with the SW.
@@ -93,18 +89,18 @@ void audio_fft_pp_worker(unsigned worker_id) {
     // Note: this app does not write inputs/read outputs to lighten CPU load
     while (inputs_remaining != 0 || outputs_remaining != 0) {
         if (inputs_remaining != 0) {
-            if (input_full->load() == 0) {
+            if (input_flag.load() == 0) {
                 // Inform the accelerator to start.
-                input_full->store(1);
+                input_flag.store(1);
                 inputs_remaining--;
             } else {
                 sched_yield();
             }
         }
         if (outputs_remaining != 0) {
-            if (output_full->load() == 1) {
+            if (output_flag.load() == 1) {
                 // Reset for next iteration.
-                output_full->store(0);
+                output_flag.store(0);
                 outputs_remaining--;
                 if (outputs_remaining == NUM_ITERATIONS / 2) {
                     // th->attr_setpriority(4-(worker_id%4));
@@ -118,7 +114,7 @@ void audio_fft_pp_worker(unsigned worker_id) {
                 LOW_DEBUG(
                     if (outputs_remaining % 1000 == 0) {
                         double ips = (double) pow(10, 9)/((get_counter() - start_time)/1000*12.8);
-                        printf("[APP%d] %d; IPS=%0.2f\n", worker_id, iterations_done[worker_id].load(), ips);
+                        printf("[APP%d] %d; IPS=%0.2f; i/p=%d; o/p=%d\n", worker_id, iterations_done[worker_id].load(), ips, inputs_remaining, outputs_remaining);
                         start_time = get_counter();
                     }
                 )
