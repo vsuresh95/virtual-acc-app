@@ -13,8 +13,11 @@ const unsigned do_shift = DO_SHIFT;
 // Mutex variable for thread synchronization
 std::mutex worker_mutex;
 
+// Iteration count for all workers
+std::array<std::atomic<unsigned>, NUM_THREADS> iterations_done;
+
 // Tracking iterations per second across epochs
-std::array<std::array<float, NUM_ITERATIONS>, NUM_THREADS> ips_report;
+std::vector<std::array<float, NUM_THREADS>> ips_report;
 
 void audio_fft_pp_worker(unsigned worker_id) {
     LOW_DEBUG(printf("[APP%d] Starting worker %d!\n", worker_id, worker_id);)
@@ -85,7 +88,7 @@ void audio_fft_pp_worker(unsigned worker_id) {
     unsigned inputs_remaining = NUM_ITERATIONS;
     unsigned outputs_remaining = NUM_ITERATIONS;
 
-    uint64_t start_time = get_counter();
+    LOW_DEBUG(uint64_t start_time = get_counter();)
 
     // Note: this app does not write inputs/read outputs to lighten CPU load
     while (inputs_remaining != 0 || outputs_remaining != 0) {
@@ -103,18 +106,22 @@ void audio_fft_pp_worker(unsigned worker_id) {
                 // Reset for next iteration.
                 output_full->store(0);
                 outputs_remaining--;
-                unsigned iterations_done = NUM_ITERATIONS-outputs_remaining;
-                HIGH_DEBUG(printf("[APP%d] Finshed iteration %d!\n", worker_id, iterations_done);)
-                if (iterations_done % 1000 == 0) {
-                    double ips = (double) pow(10, 9)/((get_counter() - start_time)/1000*12.8);
-                    LOW_DEBUG(printf("[APP%d] %d; IPS=%0.2f\n", worker_id, iterations_done, ips);)
-                    ips_report[worker_id][(iterations_done/1000)-1] = ips;
-                    start_time = get_counter();
-                }
-                if (iterations_done == NUM_ITERATIONS / 2) {
-                    th->attr_setpriority(4-(worker_id%4));
+                if (outputs_remaining == NUM_ITERATIONS / 2) {
+                    // th->attr_setpriority(4-(worker_id%4));
                     printf("[APP%d] HALFWAY!\n", worker_id);
                 }
+
+                // Increment flag for main thread
+                iterations_done[worker_id].fetch_add(1);
+
+                HIGH_DEBUG(printf("[APP%d] Finshed iteration %d!\n", worker_id, iterations_done[worker_id].load());)
+                LOW_DEBUG(
+                    if (outputs_remaining % 1000 == 0) {
+                        double ips = (double) pow(10, 9)/((get_counter() - start_time)/1000*12.8);
+                        printf("[APP%d] %d; IPS=%0.2f\n", worker_id, iterations_done[worker_id].load(), ips);
+                        start_time = get_counter();
+                    }
+                )
             } else {
                 sched_yield();
             }
@@ -139,6 +146,27 @@ int main(int argc, char **argv) {
         th[i] = std::thread(&audio_fft_pp_worker, i);
     }
 
+    std::array<float, NUM_THREADS> old_iters = {};
+    unsigned total_iterations = 0;
+    const unsigned sleep_seconds = 2;
+    while (total_iterations != NUM_ITERATIONS * NUM_THREADS) {
+        sleep(sleep_seconds); // 2 seconds
+
+        std::array<float, NUM_THREADS> iters;
+        ips_report.push_back(iters);
+        total_iterations = 0;
+        LOW_DEBUG(printf("[APP] Iters = ");)
+        for (int i = 0; i < NUM_THREADS; i++) {
+            unsigned new_iters = iterations_done[i].load();
+            float ips = (new_iters - old_iters[i]) / sleep_seconds;
+            ips_report.back()[i] = ips;
+            old_iters[i] = new_iters;
+            total_iterations += new_iters;
+            LOW_DEBUG(printf("T%d:%d, ", i, new_iters);)
+        }
+        LOW_DEBUG(printf("\n");)
+    }
+
     // Join all threads when done
     for (int i = 0; i < NUM_THREADS; i++) {
         th[i].join();
@@ -153,9 +181,9 @@ int main(int argc, char **argv) {
         printf("%d\t", i);
     }
     printf("\n-------------------------------------------------------------------\n");
-    for (int j = 0; j < NUM_ITERATIONS/1000; j++) {
-        printf("  %d\t", j);
-        for (int i = 0; i < NUM_THREADS; i++) {
+    for (size_t i = 0; i < ips_report.size(); i++) {
+        printf("  %lu\t", i);
+        for (int j = 0; j < NUM_THREADS; j++) {
             printf("%0.2f\t", ips_report[i][j]);
         }
         printf("\n");

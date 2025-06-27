@@ -30,6 +30,10 @@ void vam_backend::run_backend() {
     uint64_t start_time = get_counter();
     uint64_t vam_sleep = VAM_SLEEP_MIN;
 
+    // Start a utilization monitor thread
+    std::thread util_mon = std::thread(&vam_backend::run_util_mon, this);
+    util_mon.detach();
+
     // Run loop will run forever
     while (1) {
         // Test the interface state
@@ -416,9 +420,10 @@ void vam_backend::check_utilization() {
                 accel.context_start_cycles[i] = get_counter();
                 accel.context_active_cycles[i] = mon_extended[i];
                 accel.context_util[i] = util;
+                hpthread_t *th = phy_to_virt_mapping[&accel][i];
+                th->active_load = accel.context_util[i] * accel.context_load[i];
 
                 HIGH_DEBUG(
-                    hpthread_t *th = phy_to_virt_mapping[&accel][i];
                     total_util += accel.context_util[i];
                     printf("C%d(%d)=%0.2f%%, ", i, th->attr->nprio, accel.context_util[i] * 100);
                 )
@@ -432,24 +437,21 @@ bool vam_backend::check_load_balance() {
     // First, update the active utilization of each accelerator
     check_utilization();
 
-    std::unordered_map<physical_accel_t *, std::array<float, MAX_CONTEXTS>> util_map;
-    epoch_utilization.push_back(util_map);
-
     // Print out the total utilization
-    for (physical_accel_t &accel : accel_list) {
-        float total_util = 0.0;
-        LOW_DEBUG(printf("[VAM BE] Util of %s: ", accel.get_name());)
-        for (int i = 0; i < MAX_CONTEXTS; i++) {
-            if (accel.valid_contexts[i]) {
-                hpthread_t *th = phy_to_virt_mapping[&accel][i];
-                LOW_DEBUG(printf("C%d(%d)=%0.2f%%, ", i, th->attr->nprio, accel.context_util[i] * 100);)
-                total_util += accel.context_util[i];
-                th->active_load = accel.context_util[i] * accel.context_load[i];
-                epoch_utilization.back()[&accel][i] = accel.context_util[i];
+    LOW_DEBUG(
+        for (physical_accel_t &accel : accel_list) {
+            float total_util = 0.0;
+            printf("[VAM BE] Util of %s: ", accel.get_name());
+            for (int i = 0; i < MAX_CONTEXTS; i++) {
+                if (accel.valid_contexts[i]) {
+                    hpthread_t *th = phy_to_virt_mapping[&accel][i];
+                    printf("C%d(%d)=%0.2f%%, ", i, th->attr->nprio, accel.context_util[i] * 100);
+                    total_util += accel.context_util[i];
+                }
             }
+            LOW_DEBUG(printf("total=%0.2f%%, load = %d\n", total_util * 100, accel.get_total_load());)
         }
-        LOW_DEBUG(printf("total=%0.2f%%, load = %d\n", total_util * 100, accel.get_total_load());)
-    }
+    )
 
     // Check whether there is load imbalance across accelerators
     // - calculate average and max/min load across all accelerators with non-zero load assigned
@@ -603,6 +605,22 @@ void vam_backend::load_balance() {
             // Configure the device allocated
             configure_accel(th, accel, cur_context);
         }
+    }
+}
+
+void vam_backend::run_util_mon() {
+    while(1) {
+        sleep(2); // 2 seconds
+
+        // Create a utilization entry
+        std::unordered_map<physical_accel_t *, std::array<float, MAX_CONTEXTS>> util_map;
+        epoch_utilization.push_back(util_map);
+
+        // Iterate through all accelerators and copy their utilizations
+        for (physical_accel_t &accel : accel_list)
+            for (int i = 0; i < MAX_CONTEXTS; i++)
+                if (accel.valid_contexts[i])
+                    epoch_utilization.back()[&accel][i] = accel.context_util[i];
     }
 }
 

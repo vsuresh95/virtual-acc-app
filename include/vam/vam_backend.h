@@ -67,6 +67,9 @@ public:
     // Print out the utilization metrics for the previous epochs in a pretty format
     void print_report();
 
+    // Utilization monitor
+    void run_util_mon();
+
     // Main run method
     void run_backend();
 };
