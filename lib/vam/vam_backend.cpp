@@ -369,6 +369,11 @@ bool vam_backend::release_accel(hpthread_t *th) {
     // Delete the map entry for the routine
     virt_to_phy_mapping.erase(th);
 
+    // If there is no context active, we should re-init the accelerator the next time
+    if (accel->valid_contexts.none()) {
+        accel->init_done = false;
+    } 
+
     return true;
 }
 
