@@ -271,7 +271,7 @@ void fir_comp(unsigned len, token_t *in_data, token_t *out_data, token_t *filter
     // Pre-processing
     out[0].r = tmpbuf[0].r + tmpbuf[len].r;
     out[0].i = tmpbuf[0].r - tmpbuf[len].r;
-    C_FIXDIV(in[0],2);
+    C_FIXDIV(out[0],2);
 
     for (j = 1; j <= len/2; ++j) {
         fk = tmpbuf[j];

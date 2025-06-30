@@ -31,15 +31,14 @@ void audio_fft_probe(physical_accel_t *accel) {
 }
 
 // Device-dependent configuration function
-void audio_fft_cfg(hpthread_t *th, esp_access *generic_esp_access, unsigned valid_contexts) {
+void audio_fft_cfg(hpthread_t *th, esp_access *generic_esp_access) {
     audio_fft_hpthread_args *args = (audio_fft_hpthread_args *) th->args;
     struct audio_fft_stratus_access *audio_fft_desc = (struct audio_fft_stratus_access *) generic_esp_access;
 
+    // Get the parameters and memory offsets from the args of hpthread
     audio_fft_desc->logn_samples = args->logn_samples;
     audio_fft_desc->do_shift = args->do_shift;
     audio_fft_desc->do_inverse = args->do_inverse;
-
-    // Get the queue base from the in/out edges of the FFT node
     audio_fft_desc->input_queue_base = args->input_queue_base;
     audio_fft_desc->output_queue_base = args->output_queue_base;
 

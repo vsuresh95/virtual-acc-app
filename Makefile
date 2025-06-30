@@ -22,7 +22,9 @@ LIB_FILES+=$(LIB_DIR)/hpthread/hpthread_intf.cpp
 LIB_FILES+=$(LIB_DIR)/vam/vam_backend.cpp
 
 ACCEL_FILES+=$(ACCEL_DIR)/audio_fft/audio_fft_def.cpp
+ACCEL_FILES+=$(ACCEL_DIR)/audio_fir/audio_fir_def.cpp
 CXXFLAGS+=-I$(ACCEL_DIR)/audio_fft
+CXXFLAGS+=-I$(ACCEL_DIR)/audio_fir
 
 OPT_LIB_OBJ=$(patsubst $(LIB_DIR)/%.cpp,$(BUILD_DIR)/%.lib.opt.o,$(LIB_FILES))
 LOW_DBG_LIB_OBJ=$(patsubst $(LIB_DIR)/%.cpp,$(BUILD_DIR)/%.lib.low.o,$(LIB_FILES))
@@ -75,8 +77,9 @@ all: build $(BUILD_DIR)/$(APP_NAME)/opt.exe $(BUILD_DIR)/$(APP_NAME)/low.dbg.exe
 	@echo ""
 	@echo "===================================================="
 	@echo "  SUCCESS! Executables have been copied to: ";
-	@echo "  OPT:${ESP_EXE_DIR}/$(APP_NAME)/low.opt.exe"
-	@echo "  DBG:${ESP_EXE_DIR}/$(APP_NAME)/high.dbg.exe"
+	@echo "  OPT:${ESP_EXE_DIR}/$(APP_NAME)/opt.exe"
+	@echo "  LOW DBG:${ESP_EXE_DIR}/$(APP_NAME)/low.opt.exe"
+	@echo "  HIGH DBG:${ESP_EXE_DIR}/$(APP_NAME)/high.dbg.exe"
 	@echo "===================================================="
 	@echo ""
 
@@ -84,6 +87,7 @@ build:
 	@mkdir -p $(BUILD_DIR)/hpthread
 	@mkdir -p $(BUILD_DIR)/vam
 	@mkdir -p $(BUILD_DIR)/audio_fft
+	@mkdir -p $(BUILD_DIR)/audio_fir
 	@mkdir -p $(BUILD_DIR)/$(APP_NAME)
 	echo $(ACCEL_OBJ)
 

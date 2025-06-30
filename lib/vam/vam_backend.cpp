@@ -162,6 +162,7 @@ void vam_backend::probe_accel() {
             if (fnmatch("audio_fft*", entry->d_name, FNM_NOESCAPE) == 0) {
                 audio_fft_probe(&accel_temp);
             } else if (fnmatch("audio_fir*", entry->d_name, FNM_NOESCAPE) == 0) {
+                audio_fir_probe(&accel_temp);
             } else if (fnmatch("audio_ffi*", entry->d_name, FNM_NOESCAPE) == 0) {
             } else {
                 printf("[ERROR] Device does not match any supported accelerators.\n");
@@ -286,7 +287,7 @@ void vam_backend::configure_accel(hpthread_t *th, physical_accel_t *accel, unsig
     }
 
     // Call function for configuring other device-dependent fields
-    accel->device_cfg(th, generic_esp_access, accel->valid_contexts.to_ulong());
+    accel->device_cfg(th, generic_esp_access);
 
     // Retrieve load assigned from device-dependent cfg function (scaled by priority)
     accel->context_load[context] = th->assigned_load / th->attr->nprio;
@@ -457,7 +458,7 @@ bool vam_backend::check_load_balance() {
                     total_util += accel.context_util[i];
                 }
             }
-            LOW_DEBUG(printf("total=%0.2f%%, load = %d\n", total_util * 100, accel.get_total_load());)
+            LOW_DEBUG(printf("total=%0.2f%%, load=%d\n", total_util * 100, accel.get_total_load());)
         }
     )
 

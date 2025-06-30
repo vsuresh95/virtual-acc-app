@@ -74,8 +74,6 @@ void audio_fft_mt_worker(unsigned worker_id) {
     unsigned out_valid_offset = in_len + VALID_OFFSET;
 
     // Allocate sufficient memory for this hpthread
-    // Note: for composable, complex functions, VAM will allocate additional memory
-    // within this memory pool -- therefore, it is necessary to allocate extra.
     worker_mutex.lock();
     token_t *mem = (token_t *) esp_alloc(mem_size);
     worker_mutex.unlock();

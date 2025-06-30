@@ -70,8 +70,6 @@ int main(int argc, char **argv) {
     unsigned out_valid_offset = in_len + VALID_OFFSET;
 
     // Allocate sufficient memory for this hpthread
-    // Note: for composable, complex functions, VAM will allocate additional memory
-    // within this memory pool -- therefore, it is necessary to allocate extra.
     token_t *mem = (token_t *) esp_alloc(mem_size);
 
     HIGH_DEBUG(printf("[APP] Memory allocated for size %d\n", mem_size));

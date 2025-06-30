@@ -33,7 +33,7 @@ typedef struct {
     // Variables used for configuration and context
 
     void *esp_access_desc; // Generic pointer to the access struct.
-	void (*device_cfg)(hpthread_t *, esp_access *, unsigned); // configure device-dependent fields
+	void (*device_cfg)(hpthread_t *, esp_access *); // configure device-dependent fields
     bool init_done; // Flag to identify whether the device was initialized in the past
 
     ////////////////////////////////////
