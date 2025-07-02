@@ -44,5 +44,10 @@ void gemm_cfg(hpthread_t *th, esp_access *generic_esp_access) {
     gemm_desc->output_queue_base = args->output_queue_base;
 
     // Send the predicted load back to VAM, from the offline profiled runtime
-    th->assigned_load = gemm_offline_prof[args->dim_m * args->dim_n * args->dim_k];
+    unsigned offline_profile_key = (args->dim_m * args->dim_n * args->dim_k)/4096;
+    auto it = gemm_offline_prof.upper_bound(offline_profile_key);
+    // x is larger than the largest key: return time for largest size
+    // else, return value for the smallest size greater than the dimensions
+    if (it == gemm_offline_prof.end()) th->assigned_load = std::prev(it)->second;
+    else th->assigned_load = it->second;
 }

@@ -9,7 +9,7 @@ struct atomic_flag_t {
         uint64_t val;
 
         asm volatile (
-            "mv t0, %0;"
+            "mv t0, %1;"
             "lr.d.aq t1, (t0);"
             "mv %0, t1;"
             : "=r" (val)

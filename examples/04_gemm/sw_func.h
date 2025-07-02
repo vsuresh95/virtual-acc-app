@@ -68,4 +68,5 @@ void gemm(const token_t* mat_a, const token_t* mat_b, token_t* mat_c, unsigned d
         }
     }
 }
+
 #endif // __SW_FUNC_H__

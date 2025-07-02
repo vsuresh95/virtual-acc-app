@@ -5,9 +5,9 @@
 // Example application using GEMM
 // accelerator with the hpthread interface
 
-const unsigned dim_m = 64;
-const unsigned dim_n = 64;
-const unsigned dim_k = 64;
+const unsigned dim_m = 40;
+const unsigned dim_n = 20;
+const unsigned dim_k = 40;
 
 // Compare accelerator output with golden output
 int validate_buffer(token_t *mem_c, token_t *gold_c)
@@ -39,14 +39,14 @@ void init_buffer(token_t *mem_a, token_t *mem_b, token_t *gold_a, token_t *gold_
 
     for (unsigned j = 0; j < len_a; j++) {
         float scaling_factor = (float) rand() / (float) RAND_MAX;
-        gold_a[j] = LO + scaling_factor * (HI - LO);
-        mem_a[j] = LO + scaling_factor * (HI - LO);
+        gold_a[j] = (unsigned) (LO + scaling_factor * (HI - LO));
+        mem_a[j] = (unsigned) (LO + scaling_factor * (HI - LO));
     }
 
     for (unsigned j = 0; j < len_b; j++) {
         float scaling_factor = (float) rand() / (float) RAND_MAX;
-        gold_b[j] = LO + scaling_factor * (HI - LO);
-        mem_b[j] = LO + scaling_factor * (HI - LO);
+        gold_b[j] = (unsigned) (LO + scaling_factor * (HI - LO));
+        mem_b[j] = (unsigned) (LO + scaling_factor * (HI - LO));
     }
 
     // Compute golden output
