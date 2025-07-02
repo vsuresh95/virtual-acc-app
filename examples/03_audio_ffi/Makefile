@@ -1,4 +1,5 @@
 BUILD_DIR=$(PWD)/build
+APP_NAME?=$(notdir $(PWD))
 
 CXXFLAGS+=-I./
 APPSRCFILES+=./main.cpp
@@ -6,11 +7,6 @@ APPSRCFILES+=./main.cpp
 OPT_APP_OBJ=$(patsubst %.cpp,$(BUILD_DIR)/%.app.opt.o,$(APPSRCFILES))
 LOW_DBG_APP_OBJ=$(patsubst %.cpp,$(BUILD_DIR)/%.app.low.o,$(APPSRCFILES))
 HIGH_DBG_APP_OBJ=$(patsubst %.cpp,$(BUILD_DIR)/%.app.high.o,$(APPSRCFILES))
-
-ESP_INCDIR += -I$(ESP_ROOT)/accelerators/stratus_hls/audio_fft_stratus/sw/linux/include
-ESP_INCDIR += -I$(ESP_ROOT)/accelerators/stratus_hls/audio_fir_stratus/sw/linux/include
-
-APP_NAME ?= 03_audio_ffi
 
 %.app.opt.o: ./main.cpp $(HPP_FILES)
 	$(CXX) $(CXXFLAGS) $< -c -o $@

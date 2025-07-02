@@ -21,12 +21,7 @@ LIB_FILES+=$(LIB_DIR)/hpthread/hpthread.cpp
 LIB_FILES+=$(LIB_DIR)/hpthread/hpthread_intf.cpp
 LIB_FILES+=$(LIB_DIR)/vam/vam_backend.cpp
 
-ACCEL_FILES+=$(ACCEL_DIR)/audio_fft/audio_fft_def.cpp
-ACCEL_FILES+=$(ACCEL_DIR)/audio_fir/audio_fir_def.cpp
-ACCEL_FILES+=$(ACCEL_DIR)/gemm/gemm_def.cpp
-CXXFLAGS+=-I$(ACCEL_DIR)/audio_fft
-CXXFLAGS+=-I$(ACCEL_DIR)/audio_fir
-CXXFLAGS+=-I$(ACCEL_DIR)/gemm
+include $(ACCEL_DIR)/Makefile
 
 OPT_LIB_OBJ=$(patsubst $(LIB_DIR)/%.cpp,$(BUILD_DIR)/%.lib.opt.o,$(LIB_FILES))
 LOW_DBG_LIB_OBJ=$(patsubst $(LIB_DIR)/%.cpp,$(BUILD_DIR)/%.lib.low.o,$(LIB_FILES))
@@ -57,11 +52,6 @@ ESP_LD_FLAGS += -lesp
 ESP_LD_FLAGS += -ltest
 ESP_LD_FLAGS += -lcontig
 ESP_LD_FLAGS += -lutils
-
-ESP_INCDIR += -I$(ESP_ROOT)/accelerators/stratus_hls/audio_fft_stratus/sw/linux/include
-ESP_INCDIR += -I$(ESP_ROOT)/accelerators/stratus_hls/audio_fir_stratus/sw/linux/include
-ESP_INCDIR += -I$(ESP_ROOT)/accelerators/stratus_hls/audio_ffi_stratus/sw/linux/include
-ESP_INCDIR += -I$(ESP_ROOT)/accelerators/stratus_hls/gemm_stratus/sw/linux/include
 
 CXXFLAGS += $(ESP_INCDIR) $(ESP_LD_LIBS)
 LD_LIBS += $(ESP_LD_FLAGS)
