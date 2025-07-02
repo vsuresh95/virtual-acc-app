@@ -7,5 +7,6 @@
 // header file must be included here
 #include <audio_fft_def.h>
 #include <audio_fir_def.h>
+#include <gemm_def.h>
 
 #endif // __VAM_ACCEL_DEF_H__

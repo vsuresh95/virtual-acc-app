@@ -9,6 +9,7 @@ enum class hpthread_prim_t {
     AUDIO_FFT = 1,
     AUDIO_FIR = 2,
     AUDIO_FFI = 3,
+    GEMM = 4,
 };
 
 // Helper function for printing primitive names

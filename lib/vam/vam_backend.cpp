@@ -164,6 +164,8 @@ void vam_backend::probe_accel() {
             } else if (fnmatch("audio_fir*", entry->d_name, FNM_NOESCAPE) == 0) {
                 audio_fir_probe(&accel_temp);
             } else if (fnmatch("audio_ffi*", entry->d_name, FNM_NOESCAPE) == 0) {
+            } else if (fnmatch("gemm*", entry->d_name, FNM_NOESCAPE) == 0) {
+                gemm_probe(&accel_temp);
             } else {
                 printf("[ERROR] Device does not match any supported accelerators.\n");
             }

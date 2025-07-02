@@ -23,8 +23,10 @@ LIB_FILES+=$(LIB_DIR)/vam/vam_backend.cpp
 
 ACCEL_FILES+=$(ACCEL_DIR)/audio_fft/audio_fft_def.cpp
 ACCEL_FILES+=$(ACCEL_DIR)/audio_fir/audio_fir_def.cpp
+ACCEL_FILES+=$(ACCEL_DIR)/gemm/gemm_def.cpp
 CXXFLAGS+=-I$(ACCEL_DIR)/audio_fft
 CXXFLAGS+=-I$(ACCEL_DIR)/audio_fir
+CXXFLAGS+=-I$(ACCEL_DIR)/gemm
 
 OPT_LIB_OBJ=$(patsubst $(LIB_DIR)/%.cpp,$(BUILD_DIR)/%.lib.opt.o,$(LIB_FILES))
 LOW_DBG_LIB_OBJ=$(patsubst $(LIB_DIR)/%.cpp,$(BUILD_DIR)/%.lib.low.o,$(LIB_FILES))
@@ -59,11 +61,12 @@ ESP_LD_FLAGS += -lutils
 ESP_INCDIR += -I$(ESP_ROOT)/accelerators/stratus_hls/audio_fft_stratus/sw/linux/include
 ESP_INCDIR += -I$(ESP_ROOT)/accelerators/stratus_hls/audio_fir_stratus/sw/linux/include
 ESP_INCDIR += -I$(ESP_ROOT)/accelerators/stratus_hls/audio_ffi_stratus/sw/linux/include
+ESP_INCDIR += -I$(ESP_ROOT)/accelerators/stratus_hls/gemm_stratus/sw/linux/include
 
 CXXFLAGS += $(ESP_INCDIR) $(ESP_LD_LIBS)
 LD_LIBS += $(ESP_LD_FLAGS)
 
-ESP_EXE_DIR = $(ESP_ROOT)/socs/xilinx-vcu118-xcvu9p/soft-build/ariane/sysroot/applications/test
+ESP_EXE_DIR = $(ESP_ROOT)/socs/xilinx-vcu118-xcvu9p-backup/soft-build/ariane/sysroot/applications/test
 
 NPROCS = $(shell nproc || printf 1)
 MAKEFLAGS += -j$(NPROCS)
@@ -88,6 +91,7 @@ build:
 	@mkdir -p $(BUILD_DIR)/vam
 	@mkdir -p $(BUILD_DIR)/audio_fft
 	@mkdir -p $(BUILD_DIR)/audio_fir
+	@mkdir -p $(BUILD_DIR)/gemm
 	@mkdir -p $(BUILD_DIR)/$(APP_NAME)
 	echo $(ACCEL_OBJ)
 
