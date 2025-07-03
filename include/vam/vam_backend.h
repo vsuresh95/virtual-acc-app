@@ -75,6 +75,6 @@ public:
 };
 
 // Function to wake up (create an object of) VAM for the first time
-void vam_wakeup();
+void wakeup_vam();
 
 #endif // __VAM_BACKEND_H__

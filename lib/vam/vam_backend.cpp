@@ -14,11 +14,6 @@ void wakeup_vam() {
     vam_backend *be = new vam_backend;
     vam_th = std::thread(&vam_backend::run_backend, be);
     vam_th.detach();
-
-    // TODO: this function is only used for small applications
-    // where we do not want impose the need for multi-threading
-    // and launching VAM from the application. In larger multi-
-    // threaded applications, this must be done in the startup.
 }
 
 void vam_backend::run_backend() {
