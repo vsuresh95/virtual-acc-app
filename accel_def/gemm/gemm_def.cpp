@@ -39,9 +39,9 @@ void gemm_cfg(hpthread_t *th, esp_access *generic_esp_access) {
     gemm_desc->dim_m = args->dim_m;
     gemm_desc->dim_n = args->dim_n;
     gemm_desc->dim_k = args->dim_k;
-    gemm_desc->input_1_queue_base = args->input_1_queue_base;
-    gemm_desc->input_2_queue_base = args->input_2_queue_base;
-    gemm_desc->output_queue_base = args->output_queue_base;
+    gemm_desc->weight_base = args->weight_base;
+    gemm_desc->input_base = args->input_base;
+    gemm_desc->output_base = args->output_base;
 
     // Send the predicted load back to VAM, from the offline profiled runtime
     unsigned offline_profile_key = (args->dim_m * args->dim_n * args->dim_k)/4096;

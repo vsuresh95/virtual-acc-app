@@ -62,18 +62,17 @@ int main(int argc, char **argv) {
     // Matrix lengths
     unsigned flag_len = PAYLOAD_OFFSET/sizeof(token_t); // Number of token_t elements reserved for flags
     unsigned mat_a_len = flag_len + (dim_m * dim_k);
-    unsigned mat_b_len = flag_len + (dim_n * dim_k);
+    unsigned mat_b_len = dim_n * dim_k;
     unsigned mat_c_len = flag_len + (dim_m * dim_n);
 
     // Data offsets
     unsigned mat_a_offset = flag_len;
-    unsigned mat_b_offset = mat_a_offset + mat_a_len;
-    unsigned mat_c_offset = mat_b_offset + mat_b_len;
+    unsigned mat_b_offset = mat_a_len;
+    unsigned mat_c_offset = mat_b_offset + mat_b_len + flag_len;
 
     // Sync flag offsets
     unsigned mat_a_valid_offset = VALID_OFFSET;
-    unsigned mat_b_valid_offset = mat_a_valid_offset + mat_a_len;
-    unsigned mat_c_valid_offset = mat_b_valid_offset + mat_b_len;
+    unsigned mat_c_valid_offset = mat_b_offset + mat_b_len;
 
     // Allocate sufficient memory for this hpthread
     unsigned mem_size = (mat_c_offset + mat_c_len) * sizeof(token_t);
@@ -85,8 +84,7 @@ int main(int argc, char **argv) {
     token_t *gold = new unsigned[mat_c_offset + mat_c_len];
 
     // We will cast the synchronization flags from *mem to custom atomic flags
-    atomic_flag_t input_a_flag ((volatile uint64_t *) &mem[mat_a_valid_offset]);
-    atomic_flag_t input_b_flag ((volatile uint64_t *) &mem[mat_b_valid_offset]);
+    atomic_flag_t input_flag ((volatile uint64_t *) &mem[mat_a_valid_offset]);
     atomic_flag_t output_flag ((volatile uint64_t *) &mem[mat_c_valid_offset]);
 
     // Assign arguments for the FFT task -- this will be used by the accelerator
@@ -95,8 +93,8 @@ int main(int argc, char **argv) {
     *args = {
         (void *) mem,
         dim_m, dim_n, dim_k,
+        mat_b_offset,
         mat_a_valid_offset,
-        mat_b_valid_offset,
         mat_c_valid_offset
     };
 
@@ -129,8 +127,7 @@ int main(int argc, char **argv) {
         init_buffer(&mem[mat_a_offset], &mem[mat_b_offset],
                     &gold[mat_a_offset], &gold[mat_b_offset], &gold[mat_c_offset]);
 		// Inform the accelerator to start.
-		input_a_flag.store(1);
-		input_b_flag.store(1);
+		input_flag.store(1);
 
 		// Wait for the accelerator to send output.
 		while(output_flag.load() != 1);

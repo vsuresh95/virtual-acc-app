@@ -13,9 +13,9 @@ void* sw_gemm(void *a) {
     unsigned dim_m = args->dim_m;
     unsigned dim_n = args->dim_n;
     unsigned dim_k = args->dim_k;
-    unsigned mat_a_valid_offset = args->input_1_queue_base;
-    unsigned mat_b_valid_offset = args->input_2_queue_base;
-    unsigned mat_c_valid_offset = args->output_queue_base;
+    unsigned mat_a_valid_offset = args->input_base;
+    unsigned mat_b_valid_offset = args->weight_base;
+    unsigned mat_c_valid_offset = args->output_base;
     unsigned mat_a_offset = mat_a_valid_offset + PAYLOAD_OFFSET;
     unsigned mat_b_offset = mat_b_valid_offset + PAYLOAD_OFFSET;
     unsigned mat_c_offset = mat_c_valid_offset + PAYLOAD_OFFSET;

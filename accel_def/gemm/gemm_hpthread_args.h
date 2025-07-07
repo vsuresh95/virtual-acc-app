@@ -8,11 +8,11 @@ struct gemm_hpthread_args : public hpthread_args {
     unsigned dim_m;
     unsigned dim_n;
     unsigned dim_k;
+    unsigned weight_base;
 
     // Input/output offsets
-    unsigned input_1_queue_base;
-    unsigned input_2_queue_base;
-    unsigned output_queue_base;
+    unsigned input_base;
+    unsigned output_base;
 };
 
 #endif // __GEMM_HPTHREAD_ARGS_H__
