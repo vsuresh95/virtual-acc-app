@@ -25,7 +25,7 @@ int hpthread_t::create() {
 		intf.set(vam_state_t::IDLE);
     }
 
-	// Check if the interface is IDLE. If yes, swap to CREATE. If not, block until it is
+	// Check if the interface is IDLE. If yes, swap to BUSY. If not, block until it is
 	while (!intf.swap(vam_state_t::IDLE, vam_state_t::BUSY)) sched_yield();
 
 	// Write the hpthread request to the interface
@@ -52,7 +52,7 @@ int hpthread_t::join() {
 	// If the interface is vam_state_t::RESET, return an error
     if (intf.test() == vam_state_t::RESET) return 1;
 
-	// Check if the interface is IDLE. If yes, swap to CREATE. If not, block until it is
+	// Check if the interface is IDLE. If yes, swap to BUSY. If not, block until it is
 	while (!intf.swap(vam_state_t::IDLE, vam_state_t::BUSY)) sched_yield();
 
 	// Write the hpthread request to the interface
@@ -111,13 +111,13 @@ void hpthread_t::attr_setpriority(unsigned p) {
 	if (active) {	
 		HIGH_DEBUG(printf("[HPTHREAD] Requested change of priority to %d for hpthread %s.\n", p, attr->name);)
 
-		// Check if the interface is IDLE. If yes, swap to CREATE. If not, block until it is
+		// Check if the interface is IDLE. If yes, swap to BUSY. If not, block until it is
 		while (!intf.swap(vam_state_t::IDLE, vam_state_t::BUSY)) sched_yield();
 
 		// Write the hpthread request to the interface
 		intf.th = this;
 
-		// Set the interface state to CREATE
+		// Set the interface state to SETPRIO
 		intf.set(vam_state_t::SETPRIO);
 
 		// Block until the request is complete (interface state is DONE), then swap to IDLE
@@ -135,6 +135,7 @@ const char *get_prim_name(hpthread_prim_t p) {
         case hpthread_prim_t::AUDIO_FFT: return (const char *) "AUDIO_FFT";
         case hpthread_prim_t::AUDIO_FIR: return (const char *) "AUDIO_FIR";
         case hpthread_prim_t::AUDIO_FFI: return (const char *) "AUDIO_FFI";
+        case hpthread_prim_t::GEMM: return (const char *) "GEMM";
         default: return (const char *) "Unknown primitive";
     }
 }

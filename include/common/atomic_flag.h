@@ -38,6 +38,8 @@ struct atomic_flag_t {
         flag = f;
         store(0);
     }
+
+    atomic_flag_t () {}
 };
 
 #endif // __ATOMIC_FLAG_H__

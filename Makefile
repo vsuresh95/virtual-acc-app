@@ -16,10 +16,17 @@ HPP_FILES := $(shell find -L $(ROOT_DIR) -name '*.h')
 CXXFLAGS+=-I$(ROOT_DIR)/include/common
 CXXFLAGS+=-I$(ROOT_DIR)/include/hpthread
 CXXFLAGS+=-I$(ROOT_DIR)/include/vam
+CXXFLAGS+=-I$(ROOT_DIR)/include/nn
 
 LIB_FILES+=$(LIB_DIR)/hpthread/hpthread.cpp
 LIB_FILES+=$(LIB_DIR)/hpthread/hpthread_intf.cpp
 LIB_FILES+=$(LIB_DIR)/vam/vam_backend.cpp
+LIB_FILES+=$(LIB_DIR)/nn/nn_module.cpp
+LIB_FILES+=$(LIB_DIR)/nn/sw_kernels.cpp
+LIB_FILES+=$(LIB_DIR)/nn/nn_frontend.cpp
+LIB_FILES+=$(LIB_DIR)/nn/nn_graph.cpp
+LIB_FILES+=$(LIB_DIR)/nn/nn_intf.cpp
+LIB_FILES+=$(LIB_DIR)/nn/nn_helper.cpp
 
 include $(ACCEL_DIR)/Makefile
 
@@ -63,7 +70,7 @@ MAKEFLAGS += -j$(NPROCS)
 
 APP_NAME ?= APP_NAME
 
-.PHONY: clean
+.PHONY: clean build
 
 all: build $(BUILD_DIR)/$(APP_NAME)/opt.exe $(BUILD_DIR)/$(APP_NAME)/low.dbg.exe $(BUILD_DIR)/$(APP_NAME)/high.dbg.exe
 	cp -rf $(BUILD_DIR)/$(APP_NAME) ${ESP_EXE_DIR}
@@ -79,11 +86,11 @@ all: build $(BUILD_DIR)/$(APP_NAME)/opt.exe $(BUILD_DIR)/$(APP_NAME)/low.dbg.exe
 build:
 	@mkdir -p $(BUILD_DIR)/hpthread
 	@mkdir -p $(BUILD_DIR)/vam
+	@mkdir -p $(BUILD_DIR)/nn
 	@mkdir -p $(BUILD_DIR)/audio_fft
 	@mkdir -p $(BUILD_DIR)/audio_fir
 	@mkdir -p $(BUILD_DIR)/gemm
 	@mkdir -p $(BUILD_DIR)/$(APP_NAME)
-	echo $(ACCEL_OBJ)
 
 $(BUILD_DIR)/$(APP_NAME)/opt.exe: $(HPP_FILES) $(OPT_LIB_OBJ) $(OPT_ACCEL_OBJ) $(OPT_APP_OBJ) esp-libs
 	$(LD) $(CXXFLAGS) $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)

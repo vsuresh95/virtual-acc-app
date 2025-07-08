@@ -3,12 +3,12 @@
 // External instance of hpthread interface
 extern hpthread_intf_t intf;
 
-// Used in wakeup_vam() for small applications without multi-threading.
+// Used in wakeup_vam().
 std::thread vam_th;
 
 // Function to wake up VAM for the first time
 void wakeup_vam() {
-	LOW_DEBUG(printf("[VAM BE] Launching a new thread for VAM BACKEND!\n");)
+	HIGH_DEBUG(printf("[VAM BE] Launching a new thread for VAM BACKEND!\n");)
 
     // Create an object of VAM and launch a std::thread for VAM
     vam_backend *be = new vam_backend;
