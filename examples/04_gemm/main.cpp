@@ -10,14 +10,14 @@ const unsigned dim_n = 20;
 const unsigned dim_k = 40;
 
 // Compare accelerator output with golden output
-int validate_buffer(token_t *mem_c, token_t *gold_c)
+int validate_buffer(nn_token_t *mem_c, nn_token_t *gold_c)
 {
     unsigned errors = 0;
     const unsigned len = dim_m * dim_n;
 
     for (unsigned j = 0; j < len; j++) {
         if ((fabs(gold_c[j] - mem_c[j]) / fabs(gold_c[j])) > ERR_TH) {
-            if (errors < 2) { HIGH_DEBUG(printf("\tGOLD[%u] = %d vs %d = out[%u]\n", j, gold_c[j], mem_c[j], j);) }
+            if (errors < 2) { HIGH_DEBUG(printf("\tGOLD[%u] = %f vs %f = out[%u]\n", j, (float) gold_c[j], (float) mem_c[j], j);) }
             errors++;
         }
     }
@@ -28,10 +28,10 @@ int validate_buffer(token_t *mem_c, token_t *gold_c)
 }
 
 // Initialize input and calculate golden output
-void init_buffer(token_t *mem_a, token_t *mem_b, token_t *gold_a, token_t *gold_b, token_t *gold_c)
+void init_buffer(nn_token_t *mem_a, nn_token_t *mem_b, nn_token_t *gold_a, nn_token_t *gold_b, nn_token_t *gold_c)
 {
-    const float LO = 100.0;
-    const float HI = 200.0;
+    const float LO = -2.0;
+    const float HI = 2.0;
     const unsigned len_a = dim_m * dim_k;
     const unsigned len_b = dim_n * dim_k;
 
@@ -39,14 +39,14 @@ void init_buffer(token_t *mem_a, token_t *mem_b, token_t *gold_a, token_t *gold_
 
     for (unsigned j = 0; j < len_a; j++) {
         float scaling_factor = (float) rand() / (float) RAND_MAX;
-        gold_a[j] = (unsigned) (LO + scaling_factor * (HI - LO));
-        mem_a[j] = (unsigned) (LO + scaling_factor * (HI - LO));
+        gold_a[j] = LO + scaling_factor * (HI - LO);
+        mem_a[j] = LO + scaling_factor * (HI - LO);
     }
 
     for (unsigned j = 0; j < len_b; j++) {
         float scaling_factor = (float) rand() / (float) RAND_MAX;
-        gold_b[j] = (unsigned) (LO + scaling_factor * (HI - LO));
-        mem_b[j] = (unsigned) (LO + scaling_factor * (HI - LO));
+        gold_b[j] = LO + scaling_factor * (HI - LO);
+        mem_b[j] = LO + scaling_factor * (HI - LO);
     }
 
     // Compute golden output
@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
     // Compute memory layout parameters
 
     // Matrix lengths
-    unsigned flag_len = PAYLOAD_OFFSET/sizeof(token_t); // Number of token_t elements reserved for flags
+    unsigned flag_len = PAYLOAD_OFFSET/sizeof(nn_token_t); // Number of nn_token_t elements reserved for flags
     unsigned mat_a_len = flag_len + (dim_m * dim_k);
     unsigned mat_b_len = dim_n * dim_k;
     unsigned mat_c_len = flag_len + (dim_m * dim_n);
@@ -75,13 +75,13 @@ int main(int argc, char **argv) {
     unsigned mat_c_valid_offset = mat_b_offset + mat_b_len;
 
     // Allocate sufficient memory for this hpthread
-    unsigned mem_size = (mat_c_offset + mat_c_len) * sizeof(token_t);
-    token_t *mem = (token_t *) esp_alloc(mem_size);
+    unsigned mem_size = (mat_c_offset + mat_c_len) * sizeof(nn_token_t);
+    nn_token_t *mem = (nn_token_t *) esp_alloc(mem_size);
 
     HIGH_DEBUG(printf("[APP] Memory allocated for size %d\n", mem_size));
 
     // Reference output for comparison
-    token_t *gold = new unsigned[mat_c_offset + mat_c_len];
+    nn_token_t *gold = new nn_token_t[mat_c_offset + mat_c_len];
 
     // We will cast the synchronization flags from *mem to custom atomic flags
     atomic_flag_t input_flag ((volatile uint64_t *) &mem[mat_a_valid_offset]);

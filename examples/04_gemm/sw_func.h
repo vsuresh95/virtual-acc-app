@@ -7,7 +7,7 @@ void* sw_gemm(void *a) {
 
     gemm_hpthread_args *args = (gemm_hpthread_args *) a;
 
-    token_t *mem = (token_t *) args->mem;
+    nn_token_t *mem = (nn_token_t *) args->mem;
 
     // Reading parameters from args
     unsigned dim_m = args->dim_m;
@@ -42,9 +42,9 @@ void* sw_gemm(void *a) {
     }
 }
 
-void gemm(const token_t* mat_a, const token_t* mat_b, token_t* mat_c, unsigned dim_m, unsigned dim_n, unsigned dim_k) {
+void gemm(const nn_token_t* mat_a, const nn_token_t* mat_b, nn_token_t* mat_c, unsigned dim_m, unsigned dim_n, unsigned dim_k) {
     const unsigned block_size = 16;
-    unsigned sum;
+    nn_token_t sum;
 
 	for (unsigned m = 0; m < dim_m; m += block_size) {
 	    for (unsigned n = 0; n < dim_n; n += block_size) {
@@ -59,7 +59,7 @@ void gemm(const token_t* mat_a, const token_t* mat_b, token_t* mat_c, unsigned d
                         if (k == 0) sum = 0;
                         else sum = mat_c[m_ * dim_n + n_];
                         for (unsigned k_ = k; k_ < k_rem; k_++) {
-							sum += mat_a[m_ * dim_k + k_] * mat_b[n_ * dim_k + k_];
+							sum += mat_a[m_ * dim_k + k_] * mat_b[k_ * dim_n + n_];
                         }
                         mat_c[m_ * dim_n + n_] = sum;
                     }

@@ -3,7 +3,7 @@
 // Tiled implementation of GeMM for arbitrary sizes
 void tiled_gemm(const nn_token_t* mat_a, const nn_token_t* mat_b, nn_token_t* mat_c, unsigned dim_m, unsigned dim_n, unsigned dim_k) {
     const unsigned block_size = 16;
-    unsigned sum;
+    nn_token_t sum;
 
 	for (unsigned m = 0; m < dim_m; m += block_size) {
 	    for (unsigned n = 0; n < dim_n; n += block_size) {

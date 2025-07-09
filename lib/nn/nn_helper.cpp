@@ -22,16 +22,16 @@ void initialize_data(const char *input_file, nn_token_t *mem, unsigned len) {
 
     HIGH_DEBUG(printf("[NN FE] Initializing %d words from %s\n", len, input_file));
     for (unsigned i = 0; i < len; i++) {
-        nn_token_t in;
-        if (fscanf(file, "%d ", &in) != 1) {
+        float in;
+        if (fscanf(file, "%f ", &in) != 1) {
             perror("Error reading input data file!");
             exit(1);
         }
         mem[i] = in;
 
         #if 0
-            printf("%d ", in);
-            if ((i+1) % 16 == 0) printf("\n");
+            if (i < 10) printf("%f ", in);
+            if (i == 10) printf("\n");
         #endif
     }
 }

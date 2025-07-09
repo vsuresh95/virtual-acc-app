@@ -4,8 +4,7 @@
 #include <common_helper.h>
 #include <nn_operators.h>
 #include <nn_graph.h>
-
-typedef unsigned nn_token_t;
+#include <nn_token.h>
 
 // Data structure to manage memory allocation within an NN graph
 struct mem_pool_t {
