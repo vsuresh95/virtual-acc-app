@@ -127,11 +127,30 @@ void nn_module::_register() {
 	// Block until the request is complete (interface state is DONE), then swap to IDLE
 	while (!nn_intf.swap(nn::DONE, nn::IDLE)) sched_yield();
 
-	HIGH_DEBUG(printf("[NN] Regsitered model %s.\n", this->get_name());)
+	HIGH_DEBUG(printf("[NN] Registered model %s.\n", this->get_name());)
 }
 
 // Helper: Load and register a model in one call
 void nn_module::load_and_register(const char *n) {
     load(n);
     _register();
+}
+
+// Release the resources for this model
+void nn_module::release() {
+	HIGH_DEBUG(printf("[NN] Requested release of model %s.\n", this->get_name());)
+
+	// Check if the interface is IDLE. If yes, swap to BUSY. If not, block until it is
+	while (!nn_intf.swap(nn::IDLE, nn::BUSY)) sched_yield();
+
+	// Write the nn request to the interface
+	nn_intf.m = this;
+
+	// Set the interface state to CREATE
+	nn_intf.set(nn::RELEASE);
+
+	// Block until the request is complete (interface state is DONE), then swap to IDLE
+	while (!nn_intf.swap(nn::DONE, nn::IDLE)) sched_yield();
+
+	HIGH_DEBUG(printf("[NN] Released model %s.\n", this->get_name());)
 }

@@ -37,6 +37,9 @@ public:
     // Helper: Load and register a model in one call
     void load_and_register(const char *n);
 
+    // Release the resources for this model
+    void release();
+
     const char *get_name() { return graph->name; }
 
     ~nn_module() { delete mem; }

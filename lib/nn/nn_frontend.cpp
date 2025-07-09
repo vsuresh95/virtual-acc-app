@@ -50,6 +50,25 @@ void nn_frontend::run_frontend() {
                 nn_fe_sleep = NN_SLEEP_MIN;
                 break;
             }
+            case nn::RELEASE: {
+                HIGH_DEBUG(printf("[NN FE] Received a request for releasing model %s\n", nn_intf.m->get_name());)
+
+                // Join all the hpthreads for this model
+                for (auto &hpthread_map : model_hpthread_mapping[nn_intf.m]) {
+                    hpthread_t *th = hpthread_map.second;
+                    th->join();
+                }
+
+                // Set the interface state to DONE
+                nn_intf.set(nn::DONE);
+
+                HIGH_DEBUG(printf("[NN FE] Completed the processing of request.\n");)
+
+                // Reset trigger delay after servicing a request
+                start_time = get_counter();
+                nn_fe_sleep = NN_SLEEP_MIN;
+                break;
+            }
             default:
                 break;
         }
@@ -120,6 +139,9 @@ void nn_frontend::parse_nn_graph(nn_module *m) {
                         perror("error in hpthread_create!");
                         exit(1);
                     }
+
+                    // Assign the thread to the model mapping
+                    model_hpthread_mapping[m][current] = current->th;
                     break;
                 }
                 default: break;

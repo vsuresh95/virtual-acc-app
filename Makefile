@@ -119,6 +119,15 @@ $(BUILD_DIR)/%.accel.low.o: $(ACCEL_DIR)/%.cpp $(HPP_FILES)
 $(BUILD_DIR)/%.accel.high.o: $(ACCEL_DIR)/%.cpp $(HPP_FILES)
 	$(CXX) $(CXXFLAGS) -DHIGH_VERBOSE $< -c -o $@
 
+$(BUILD_DIR)/%.app.opt.o: $(APPSRCFILES) $(HPP_FILES)
+	$(CXX) $(CXXFLAGS) $< -c -o $@
+
+$(BUILD_DIR)/%.app.low.o: ./main.cpp $(HPP_FILES)
+	$(CXX) $(CXXFLAGS) -DLOW_VERBOSE $< -c -o $@
+
+$(BUILD_DIR)/%.app.high.o: ./main.cpp $(HPP_FILES)
+	$(CXX) $(CXXFLAGS) -DHIGH_VERBOSE $< -c -o $@
+
 clean: esp-build-distclean
 	rm -rf $(BUILD_DIR)
 

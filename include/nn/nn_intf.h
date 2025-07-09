@@ -12,6 +12,7 @@ namespace nn {
         IDLE = 2,
         BUSY = 3,
         REGISTER = 4,
+        RELEASE = 5,
         DONE = 7,
     } fe_state_t;
 }

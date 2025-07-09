@@ -616,7 +616,7 @@ void vam_backend::load_balance() {
 
 void vam_backend::run_util_mon() {
     while(1) {
-        sleep(2); // 2 seconds
+        sleep(4); // 2 seconds
 
         // Create a utilization entry
         std::unordered_map<physical_accel_t *, std::array<float, MAX_CONTEXTS>> util_map;
@@ -638,7 +638,7 @@ void vam_backend::print_report() {
     for (size_t i = 0; i < epoch_utilization.size(); i++) {
         printf("  %lu", i);
         for (physical_accel_t &accel : accel_list) {
-            printf("\t%s\t", accel.get_name());
+            printf("\t%s\t\t", accel.get_name());
             float total_util = 0.0;
             for (int j = 0; j < MAX_CONTEXTS; j++) {
                 total_util += epoch_utilization[i][&accel][j];

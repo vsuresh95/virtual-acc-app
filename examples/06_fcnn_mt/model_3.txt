@@ -1,0 +1,8 @@
+FCNN
+N 1 1 64 64 64 layer1.wgt
+N 2 1 64 64 64 layer2.wgt
+N 3 1 64 1 64 layer3.wgt
+E 0 1 4096
+E 1 2 4096
+E 2 3 4096
+E 3 -1 64

@@ -17,6 +17,9 @@ public:
     ////////////////////////////////////
     // Member variables
 
+    // Map between model operators and hpthreads
+    std::unordered_map<nn_module *, std::unordered_map<nn_node_t *, hpthread_t *>> model_hpthread_mapping;
+
     ////////////////////////////////////
     // Member functions
 
