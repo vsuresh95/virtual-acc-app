@@ -481,7 +481,8 @@ bool vam_backend::check_load_balance() {
 
     HIGH_DEBUG(printf("[VAM BE] Max load = %d, min load = %d, avg load = %0.2f\n", max_load, min_load, average_load);)
 
-    return (max_load - min_load > (unsigned) (imbalance_limit * average_load));
+    load_imbalance = ((float) (max_load - min_load)) / (average_load);
+    return (load_imbalance > imbalance_limit);
 }
 
 // Custom comparator for min-heap based on total_load assigned
@@ -532,6 +533,13 @@ void vam_backend::load_balance() {
             }
         }
 
+        // We will recompute the load imbalance of the new mapping
+        float average_load = 0;
+        unsigned count = 0;
+        unsigned max_load = 0;
+        unsigned min_load = INT_MAX;
+        const float imbalance_limit = 0.1;
+
         // Assign each thread using a greedy longest processing time algorithm.
         // Also, check which hpthreads need to be released for new accel
         // and create smaller new_mapping.
@@ -563,6 +571,7 @@ void vam_backend::load_balance() {
             for (unsigned i = 0; i < MAX_CONTEXTS; i++) {
                 if (!accel.valid_contexts[i]) {
                     accel.context_load[i] = th->active_load;
+                    accel.context_util[i] = 1;
                     accel.valid_contexts.set(i);
                     break;
                 }
@@ -571,7 +580,24 @@ void vam_backend::load_balance() {
             // Don't push it back into the queue if it is full
             if (!accel.valid_contexts.all())
                 accel_queue.push(accel);
+
+            // Recompute the new load on this accelerator
+            unsigned cur_load = accel.get_total_load();
+            if (cur_load == 0) continue;
+            if (cur_load < min_load) min_load = cur_load;
+            if (cur_load > max_load) max_load = cur_load;
+            average_load += cur_load;
+            count++;
+            HIGH_DEBUG(printf("[VAM BE] Current load of accel ID %d = %d\n", accel.accel_id, cur_load);)
         }
+
+        average_load = average_load/count;
+        HIGH_DEBUG(printf("[VAM BE] Max load = %d, min load = %d, avg load = %0.2f\n", max_load, min_load, average_load);)
+
+        // Check whether there is load imbalance across accelerators for the new mapping
+        float new_load_imbalance = ((float) (max_load - min_load)) / (average_load);
+        HIGH_DEBUG(printf("[VAM BE] Old load imbalance = %f, new load imbalance = %f\n", load_imbalance, new_load_imbalance);)
+        if (load_imbalance - new_load_imbalance < imbalance_limit) return;
 
         // First, release threads in the del_threads vector
         for (hpthread_t *th : del_threads) {

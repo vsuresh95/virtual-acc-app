@@ -34,6 +34,9 @@ public:
     // Tracking utilization across epochs
     std::vector<std::unordered_map<physical_accel_t *, std::array<float, MAX_CONTEXTS>>> epoch_utilization;
 
+    // Current load imbalance
+    float load_imbalance;
+
     ////////////////////////////////////
     // Member functions
 
