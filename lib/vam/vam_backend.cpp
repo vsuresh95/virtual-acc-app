@@ -53,71 +53,42 @@ void vam_backend::run_backend() {
             }
             case vam_state_t::CREATE: {
                 HIGH_DEBUG(printf("\n[VAM BE] Received a request for creating hpthread %s\n", intf.th->get_name());)
-
                 search_accel(intf.th);
-
-                // Set the interface state to DONE
-                intf.set(vam_state_t::DONE);
-
-                HIGH_DEBUG(printf("[VAM BE] Completed the processing of request.\n");)
-
-                // Reset trigger delay after servicing a request
-                start_time = get_counter();
-                vam_sleep = VAM_SLEEP_MIN;
                 break;
             }
             case vam_state_t::JOIN: {
                 HIGH_DEBUG(printf("\n[VAM BE] Received a request for joining hpthread %s\n", intf.th->get_name());)
-
                 if (!release_accel(intf.th)) {
                     perror("hpthread unmapped earlier!");
                     exit(1);
                 }
-
-                // Set the interface state to DONE
-                intf.set(vam_state_t::DONE);
-
-                HIGH_DEBUG(printf("[VAM BE] Completed the processing of request.\n");)
-
-                // Reset trigger delay after servicing a request
-                start_time = get_counter();
-                vam_sleep = VAM_SLEEP_MIN;
                 break;
             }
             case vam_state_t::SETPRIO: {
                 HIGH_DEBUG(printf("\n[VAM BE] Received a request for changing priority hpthread %s to %d\n", intf.th->get_name(), intf.th->attr->nprio);)
-
                 if (!setprio_accel(intf.th)) {
                     perror("hpthread unmapped earlier!");
                     exit(1);
                 }
-
-                // Set the interface state to DONE
-                intf.set(vam_state_t::DONE);
-
-                HIGH_DEBUG(printf("[VAM BE] Completed the processing of request.\n");)
-
-                // Reset trigger delay after servicing a request
-                start_time = get_counter();
-                vam_sleep = VAM_SLEEP_MIN;
                 break;
             }
             case vam_state_t::REPORT: {
                 HIGH_DEBUG(printf("\n[VAM BE] Received a report request\n");)
-
                 print_report();
-
-                // Set the interface state to DONE
-                intf.set(vam_state_t::DONE);
-
-                HIGH_DEBUG(printf("[VAM BE] Completed the processing of request.\n");)
-
-                // Reset trigger delay after servicing a request
-                start_time = get_counter();
-                vam_sleep = VAM_SLEEP_MIN;
+                break;
             }
             default:
                 break;
+        }
+
+        // If there was a request, set the state to done.
+        if (state > vam_state_t::DONE) {
+            // Set the interface state to DONE
+            intf.set(vam_state_t::DONE);
+            HIGH_DEBUG(printf("[VAM BE] Completed the processing of request.\n");)
+            // Reset trigger delay after servicing a request
+            start_time = get_counter();
+            vam_sleep = VAM_SLEEP_MIN;
         }
     }
 }
@@ -466,16 +437,20 @@ bool vam_backend::check_load_balance() {
     unsigned max_load = 0;
     unsigned min_load = INT_MAX;
     const float imbalance_limit = 0.1;
+    bool skip_load_balance = true;
 
     for (physical_accel_t &accel : accel_list) {
         unsigned cur_load = accel.get_total_load();
-        if (cur_load == 0) continue;
         if (cur_load < min_load) min_load = cur_load;
         if (cur_load > max_load) max_load = cur_load;
         average_load += cur_load;
         count++;
+        if (accel.valid_contexts.count() > 1) skip_load_balance = false;
         HIGH_DEBUG(printf("[VAM BE] Current load of %s = %d\n", accel.get_name(), cur_load);)
     }
+
+    // If none of the accelerators have more than one valid context, there's no need for load balancing
+    if (skip_load_balance) return false;
 
     average_load = average_load/count;
 
@@ -583,7 +558,6 @@ void vam_backend::load_balance() {
 
             // Recompute the new load on this accelerator
             unsigned cur_load = accel.get_total_load();
-            if (cur_load == 0) continue;
             if (cur_load < min_load) min_load = cur_load;
             if (cur_load > max_load) max_load = cur_load;
             average_load += cur_load;
@@ -597,7 +571,7 @@ void vam_backend::load_balance() {
         // Check whether there is load imbalance across accelerators for the new mapping
         float new_load_imbalance = ((float) (max_load - min_load)) / (average_load);
         HIGH_DEBUG(printf("[VAM BE] Old load imbalance = %f, new load imbalance = %f\n", load_imbalance, new_load_imbalance);)
-        if (load_imbalance - new_load_imbalance < imbalance_limit) return;
+        if (load_imbalance - new_load_imbalance < imbalance_limit) continue;
 
         // First, release threads in the del_threads vector
         for (hpthread_t *th : del_threads) {

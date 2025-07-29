@@ -55,6 +55,6 @@ const char *get_op_name(nn::operator_t p) {
     switch(p) {
         case nn::NONE : return (const char *) "NONE";
         case nn::GEMM : return (const char *) "GEMM";
-        default: return (const char *) "Unknown opitive";
+        default: return (const char *) "Unknown operand";
     }
 }

@@ -10,10 +10,10 @@ enum class vam_state_t {
     WAKEUP = 1,
     IDLE = 2,
     BUSY = 3,
-    CREATE = 4,
-    JOIN = 5,
-    SETPRIO = 6,
-    DONE = 7,
+    DONE = 4,
+    CREATE = 5,
+    JOIN = 6,
+    SETPRIO = 7,
     REPORT = 8
 };
 

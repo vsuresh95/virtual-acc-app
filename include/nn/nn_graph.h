@@ -47,7 +47,7 @@ struct nn_node_t {
     // Node ID
     int id;
 
-    // what opitive operation does this node map to?
+    // what operand does this node map to?
     nn::operator_t op;
 
     // List of all consumers (successors) of this node, and inbound/outbound edges

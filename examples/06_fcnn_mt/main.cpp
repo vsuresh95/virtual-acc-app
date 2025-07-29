@@ -26,14 +26,14 @@ int main(int argc, char **argv) {
         std::array<float, NUM_THREADS> iters;
         ips_report.push_back(iters);
         total_iterations = 0;
-        printf("[MAIN] Iters = ");
+        printf("[MAIN] IPS = ");
         for (int i = 0; i < NUM_THREADS; i++) {
             unsigned new_iters = iterations_done[i].load();
             float ips = (new_iters - old_iters[i]) / sleep_seconds;
             ips_report.back()[i] = ips;
             old_iters[i] = new_iters;
             total_iterations += new_iters;
-            printf("T%d:%d, ", i, new_iters);
+            printf("T%d:%0.2f(%d), ", i, ips, new_iters);
         }
         printf("\n");
     }
@@ -46,12 +46,19 @@ int main(int argc, char **argv) {
     hpthread_t::report();
     
     // Print out the iterations per second report
-    printf("-------------------------------------------------------------------\n");
+    for (int i = 0; i < NUM_THREADS + 1; i++) {
+        printf("--------");
+    }
+    printf("\n");
     printf("  #\t");
     for (int i = 0; i < NUM_THREADS; i++) {
         printf("%d\t", i);
     }
-    printf("\n-------------------------------------------------------------------\n");
+    printf("\n");
+    for (int i = 0; i < NUM_THREADS + 1; i++) {
+        printf("--------");
+    }
+    printf("\n");
     for (size_t i = 0; i < ips_report.size(); i++) {
         printf("  %lu\t", i);
         for (int j = 0; j < NUM_THREADS; j++) {

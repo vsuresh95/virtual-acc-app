@@ -61,13 +61,23 @@ typedef struct {
 
     // Get the total current assigned load for this device
     unsigned get_total_load() const {
+        // First, calculate total load on the accelerator
         unsigned total_load = 0;
+        unsigned effective_load = 0;
         for (int i = 0; i < MAX_CONTEXTS; i++) {
             if (valid_contexts[i]) {
-                total_load += (unsigned) (context_load[i] * context_util[i]);
+                total_load += context_load[i];
             }
         }
-        return total_load;
+        // Calculate the effective utilization for each context, and effective load
+        for (int i = 0; i < MAX_CONTEXTS; i++) {
+            if (valid_contexts[i]) {
+                float expected_util = (float) context_load[i] / total_load;
+                float effective_util = context_util[i] / expected_util;
+                effective_load += (unsigned) (context_load[i] * effective_util);
+            }
+        }
+        return effective_load;
     }
 } physical_accel_t;
 
