@@ -27,7 +27,9 @@ void nn_module::load(const char *n) {
             in_line_buf[strlen(in_line_buf) - 1] = '\0';
         }
 
-        sscanf(in_line_buf, "%s", graph->name);
+	    char module_name[50];
+        sscanf(in_line_buf, "%s", module_name);
+        snprintf(graph->name, 100, "%s.%d", module_name, id);
 
 	    HIGH_DEBUG(printf("[NN] MODEL NAME = %s\n", get_name()));
     }
@@ -57,7 +59,7 @@ void nn_module::load(const char *n) {
                         sscanf(in_line_buf+5, "%d %d %d %s", &args->dim_m, &args->dim_n, &args->dim_k, args->input_file);
                         gemm_node->args = args;
                         graph->add_nn_node(gemm_node);
-                        snprintf(gemm_node->name, 100, "gemm.%d", node_id);
+                        snprintf(gemm_node->name, 120, "%s.gemm.%d", graph->name, node_id);
                         HIGH_DEBUG(
                             printf("\t[NN] Adding node %s...", gemm_node->get_name());
                             gemm_node->dump();

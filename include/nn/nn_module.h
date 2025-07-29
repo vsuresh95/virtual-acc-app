@@ -25,6 +25,9 @@ public:
     // Input output data pointers
     nn_token_t *input_data, *output_data;
 
+    // Module identifier
+    unsigned id;
+
     ////////////////////////////////////
     // Member functions
 
@@ -42,6 +45,9 @@ public:
 
     const char *get_name() { return graph->name; }
 
+    // Constructors and destructor
+    nn_module(unsigned i) { id = i; }
+    nn_module() {}
     ~nn_module() { delete mem; }
 };
 
