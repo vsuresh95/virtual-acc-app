@@ -28,6 +28,9 @@ public:
     // Module identifier
     unsigned id;
 
+    // PRIORITY: RANGE 1 (HIGHEST) - 10 (LOWEST)
+    unsigned nprio;
+
     ////////////////////////////////////
     // Member functions
 
@@ -47,6 +50,7 @@ public:
 
     // Constructors and destructor
     nn_module(unsigned i) { id = i; }
+    nn_module(unsigned i, unsigned p) { id = i; nprio = p; }
     nn_module() {}
     ~nn_module() { delete mem; }
 };

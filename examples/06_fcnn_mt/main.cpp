@@ -27,6 +27,7 @@ int main(int argc, char **argv) {
     std::array<float, MAX_THREADS> old_iters = {};
     unsigned total_iterations = 0;
     const unsigned sleep_seconds = 4;
+    unsigned old_total_iterations;
     while (total_iterations != NUM_ITERATIONS * NUM_THREADS) {
         sleep(sleep_seconds); // 2 seconds
 
@@ -42,6 +43,14 @@ int main(int argc, char **argv) {
             total_iterations += new_iters;
             printf("T%d:%0.2f(%d), ", i, ips, new_iters);
         }
+
+        if (total_iterations != 0 && total_iterations == old_total_iterations) {
+            printf("STALL!!!");
+            goto exit;
+        } else {
+            old_total_iterations = total_iterations;
+        }
+
         printf("\n");
     }
 
@@ -50,6 +59,7 @@ int main(int argc, char **argv) {
         th[i].join();
     }
 
+exit:
     hpthread_t::report();
     
     // Print out the iterations per second report
