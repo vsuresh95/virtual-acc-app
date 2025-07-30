@@ -17,7 +17,8 @@ typedef struct {
     uint64_t context_active_cycles[MAX_CONTEXTS]; // Active cycles for the context to use for utilization
     int thread_id[MAX_CONTEXTS]; // If allocated, what is the hpthread ID of the context?
     unsigned context_load[MAX_CONTEXTS]; // Assigned (predicted) load for each context
-    float context_util[MAX_CONTEXTS]; // Actual utilization of the accele
+    float context_util[MAX_CONTEXTS]; // Actual utilization of the context
+    unsigned effective_load[MAX_CONTEXTS]; // Normalized, actual load for each context
 
     ////////////////////////////////////
     // ESP-relevant variables
@@ -54,6 +55,7 @@ typedef struct {
             printf("%d ", l);
         printf("\n");
         printf("\t- total_load = %d\n", get_total_load());
+        printf("\t- effective_load = %d\n", get_effective_load());
     }
 
     // Get name of the device
@@ -61,23 +63,24 @@ typedef struct {
 
     // Get the total current assigned load for this device
     unsigned get_total_load() const {
-        // First, calculate total load on the accelerator
         unsigned total_load = 0;
-        unsigned effective_load = 0;
         for (int i = 0; i < MAX_CONTEXTS; i++) {
             if (valid_contexts[i]) {
                 total_load += context_load[i];
             }
         }
-        // Calculate the effective utilization for each context, and effective load
+        return total_load;
+    }
+
+    // Get the total effective, actual load for this device
+    unsigned get_effective_load() const {
+        unsigned total_load = 0;
         for (int i = 0; i < MAX_CONTEXTS; i++) {
             if (valid_contexts[i]) {
-                float expected_util = (float) context_load[i] / total_load;
-                float effective_util = context_util[i] / expected_util;
-                effective_load += (unsigned) (context_load[i] * effective_util);
+                total_load += effective_load[i];
             }
         }
-        return effective_load;
+        return total_load;
     }
 } physical_accel_t;
 

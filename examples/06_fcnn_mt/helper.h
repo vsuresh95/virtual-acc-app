@@ -1,8 +1,10 @@
 #ifndef __HELPER_H__
 #define __HELPER_H__
 
-#define NUM_THREADS 4
-#define NUM_ITERATIONS 5000
+unsigned NUM_THREADS = 2;
+unsigned NUM_ITERATIONS = 3000;
+
+#define MAX_THREADS 8
 
 const float ERR_TH = 0.05;
 

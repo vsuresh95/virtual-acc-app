@@ -44,6 +44,16 @@ void vam_backend::run_backend() {
                         // Start the load balancing algorithm
                         load_balance();
                         start_time = get_counter();
+
+                        // for (physical_accel_t &accel : accel_list) {
+                        //     LOW_DEBUG(printf("\tMapping for %s: ", accel.get_name());)
+                        //     for (int i = 0; i < MAX_CONTEXTS; i++) {
+                        //         if (accel.valid_contexts[i]) {
+                        //             LOW_DEBUG(printf("C%d=%s, ", i, phy_to_virt_mapping[&accel][i]->get_name());)
+                        //         }
+                        //     }
+                        //     LOW_DEBUG(printf("\n");)
+                        // }
                     }
                     start_time = get_counter();
                     if (vam_sleep < VAM_SLEEP_MAX) vam_sleep += VAM_SLEEP_MIN;
@@ -115,6 +125,7 @@ void vam_backend::probe_accel() {
             for (int i = 0; i < MAX_CONTEXTS; i++) {
                 accel_temp.thread_id[i] = -1;
                 accel_temp.context_load[i] = 0;
+                accel_temp.effective_load[i] = 0;
                 accel_temp.context_start_cycles[i] = 0;
                 accel_temp.context_active_cycles[i] = 0;
                 accel_temp.context_util[i] = 0.0;
@@ -172,8 +183,8 @@ void vam_backend::search_accel(hpthread_t *th) {
         // Is the accelerator suitable and not fully utilized for this primitive?
         if (accel.prim == th->get_prim() && !accel.valid_contexts.all()) {
             // Check if this accelerator's total load is less than the previous min
-            if (accel.get_total_load() < candidate_accel.second) {
-                candidate_accel = std::make_pair(&accel, accel.get_total_load());
+            if (accel.get_effective_load() < candidate_accel.second) {
+                candidate_accel = std::make_pair(&accel, accel.get_effective_load());
                 HIGH_DEBUG(printf("[VAM BE] Device %s is a candidate!\n", accel.get_name());)
             }
 
@@ -399,6 +410,9 @@ void vam_backend::check_utilization() {
                 accel.context_util[i] = util;
                 hpthread_t *th = phy_to_virt_mapping[&accel][i];
                 th->active_load = accel.context_util[i] * accel.context_load[i];
+                float expected_util = (float) accel.context_load[i] / accel.get_total_load();
+                float effective_util = accel.context_util[i] / expected_util;
+                accel.effective_load[i] = (unsigned) (accel.context_load[i] * effective_util);
 
                 HIGH_DEBUG(
                     total_util += accel.context_util[i];
@@ -406,7 +420,7 @@ void vam_backend::check_utilization() {
                 )
             }
         }
-        HIGH_DEBUG(printf("total=%0.2f%%, load=%d\n", total_util * 100, accel.get_total_load());)
+        HIGH_DEBUG(printf("total=%0.2f%%, load=%d\n", total_util * 100, accel.get_effective_load());)
     }
 }
 
@@ -426,7 +440,7 @@ bool vam_backend::check_load_balance() {
                     total_util += accel.context_util[i];
                 }
             }
-            LOW_DEBUG(printf("total=%0.2f%%, load=%d\n", total_util * 100, accel.get_total_load());)
+            LOW_DEBUG(printf("total=%0.2f%%, load=%d\n", total_util * 100, accel.get_effective_load());)
         }
     )
 
@@ -436,11 +450,11 @@ bool vam_backend::check_load_balance() {
     unsigned count = 0;
     unsigned max_load = 0;
     unsigned min_load = INT_MAX;
-    const float imbalance_limit = 0.1;
+    const float imbalance_limit = 0.25;
     bool skip_load_balance = true;
 
     for (physical_accel_t &accel : accel_list) {
-        unsigned cur_load = accel.get_total_load();
+        unsigned cur_load = accel.get_effective_load();
         if (cur_load < min_load) min_load = cur_load;
         if (cur_load > max_load) max_load = cur_load;
         average_load += cur_load;
@@ -453,17 +467,24 @@ bool vam_backend::check_load_balance() {
     if (skip_load_balance) return false;
 
     average_load = average_load/count;
-
     HIGH_DEBUG(printf("[VAM BE] Max load = %d, min load = %d, avg load = %0.2f\n", max_load, min_load, average_load);)
 
-    load_imbalance = ((float) (max_load - min_load)) / (average_load);
-    return (load_imbalance > imbalance_limit);
+    float new_load_imbalance = ((float) (max_load - min_load)) / (average_load);
+    // Check if the new load imbalance is significantly worse than the previous checkpointed value
+    // If not, do not perform any load balancing.
+    if (new_load_imbalance - load_imbalance > imbalance_limit) {
+        load_imbalance = new_load_imbalance;
+        return true;
+    } else {
+        load_imbalance = new_load_imbalance;
+        return false;
+    }
 }
 
 // Custom comparator for min-heap based on total_load assigned
 struct AccelCompare {
     bool operator()(const physical_accel_t a, const physical_accel_t b) const {
-        return a.get_total_load() > b.get_total_load(); // min-heap: less total_load comes first
+        return a.get_effective_load() > b.get_effective_load(); // min-heap: less total_load comes first
     }
 };
 
@@ -513,7 +534,7 @@ void vam_backend::load_balance() {
         unsigned count = 0;
         unsigned max_load = 0;
         unsigned min_load = INT_MAX;
-        const float imbalance_limit = 0.1;
+        const float imbalance_limit = 0.25;
 
         // Assign each thread using a greedy longest processing time algorithm.
         // Also, check which hpthreads need to be released for new accel
@@ -532,7 +553,9 @@ void vam_backend::load_balance() {
 
             // Get the original mapping for this hpthread
             std::pair<physical_accel_t *, unsigned> old_mapping = virt_to_phy_mapping[th];
-            if (old_mapping.first->accel_id == accel.accel_id) {
+            physical_accel_t *old_accel = old_mapping.first;
+            unsigned old_context = old_mapping.second;
+            if (old_accel->accel_id == accel.accel_id) {
                 // Mapped to the same accelerator currently.
                 // Do nothing
             } else {
@@ -545,24 +568,58 @@ void vam_backend::load_balance() {
             // -- this is only for LPT and not used after this loop
             for (unsigned i = 0; i < MAX_CONTEXTS; i++) {
                 if (!accel.valid_contexts[i]) {
-                    accel.context_load[i] = th->active_load;
-                    accel.context_util[i] = 1;
+                    accel.context_load[i] = old_accel->context_load[old_context];
+                    accel.effective_load[i] = old_accel->effective_load[old_context];
                     accel.valid_contexts.set(i);
                     break;
                 }
             }
 
             // Don't push it back into the queue if it is full
-            if (!accel.valid_contexts.all())
+            if (!accel.valid_contexts.all()) {
                 accel_queue.push(accel);
+            } else {
+                // Since this accel is not being pushed back, we will calculate load here
+                unsigned cur_load = accel.get_effective_load();
+                // unsigned cur_load = accel.get_effective_load();
+                if (cur_load < min_load) min_load = cur_load;
+                if (cur_load > max_load) max_load = cur_load;
+                average_load += cur_load;
+                count++;
+                HIGH_DEBUG(printf("[VAM BE] Current load of accel ID %d = %d\n", accel.accel_id, cur_load);)
 
-            // Recompute the new load on this accelerator
-            unsigned cur_load = accel.get_total_load();
+                // Print out the total utilization
+                HIGH_DEBUG(
+                    printf("[VAM BE] New util of %s: ", accel_list[accel.accel_id].get_name());
+                    for (int i = 0; i < MAX_CONTEXTS; i++) {
+                        if (accel.valid_contexts[i]) {
+                            printf("C%d=%d, ", i, accel.effective_load[i]);
+                        }
+                    }
+                    printf("total=%d\n", accel.get_effective_load());
+                )
+            }
+        }
+
+        while (!accel_queue.empty()) {
+            physical_accel_t accel = accel_queue.top(); accel_queue.pop();
+            unsigned cur_load = accel.get_effective_load();
             if (cur_load < min_load) min_load = cur_load;
             if (cur_load > max_load) max_load = cur_load;
             average_load += cur_load;
             count++;
             HIGH_DEBUG(printf("[VAM BE] Current load of accel ID %d = %d\n", accel.accel_id, cur_load);)
+
+            // Print out the total utilization
+            HIGH_DEBUG(
+                printf("[VAM BE] New util of %s: ", accel_list[accel.accel_id].get_name());
+                for (int i = 0; i < MAX_CONTEXTS; i++) {
+                    if (accel.valid_contexts[i]) {
+                        printf("C%d=%d, ", i, accel.effective_load[i]);
+                    }
+                }
+                printf("total=%d\n", accel.get_effective_load());
+            )
         }
 
         average_load = average_load/count;
@@ -570,7 +627,7 @@ void vam_backend::load_balance() {
 
         // Check whether there is load imbalance across accelerators for the new mapping
         float new_load_imbalance = ((float) (max_load - min_load)) / (average_load);
-        HIGH_DEBUG(printf("[VAM BE] Old load imbalance = %f, new load imbalance = %f\n", load_imbalance, new_load_imbalance);)
+        LOW_DEBUG(printf("[VAM BE] Old load imbalance = %f, new load imbalance = %f\n", load_imbalance, new_load_imbalance);)
         if (load_imbalance - new_load_imbalance < imbalance_limit) continue;
 
         // First, release threads in the del_threads vector

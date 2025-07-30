@@ -6,8 +6,8 @@
 #include <vam_physical_accel.h>
 #include <vam_accel_def.h>
 
-#define VAM_SLEEP_MIN   78125000 // ~1 seconds
-#define VAM_SLEEP_MAX   781250000 // ~10 seconds
+#define VAM_SLEEP_MIN   2 * 78125000 // ~1 seconds
+#define VAM_SLEEP_MAX   10 * 78125000 // ~10 seconds
 
 // Approximate scaling factor for total scheduling period of AVU
 #define NUM_SCHED_INTERVALS 20

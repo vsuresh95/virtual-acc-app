@@ -4,10 +4,10 @@
 #include <nn_frontend.h>
 
 // Iteration count for all workers
-std::array<std::atomic<unsigned>, NUM_THREADS> iterations_done;
+std::array<std::atomic<unsigned>, MAX_THREADS> iterations_done;
 
 // Tracking iterations per second across epochs
-std::vector<std::array<float, NUM_THREADS>> ips_report;
+std::vector<std::array<float, MAX_THREADS>> ips_report;
 
 void fcnn_worker(unsigned worker_id) {
     HIGH_DEBUG(printf("[WORKER%d] Starting worker %d!\n", worker_id, worker_id);)
