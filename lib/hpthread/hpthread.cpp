@@ -14,7 +14,7 @@ static unsigned thread_count = 0;
 // API for user to create a hpthread
 int hpthread_t::create() {
 	// Assign a thread ID
-	this->id = thread_count++;
+	this->id = ++thread_count;
 
 	HIGH_DEBUG(printf("[HPTHREAD] Requested hpthread %s (ID:%d).\n", attr->name, this->id);)
 

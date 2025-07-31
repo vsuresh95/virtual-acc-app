@@ -32,7 +32,7 @@ public:
     std::vector<pthread_t> cpu_thread_list;
 
     // Tracking utilization across epochs
-    std::vector<std::unordered_map<physical_accel_t *, std::array<float, MAX_CONTEXTS>>> epoch_utilization;
+    std::vector<std::unordered_map<physical_accel_t *, std::array<std::pair<float, unsigned>, MAX_CONTEXTS>>> epoch_utilization;
 
     // Current load imbalance
     float load_imbalance;

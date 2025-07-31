@@ -676,30 +676,32 @@ void vam_backend::run_util_mon() {
         sleep(4); // 2 seconds
 
         // Create a utilization entry
-        std::unordered_map<physical_accel_t *, std::array<float, MAX_CONTEXTS>> util_map;
+        std::unordered_map<physical_accel_t *, std::array<std::pair<float, unsigned>, MAX_CONTEXTS>> util_map;
         epoch_utilization.push_back(util_map);
 
         // Iterate through all accelerators and copy their utilizations
         for (physical_accel_t &accel : accel_list)
             for (int i = 0; i < MAX_CONTEXTS; i++)
-                if (accel.valid_contexts[i])
-                    epoch_utilization.back()[&accel][i] = accel.context_util[i];
+                if (accel.valid_contexts[i]) {
+                    unsigned th_id = phy_to_virt_mapping[&accel][i]->id;
+                    epoch_utilization.back()[&accel][i] = {accel.context_util[i], th_id};
+                }
     }
 }
 
 void vam_backend::print_report() {
     // Print out the total utilization
-    printf("------------------------------------------------------------------------\n");
-    printf("  #\tAccel\t\t\tC0\tC1\tC2\tC3\tTotal\n");
-    printf("------------------------------------------------------------------------\n");
+    printf("------------------------------------------------------------------------------------------------------\n");
+    printf("  #\tAccel\t\t\tC0\t\tC1\t\tC2\t\tC3\t\tTotal\n");
+    printf("------------------------------------------------------------------------------------------------------\n");
     for (size_t i = 0; i < epoch_utilization.size(); i++) {
         printf("  %lu", i);
         for (physical_accel_t &accel : accel_list) {
             printf("\t%s\t\t", accel.get_name());
             float total_util = 0.0;
             for (int j = 0; j < MAX_CONTEXTS; j++) {
-                total_util += epoch_utilization[i][&accel][j];
-                printf("%0.2f%%\t", epoch_utilization[i][&accel][j]*100);
+                total_util += epoch_utilization[i][&accel][j].first;
+                printf("%0.2f%%(%d)\t", epoch_utilization[i][&accel][j].first*100, epoch_utilization[i][&accel][j].second);
             }
             printf("%0.2f%%\n", total_util*100);
         }
