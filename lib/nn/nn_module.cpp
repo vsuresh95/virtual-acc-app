@@ -56,7 +56,10 @@ void nn_module::load(const char *n) {
                         nn_node_t *gemm_node = new nn_node_t(node_id, nn::GEMM);
                         // Read the parameters of the GEMM from the following chars
                         gemm_node_args *args = new gemm_node_args;
-                        sscanf(in_line_buf+5, "%d %d %d %s", &args->dim_m, &args->dim_n, &args->dim_k, args->input_file);
+                        if (sscanf(in_line_buf+5, "%d %d %d %s", &args->dim_m, &args->dim_n, &args->dim_k, args->input_file) == 3) {
+                            // If no input file was provided, the pointer is marked invalid.
+                            args->input_file[0] = '\n'; args->input_file[1] = '\0';
+                        } 
                         gemm_node->args = args;
                         graph->add_nn_node(gemm_node);
                         snprintf(gemm_node->name, 120, "%s.gemm.%d", graph->name, node_id);

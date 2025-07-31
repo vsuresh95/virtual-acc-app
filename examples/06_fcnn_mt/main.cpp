@@ -45,7 +45,7 @@ int main(int argc, char **argv) {
         }
 
         if (total_iterations != 0 && total_iterations == old_total_iterations) {
-            printf("STALL!!!");
+            printf("STALL!!!\n");
             goto exit;
         } else {
             old_total_iterations = total_iterations;

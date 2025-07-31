@@ -44,16 +44,6 @@ void vam_backend::run_backend() {
                         // Start the load balancing algorithm
                         load_balance();
                         start_time = get_counter();
-
-                        // for (physical_accel_t &accel : accel_list) {
-                        //     LOW_DEBUG(printf("\tMapping for %s: ", accel.get_name());)
-                        //     for (int i = 0; i < MAX_CONTEXTS; i++) {
-                        //         if (accel.valid_contexts[i]) {
-                        //             LOW_DEBUG(printf("C%d=%s, ", i, phy_to_virt_mapping[&accel][i]->get_name());)
-                        //         }
-                        //     }
-                        //     LOW_DEBUG(printf("\n");)
-                        // }
                     }
                     start_time = get_counter();
                     if (vam_sleep < VAM_SLEEP_MAX) vam_sleep += VAM_SLEEP_MIN;
@@ -184,7 +174,7 @@ void vam_backend::search_accel(hpthread_t *th) {
         if (accel.prim == th->get_prim() && !accel.valid_contexts.all()) {
             // Check if this accelerator's total load is less than the previous min
             if (accel.get_effective_load() < candidate_accel.second) {
-                candidate_accel = std::make_pair(&accel, accel.get_effective_load());
+                candidate_accel = {&accel, accel.get_effective_load()};
                 HIGH_DEBUG(printf("[VAM BE] Device %s is a candidate!\n", accel.get_name());)
             }
 
@@ -220,7 +210,7 @@ void vam_backend::search_accel(hpthread_t *th) {
     phy_to_virt_mapping[candidate_accel.first][cur_context] = th;
 
     // Update the virt->phy for the hpthread
-    virt_to_phy_mapping[th] = std::make_pair(candidate_accel.first, cur_context);
+    virt_to_phy_mapping[th] = {candidate_accel.first, cur_context};
 
     // Mark the context as allocated.
     candidate_accel.first->valid_contexts.set(cur_context);
@@ -657,7 +647,7 @@ void vam_backend::load_balance() {
             phy_to_virt_mapping[accel][cur_context] = th;
 
             // Update the virt->phy for the hpthread
-            virt_to_phy_mapping[th] = std::make_pair(accel, cur_context);
+            virt_to_phy_mapping[th] = {accel, cur_context};
 
             // Mark the device as allocated.
             accel->valid_contexts.set(cur_context);

@@ -16,22 +16,27 @@ size_t mem_pool_t::alloc(size_t mem_size) {
 }
 
 void initialize_data(const char *input_file, nn_token_t *mem, unsigned len) {
-    if (input_file == NULL) return;
+    if (input_file[0] == '\n') {
+        HIGH_DEBUG(printf("[NN FE] Initializing %d words with random input\n", len));
+        const float float_min = 0.0f, float_max = 1.0f;
+        for (unsigned i = 0; i < len; i++)
+            mem[i] = float_min + ((float)rand() / (float)RAND_MAX) * (float_max - float_min);;
+    } else {
+        FILE *file = fopen(input_file, "r");
 
-    FILE *file = fopen(input_file, "r");
+        HIGH_DEBUG(printf("[NN FE] Initializing %d words from %s\n", len, input_file));
+        for (unsigned i = 0; i < len; i++) {
+            float in;
+            if (fscanf(file, "%f ", &in) != 1) {
+                perror("Error reading input data file!");
+                exit(1);
+            }
+            mem[i] = in;
 
-    HIGH_DEBUG(printf("[NN FE] Initializing %d words from %s\n", len, input_file));
-    for (unsigned i = 0; i < len; i++) {
-        float in;
-        if (fscanf(file, "%f ", &in) != 1) {
-            perror("Error reading input data file!");
-            exit(1);
+            #if 0
+                if (i < 10) printf("%f ", in);
+                if (i == 10) printf("\n");
+            #endif
         }
-        mem[i] = in;
-
-        #if 0
-            if (i < 10) printf("%f ", in);
-            if (i == 10) printf("\n");
-        #endif
     }
 }

@@ -14,9 +14,9 @@ void fcnn_worker(unsigned worker_id) {
 
     // Load a model from a text file (and) register with NN frontend
     nn_module m(worker_id, (worker_id%4)+1);
-    m.load_and_register("model_5.txt");
+    m.load_and_register("model_5_noinput.txt");
 
-    initialize_data("input.txt", m.input_data, 4096);
+    initialize_data("\n\0", m.input_data, 4096);
 
     unsigned inputs_remaining = NUM_ITERATIONS;
     unsigned outputs_remaining = NUM_ITERATIONS;
