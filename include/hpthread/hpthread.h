@@ -30,6 +30,9 @@ typedef struct {
     // Used for static and dynamic load tracking within VAM
     bool active;
 
+    // For debug purposes -- ID of user application that requested this thread
+    unsigned user_id;
+
     ////////////////////////////////////
     // Member functions serving as user APIs
 

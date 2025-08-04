@@ -673,7 +673,7 @@ void vam_backend::run_util_mon() {
         for (physical_accel_t &accel : accel_list)
             for (int i = 0; i < MAX_CONTEXTS; i++)
                 if (accel.valid_contexts[i]) {
-                    unsigned th_id = phy_to_virt_mapping[&accel][i]->id;
+                    unsigned th_id = phy_to_virt_mapping[&accel][i]->user_id;
                     epoch_utilization.back()[&accel][i] = {accel.context_util[i], th_id};
                 }
     }

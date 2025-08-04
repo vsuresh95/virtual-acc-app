@@ -28,7 +28,7 @@ void nn_module::load(const char *n) {
         }
 
 	    char module_name[50];
-        sscanf(in_line_buf, "%s", module_name);
+        sscanf(in_line_buf, "%s %d", module_name, &nprio);
         snprintf(graph->name, 100, "%s.%d", module_name, id);
 
 	    HIGH_DEBUG(printf("[NN] MODEL NAME = %s\n", get_name()));

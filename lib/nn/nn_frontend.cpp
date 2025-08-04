@@ -132,6 +132,7 @@ void nn_frontend::parse_nn_graph(nn_module *m) {
                     current->th->attr_setprimitive(hpthread_prim_t::GEMM);
                     current->th->attr_setname(current->get_name());
                     current->th->attr_setpriority(m->nprio);
+                    current->th->user_id = m->id + 1;
 
                     HIGH_DEBUG(printf("[NN FE] Before hpthread create request...\n"));
 
