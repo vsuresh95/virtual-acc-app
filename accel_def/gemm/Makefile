@@ -1,4 +1,0 @@
-ACCEL_FILES+=$(ACCEL_DIR)/gemm/gemm_def.cpp
-CXXFLAGS+=-I$(ACCEL_DIR)/gemm
-
-ESP_INCDIR += -I$(ESP_ROOT)/accelerators/stratus_hls/gemm_stratus/sw/linux/include
