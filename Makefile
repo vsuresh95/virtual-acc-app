@@ -7,36 +7,41 @@ LIB_DIR=$(ROOT_DIR)/lib
 INCLUDE_DIR=$(ROOT_DIR)/include
 ACCEL_DIR=$(ROOT_DIR)/accel_def
 
-CFLAGS+=-Wall -fPIC -O3
+CFLAGS+=-Wall -fPIC
 CXXFLAGS+=-std=c++17 -Wall -fPIC -Wno-overloaded-virtual
 LD_LIBS+=-lpthread -pthread
 
 HPP_FILES := $(shell find -L $(ROOT_DIR) -name '*.h')
 
-CXXFLAGS+=-I$(ROOT_DIR)/include/common
-CXXFLAGS+=-I$(ROOT_DIR)/include/hpthread
-CXXFLAGS+=-I$(ROOT_DIR)/include/vam
-CXXFLAGS+=-I$(ROOT_DIR)/include/nn
+CFLAGS+=-I$(ROOT_DIR)/include/common
+CFLAGS+=-I$(ROOT_DIR)/include/hpthread
+CFLAGS+=-I$(ROOT_DIR)/include/vam
+CFLAGS+=-I$(ROOT_DIR)/include/sw_kernels
 
-LIB_FILES+=$(LIB_DIR)/hpthread/hpthread.cpp
-LIB_FILES+=$(LIB_DIR)/hpthread/hpthread_intf.cpp
-LIB_FILES+=$(LIB_DIR)/vam/vam_backend.cpp
-LIB_FILES+=$(LIB_DIR)/nn/nn_module.cpp
-LIB_FILES+=$(LIB_DIR)/nn/sw_kernels.cpp
-LIB_FILES+=$(LIB_DIR)/nn/nn_frontend.cpp
-LIB_FILES+=$(LIB_DIR)/nn/nn_graph.cpp
-LIB_FILES+=$(LIB_DIR)/nn/nn_intf.cpp
-LIB_FILES+=$(LIB_DIR)/nn/nn_helper.cpp
+CFLAGS+=-I$(ROOT_DIR)/nn/include/common
+
+LIB_FILES+=$(LIB_DIR)/hpthread/hpthread.c
+LIB_FILES+=$(LIB_DIR)/hpthread/hpthread_intf.c
+LIB_FILES+=$(LIB_DIR)/vam/vam_backend.c
+
+LIB_FILES+=$(LIB_DIR)/sw_kernels/sw_gemm.c
+
+# LIB_FILES+=$(LIB_DIR)/nn/nn_module.c
+# LIB_FILES+=$(LIB_DIR)/nn/sw_kernels.c
+# LIB_FILES+=$(LIB_DIR)/nn/nn_frontend.c
+# LIB_FILES+=$(LIB_DIR)/nn/nn_graph.c
+# LIB_FILES+=$(LIB_DIR)/nn/nn_intf.c
+# LIB_FILES+=$(LIB_DIR)/nn/nn_helper.c
 
 include $(ACCEL_DIR)/Makefile
 
-OPT_LIB_OBJ=$(patsubst $(LIB_DIR)/%.cpp,$(BUILD_DIR)/%.lib.opt.o,$(LIB_FILES))
-LOW_DBG_LIB_OBJ=$(patsubst $(LIB_DIR)/%.cpp,$(BUILD_DIR)/%.lib.low.o,$(LIB_FILES))
-HIGH_DBG_LIB_OBJ=$(patsubst $(LIB_DIR)/%.cpp,$(BUILD_DIR)/%.lib.high.o,$(LIB_FILES))
+OPT_LIB_OBJ=$(patsubst $(LIB_DIR)/%.c,$(BUILD_DIR)/%.lib.opt.o,$(LIB_FILES))
+LOW_DBG_LIB_OBJ=$(patsubst $(LIB_DIR)/%.c,$(BUILD_DIR)/%.lib.low.o,$(LIB_FILES))
+HIGH_DBG_LIB_OBJ=$(patsubst $(LIB_DIR)/%.c,$(BUILD_DIR)/%.lib.high.o,$(LIB_FILES))
 
-OPT_ACCEL_OBJ=$(patsubst $(ACCEL_DIR)/%.cpp,$(BUILD_DIR)/%.accel.opt.o,$(ACCEL_FILES))
-LOW_DBG_ACCEL_OBJ=$(patsubst $(ACCEL_DIR)/%.cpp,$(BUILD_DIR)/%.accel.low.o,$(ACCEL_FILES))
-HIGH_DBG_ACCEL_OBJ=$(patsubst $(ACCEL_DIR)/%.cpp,$(BUILD_DIR)/%.accel.high.o,$(ACCEL_FILES))
+OPT_ACCEL_OBJ=$(patsubst $(ACCEL_DIR)/%.c,$(BUILD_DIR)/%.accel.opt.o,$(ACCEL_FILES))
+LOW_DBG_ACCEL_OBJ=$(patsubst $(ACCEL_DIR)/%.c,$(BUILD_DIR)/%.accel.low.o,$(ACCEL_FILES))
+HIGH_DBG_ACCEL_OBJ=$(patsubst $(ACCEL_DIR)/%.c,$(BUILD_DIR)/%.accel.high.o,$(ACCEL_FILES))
 
 CROSS_COMPILE ?= riscv64-unknown-linux-gnu-
 
@@ -60,7 +65,7 @@ ESP_LD_FLAGS += -ltest
 ESP_LD_FLAGS += -lcontig
 ESP_LD_FLAGS += -lutils
 
-CXXFLAGS += $(ESP_INCDIR) $(ESP_LD_LIBS)
+CFLAGS += $(ESP_INCDIR) $(ESP_LD_LIBS)
 LD_LIBS += $(ESP_LD_FLAGS)
 
 ESP_EXE_DIR = $(ESP_ROOT)/socs/xilinx-vcu118-xcvu9p-backup/soft-build/ariane/sysroot/applications/test
@@ -90,43 +95,44 @@ build:
 	@mkdir -p $(BUILD_DIR)/audio_fft
 	@mkdir -p $(BUILD_DIR)/audio_fir
 	@mkdir -p $(BUILD_DIR)/gemm
+	@mkdir -p $(BUILD_DIR)/sw_kernels
 	@mkdir -p $(BUILD_DIR)/$(APP_NAME)
 
 $(BUILD_DIR)/$(APP_NAME)/opt.exe: $(HPP_FILES) $(OPT_LIB_OBJ) $(OPT_ACCEL_OBJ) $(OPT_APP_OBJ) esp-libs
-	$(LD) $(CXXFLAGS) $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)
+	$(LD) $(CFLAGS) $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)
 
 $(BUILD_DIR)/$(APP_NAME)/low.dbg.exe: $(HPP_FILES) $(LOW_DBG_LIB_OBJ) $(LOW_DBG_ACCEL_OBJ) $(LOW_DBG_APP_OBJ) esp-libs
-	$(LD) $(CXXFLAGS) -DLOW_VERBOSE $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)
+	$(LD) $(CFLAGS) -DLOW_VERBOSE $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)
 
 $(BUILD_DIR)/$(APP_NAME)/high.dbg.exe: $(HPP_FILES) $(HIGH_DBG_LIB_OBJ) $(HIGH_DBG_ACCEL_OBJ) $(HIGH_DBG_APP_OBJ) esp-libs
-	$(LD) $(CXXFLAGS) -DHIGH_VERBOSE $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)
+	$(LD) $(CFLAGS) -DHIGH_VERBOSE $(filter-out $(HPP_FILES) esp-libs,$^) -o $@ $(LD_LIBS)
 
-$(BUILD_DIR)/%.lib.opt.o: $(LIB_DIR)/%.cpp $(HPP_FILES)
-	$(CXX) $(CXXFLAGS) $< -c -o $@
+$(BUILD_DIR)/%.lib.opt.o: $(LIB_DIR)/%.c $(HPP_FILES)
+	$(CC) $(CFLAGS) $< -c -o $@
 
-$(BUILD_DIR)/%.lib.low.o: $(LIB_DIR)/%.cpp $(HPP_FILES)
-	$(CXX) $(CXXFLAGS) -DLOW_VERBOSE $< -c -o $@
+$(BUILD_DIR)/%.lib.low.o: $(LIB_DIR)/%.c $(HPP_FILES)
+	$(CC) $(CFLAGS) -DLOW_VERBOSE $< -c -o $@
 
-$(BUILD_DIR)/%.lib.high.o: $(LIB_DIR)/%.cpp $(HPP_FILES)
-	$(CXX) $(CXXFLAGS) -DHIGH_VERBOSE $< -c -o $@
+$(BUILD_DIR)/%.lib.high.o: $(LIB_DIR)/%.c $(HPP_FILES)
+	$(CC) $(CFLAGS) -DHIGH_VERBOSE $< -c -o $@
 
-$(BUILD_DIR)/%.accel.opt.o: $(ACCEL_DIR)/%.cpp $(HPP_FILES)
-	$(CXX) $(CXXFLAGS) $< -c -o $@
+$(BUILD_DIR)/%.accel.opt.o: $(ACCEL_DIR)/%.c $(HPP_FILES)
+	$(CC) $(CFLAGS) $< -c -o $@
 
-$(BUILD_DIR)/%.accel.low.o: $(ACCEL_DIR)/%.cpp $(HPP_FILES)
-	$(CXX) $(CXXFLAGS) -DLOW_VERBOSE $< -c -o $@
+$(BUILD_DIR)/%.accel.low.o: $(ACCEL_DIR)/%.c $(HPP_FILES)
+	$(CC) $(CFLAGS) -DLOW_VERBOSE $< -c -o $@
 
-$(BUILD_DIR)/%.accel.high.o: $(ACCEL_DIR)/%.cpp $(HPP_FILES)
-	$(CXX) $(CXXFLAGS) -DHIGH_VERBOSE $< -c -o $@
+$(BUILD_DIR)/%.accel.high.o: $(ACCEL_DIR)/%.c $(HPP_FILES)
+	$(CC) $(CFLAGS) -DHIGH_VERBOSE $< -c -o $@
 
 $(BUILD_DIR)/%.app.opt.o: $(APPSRCFILES) $(HPP_FILES)
-	$(CXX) $(CXXFLAGS) $< -c -o $@
+	$(CC) $(CFLAGS) $< -c -o $@
 
-$(BUILD_DIR)/%.app.low.o: ./main.cpp $(HPP_FILES)
-	$(CXX) $(CXXFLAGS) -DLOW_VERBOSE $< -c -o $@
+$(BUILD_DIR)/%.app.low.o: ./main.c $(HPP_FILES)
+	$(CC) $(CFLAGS) -DLOW_VERBOSE $< -c -o $@
 
-$(BUILD_DIR)/%.app.high.o: ./main.cpp $(HPP_FILES)
-	$(CXX) $(CXXFLAGS) -DHIGH_VERBOSE $< -c -o $@
+$(BUILD_DIR)/%.app.high.o: ./main.c $(HPP_FILES)
+	$(CC) $(CFLAGS) -DHIGH_VERBOSE $< -c -o $@
 
 clean: esp-build-distclean
 	rm -rf $(BUILD_DIR)
