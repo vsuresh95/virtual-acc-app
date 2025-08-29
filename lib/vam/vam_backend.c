@@ -311,7 +311,7 @@ void vam_release_accel(hpthread_t *th) {
     bitset_reset(accel->valid_contexts, context);
 
     if (accel->prim == PRIM_NONE) {
-        *(th->args->kill_pthread) = false;
+        *(th->args->kill_pthread) = true;
         pthread_join(accel->cpu_thread, NULL);
     } else {
         struct esp_access *esp_access_desc = accel->esp_access_desc;

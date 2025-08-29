@@ -56,24 +56,22 @@ void *sw_gemm(void *a) {
             pthread_exit(NULL);
         }
 
-        atomic_flag_t input_flag;
-        atomic_flag_t output_flag;
-        atomic_flag_init(&input_flag, (volatile uint64_t *) &mem[mat_a_valid_offset]);
-        atomic_flag_init(&output_flag, (volatile uint64_t *) &mem[mat_c_valid_offset]);
+        // We will cast the synchronization flags from *mem and atomically reset them
+        volatile uint64_t *input_flag = (volatile uint64_t *) &mem[mat_a_valid_offset];
+        volatile uint64_t *output_flag = (volatile uint64_t *) &mem[mat_c_valid_offset];
 
         // Wait for inputs to be ready
-		while(atomic_flag_load(&input_flag) != 1);
-        // TODO need to fix stall issue and add kill_pthread
+		while(__atomic_load_n(input_flag, __ATOMIC_SEQ_CST) != 1) { if (*kill_pthread) pthread_exit(NULL); };
         HIGH_DEBUG(printf("[SW_GEMM] Iteration %d received!\n", iter);)
 
 		// Reset for next iteration.
-		atomic_flag_store(&input_flag, 0);
+		__atomic_store_n(input_flag, 0, __ATOMIC_SEQ_CST);
 
         // Perform GeMM
         gemm(&mem[mat_a_offset], &mem[mat_b_offset], &mem[mat_c_offset], dim_m, dim_n, dim_k);
 
         // Set output to be full
-		atomic_flag_store(&output_flag, 1);
+		__atomic_store_n(output_flag, 1, __ATOMIC_SEQ_CST);
         HIGH_DEBUG(printf("[SW_GEMM] Iteration %d complete!\n", iter++);)
     }
 }

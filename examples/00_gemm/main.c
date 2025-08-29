@@ -103,11 +103,11 @@ int main(int argc, char **argv) {
         // Reference output for comparison
         nn_token_t *gold = (nn_token_t *) malloc((mat_c_offset + mat_c_len) * sizeof(nn_token_t));
 
-        // We will cast the synchronization flags from *mem to custom atomic flags
-        atomic_flag_t input_flag;
-        atomic_flag_t output_flag;
-    	atomic_flag_init(&input_flag, (volatile uint64_t *) &mem[mat_a_valid_offset]);
-    	atomic_flag_init(&output_flag, (volatile uint64_t *) &mem[mat_c_valid_offset]);
+        // We will cast the synchronization flags from *mem and atomically reset them
+        volatile uint64_t *input_flag = (volatile uint64_t *) &mem[mat_a_valid_offset];
+        volatile uint64_t *output_flag = (volatile uint64_t *) &mem[mat_c_valid_offset];
+        __atomic_store_n(input_flag, 0, __ATOMIC_SEQ_CST);
+        __atomic_store_n(output_flag, 0, __ATOMIC_SEQ_CST);
 
         // Set up the task descriptors at base_ptr
         unsigned context_base_ptr = stat_offset;
@@ -153,15 +153,15 @@ int main(int argc, char **argv) {
                         &gold[mat_a_offset], &gold[mat_b_offset], &gold[mat_c_offset]);
     		// Inform the accelerator to start.
             t_start = get_counter();
-    		atomic_flag_store(&input_flag, 1);
+    		__atomic_store_n(input_flag, 1, __ATOMIC_SEQ_CST);
 
     		// Wait for the accelerator to send output.
-    		while(atomic_flag_load(&output_flag) != 1);
+    		while(__atomic_load_n(output_flag, __ATOMIC_SEQ_CST) != 1);
             t_acc += get_counter() - t_start;
     		errors += validate_buffer(&mem[mat_c_offset], &gold[mat_c_offset]);
 
     		// Reset for next iteration.
-    		atomic_flag_store(&output_flag, 0);
+    		__atomic_store_n(output_flag, 0, __ATOMIC_SEQ_CST);
 
             LOW_DEBUG( if ((j+1) % 10 == 0) printf("[APP] Iter %d done!\n", j); )
         }
