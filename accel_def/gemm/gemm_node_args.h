@@ -5,7 +5,7 @@
 
 // Argument struct for GEMM
 typedef struct {
-    gemm_params params;
+    gemm_params_t params;
     // Input file for read-only parameters
     char input_file[100];
 } gemm_node_args;

@@ -91,7 +91,7 @@ int main(int argc, char **argv) {
     	// Descriptor size - 2 (STAT) + 2 * SM_INFO_SIZE (tasks)
     	unsigned stat_len = 2;
     	unsigned stat_offset = mat_c_offset + mat_c_len;
-    	unsigned descr_len = 2 * GEMM_PARAM_SIZE;
+    	unsigned descr_len = 2 * ACCEL_PARAM_SIZE;
     	unsigned descr_offset = stat_offset + stat_len;
 
         // Allocate sufficient memory for this hpthread
@@ -116,14 +116,14 @@ int main(int argc, char **argv) {
         task_descr[stat_offset] = CTXT_AVAIL; task_descr[stat_offset + 1] = descr_offset;
         // Create 1 GEMM task
         gemm_params_t params = {dim_m, dim_n, dim_k, mat_b_offset, mat_a_valid_offset, mat_c_valid_offset};
-        create_gemm_descr(&task_descr[descr_offset + 0 * GEMM_PARAM_SIZE], &params);
+        create_gemm_descr(&task_descr[descr_offset + 0 * ACCEL_PARAM_SIZE], &params);
         // Create 1 JUMP task
-        create_jump_descr(&task_descr[descr_offset + 1 * GEMM_PARAM_SIZE], descr_offset);
+        create_jump_descr(&task_descr[descr_offset + 1 * ACCEL_PARAM_SIZE], descr_offset);
         HIGH_DEBUG(
             printf("[APP] Printing GEMM descriptor...\n");
-            print_descr(&task_descr[descr_offset + 0 * GEMM_PARAM_SIZE]);
+            print_descr(&task_descr[descr_offset + 0 * ACCEL_PARAM_SIZE]);
             printf("[APP] Printing JUMP descriptor...\n");
-            print_descr(&task_descr[descr_offset + 1 * GEMM_PARAM_SIZE]);
+            print_descr(&task_descr[descr_offset + 1 * ACCEL_PARAM_SIZE]);
         )
 
         // Declare hpthread and assign attributes

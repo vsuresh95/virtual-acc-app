@@ -47,7 +47,7 @@ int hpthread_join(hpthread_t *th) {
 	while (!hpthread_intf_swap(VAM_IDLE, VAM_BUSY)) sched_yield();
 	// Write the hpthread request to the interface
 	intf.th = th;
-	// Set the interface state to CREATE
+	// Set the interface state to JOIN
     hpthread_intf_set(VAM_JOIN);
 	// Block until the request is complete (interface state is DONE), then swap to IDLE
 	while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) sched_yield();
@@ -74,7 +74,7 @@ void hpthread_setpriority(hpthread_t *th, unsigned p) {
     while (!hpthread_intf_swap(VAM_IDLE, VAM_BUSY)) sched_yield();
     // Write the hpthread request to the interface
     intf.th = th;
-    // Set the interface state to CREATE
+    // Set the interface state to SETPRIO
     hpthread_intf_set(VAM_SETPRIO);
     // Block until the request is complete (interface state is DONE), then swap to IDLE
     while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) sched_yield();

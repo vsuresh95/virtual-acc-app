@@ -43,7 +43,7 @@ void *sw_gemm(void *a) {
             mat_b_offset = params->weight_base;
             mat_c_offset = mat_c_valid_offset + flag_len;
 
-            context_cur_ptr += GEMM_PARAM_SIZE;
+            context_cur_ptr += ACCEL_PARAM_SIZE;
         } else if (context_cur_ptr[0] == 2) { // JUMP
             HIGH_DEBUG(
                 printf("[SW_GEMM] Printing JUMP descriptor... %p\n", &context_cur_ptr[0]);

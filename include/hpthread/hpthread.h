@@ -19,7 +19,7 @@ typedef struct {
     unsigned id; // Integer ID
     hpthread_prim_t prim; // Compute primitive
     hpthread_args_t *args; // Arguments for the thread
-    unsigned nprio; // Priority of the thread
+    unsigned nprio; // Priority of the thread: 1 (highest) - 10 (lowest)
     unsigned active_load; // Active utilization %
     physical_accel_t *accel; // The accelerator this thread is mapped to
     unsigned accel_context; // The accelerator context this thread is mapped to

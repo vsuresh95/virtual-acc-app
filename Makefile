@@ -17,8 +17,7 @@ CFLAGS+=-I$(ROOT_DIR)/include/common
 CFLAGS+=-I$(ROOT_DIR)/include/hpthread
 CFLAGS+=-I$(ROOT_DIR)/include/vam
 CFLAGS+=-I$(ROOT_DIR)/include/sw_kernels
-
-CFLAGS+=-I$(ROOT_DIR)/nn/include/common
+CFLAGS+=-I$(ROOT_DIR)/include/nn
 
 LIB_FILES+=$(LIB_DIR)/hpthread/hpthread.c
 LIB_FILES+=$(LIB_DIR)/hpthread/hpthread_intf.c
@@ -26,12 +25,8 @@ LIB_FILES+=$(LIB_DIR)/vam/vam_backend.c
 
 LIB_FILES+=$(LIB_DIR)/sw_kernels/sw_gemm.c
 
-# LIB_FILES+=$(LIB_DIR)/nn/nn_module.c
-# LIB_FILES+=$(LIB_DIR)/nn/sw_kernels.c
-# LIB_FILES+=$(LIB_DIR)/nn/nn_frontend.c
-# LIB_FILES+=$(LIB_DIR)/nn/nn_graph.c
-# LIB_FILES+=$(LIB_DIR)/nn/nn_intf.c
-# LIB_FILES+=$(LIB_DIR)/nn/nn_helper.c
+LIB_FILES+=$(LIB_DIR)/nn/nn_module.c
+LIB_FILES+=$(LIB_DIR)/nn/nn_graph.c
 
 include $(ACCEL_DIR)/Makefile
 
