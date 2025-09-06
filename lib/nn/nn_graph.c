@@ -2,11 +2,12 @@
 #include <nn_graph.h>
 
 void nn_graph_create(nn_graph_t *g) {
+    g->nodes = NULL;
     g->entry = (nn_node_t *) malloc (sizeof(nn_node_t));
     nn_node_create(g->entry, 0, NN_OP_NONE);
+    nn_graph_add_nn_node(g, g->entry);
     g->exit = (nn_node_t *) malloc (sizeof(nn_node_t));
     nn_node_create(g->exit, -1, NN_OP_NONE);
-    nn_graph_add_nn_node(g, g->entry);
     nn_graph_add_nn_node(g, g->exit);
 }
 
@@ -35,6 +36,14 @@ void nn_graph_dump(nn_graph_t *g) {
         nn_node_dump(cur->n);
         cur = cur->next;
     }
+}
+
+void nn_node_create(nn_node_t *n, int i, unsigned op) { 
+    n->id = i;
+    n->nn_op = op;
+    n->in_edges = NULL;
+    n->out_edges = NULL;
+    n->th = NULL;
 }
 
 void nn_node_add_in_edge(nn_node_t *n, nn_edge_t *e) {

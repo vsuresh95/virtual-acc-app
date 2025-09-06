@@ -12,12 +12,15 @@ extern void wakeup_vam();
 // Running thread counter
 static unsigned thread_count = 0;
 
+void hpthread_init(hpthread_t *th, unsigned user_id) {
+	th->is_active = false;
+	th->user_id = user_id;
+}
+
 void hpthread_create(hpthread_t *th) {
 	// Assign a thread ID
 	th->id = ++thread_count;
 	HIGH_DEBUG(printf("[HPTHREAD] Requested hpthread %s (ID:%d).\n", th->name, th->id);)
-
-	if (intf.state == NULL) intf.state = (volatile uint8_t *) malloc (sizeof(uint8_t));
 
     // If VAM has not yet been started (i.e., interface is in vam_state_t::RESET, start one thread now)
     if (hpthread_intf_swap(VAM_RESET, VAM_WAKEUP)) {
@@ -35,6 +38,7 @@ void hpthread_create(hpthread_t *th) {
 	// Block until the request is complete (interface state is DONE), then swap to IDLE
 	while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) sched_yield();
 	HIGH_DEBUG(printf("[HPTHREAD] Received hpthread %s.\n", th->name);)
+	th->is_active = true;
 }
 
 int hpthread_join(hpthread_t *th) {
@@ -52,6 +56,7 @@ int hpthread_join(hpthread_t *th) {
 	// Block until the request is complete (interface state is DONE), then swap to IDLE
 	while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) sched_yield();
 	HIGH_DEBUG(printf("[HPTHREAD] Join hpthread complete %s.\n", th->name);)
+	th->is_active = false;
 	return 0;
 }
 
@@ -69,16 +74,19 @@ void hpthread_setprimitive(hpthread_t *th, hpthread_prim_t p) {
 
 void hpthread_setpriority(hpthread_t *th, unsigned p) {
 	th->nprio = p;
-    HIGH_DEBUG(printf("[HPTHREAD] Requested change of priority to %d for hpthread %s.\n", p, th->name);)
-    // Check if the interface is IDLE. If yes, swap to BUSY. If not, block until it is
-    while (!hpthread_intf_swap(VAM_IDLE, VAM_BUSY)) sched_yield();
-    // Write the hpthread request to the interface
-    intf.th = th;
-    // Set the interface state to SETPRIO
-    hpthread_intf_set(VAM_SETPRIO);
-    // Block until the request is complete (interface state is DONE), then swap to IDLE
-    while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) sched_yield();
-    HIGH_DEBUG(printf("[HPTHREAD] Change of priority to %d complete for hpthread %s.\n", p, th->name);)	
+	// If the thread is active, you need to inform VAM so the hardware can be configured
+	if (th->is_active) {
+		HIGH_DEBUG(printf("[HPTHREAD] Requested change of priority to %d for hpthread %s.\n", p, th->name);)
+		// Check if the interface is IDLE. If yes, swap to BUSY. If not, block until it is
+		while (!hpthread_intf_swap(VAM_IDLE, VAM_BUSY)) sched_yield();
+		// Write the hpthread request to the interface
+		intf.th = th;
+		// Set the interface state to SETPRIO
+		hpthread_intf_set(VAM_SETPRIO);
+		// Block until the request is complete (interface state is DONE), then swap to IDLE
+		while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) sched_yield();
+		HIGH_DEBUG(printf("[HPTHREAD] Change of priority to %d complete for hpthread %s.\n", p, th->name);)
+	}
 }
 
 // Helper function for printing hpthread primitive

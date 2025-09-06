@@ -15,6 +15,7 @@ void nn_module_load(nn_module *m, const char *n) {
 
     // Create an NN computational graph and memory for this model
     m->graph = (nn_graph_t *) malloc (sizeof(nn_graph_t));
+    nn_graph_create(m->graph);
     const unsigned mem_size = 2 * 1024 * 1024; // 2MB
     m->mem = esp_alloc(mem_size);
     m->mem_allocated = 0;
@@ -61,6 +62,7 @@ void nn_module_load(nn_module *m, const char *n) {
                             args->input_file[0] = '\n'; args->input_file[1] = '\0';
                         } 
                         gemm_node->args = (void *) args;
+                        // Add the created node to the graph for the module
                         nn_graph_add_nn_node(m->graph, gemm_node);
                         snprintf(gemm_node->name, 120, "%s.gemm.%d", m->graph->name, node_id);
                         HIGH_DEBUG(
@@ -88,6 +90,7 @@ void nn_module_load(nn_module *m, const char *n) {
                 nn_node_t *dst= nn_graph_get_nn_node(m->graph, dst_id);
                 nn_edge_t *e = (nn_edge_t *) malloc (sizeof(nn_edge_t));
                 nn_edge_create(e, src, dst);
+                // Assign length to the edge from the input values
                 e->args = (nn_edge_args *) malloc (sizeof(nn_edge_args));
                 e->args->len = len;
                 nn_node_add_out_edge(src, e);
@@ -128,8 +131,9 @@ void nn_module_register(nn_module *m) {
 
     LOW_DEBUG(printf("[NN FE] Parsing NN graph for %s\n", nn_module_get_name(m)));
 
-    while (q->head == NULL) { // !empty
+    while (q->head != NULL) { // !empty
         nn_node_t *current = nn_queue_pop(q);
+        if (!current) break;
 
         HIGH_DEBUG(printf("[NN FE] Found node %s(%d)\n", nn_node_dump_op(current), current->id));
 
@@ -175,11 +179,6 @@ void nn_module_register(nn_module *m) {
                     nn_token_t *wgt_address = ((nn_token_t *) m->mem) + params->weight_base;
                     initialize_data(gemm_args->input_file, wgt_address, params->dim_n * params->dim_k);
 
-                    // Set up hpthread args - mem and hpthread base ptr
-                    hpthread_args_t *args = (hpthread_args_t *) malloc(sizeof(hpthread_args_t));
-                    args->mem = m->mem;
-                    args->base_ptr = m->mem_allocated; m->mem_allocated += 2; // stat descriptor is 2 words
-
                     // Create 1 GEMM descriptor
                     unsigned gemm_descr = m->mem_allocated; m->mem_allocated += ACCEL_PARAM_SIZE;
                     create_gemm_descr(((unsigned *) m->mem) + gemm_descr, params);
@@ -192,19 +191,27 @@ void nn_module_register(nn_module *m) {
                         printf("[APP] Printing JUMP descriptor...\n");
                         print_descr(((unsigned *) m->mem) + jump_descr);
                     )
-                    
+                    // Create base stat descriptor
+                    unsigned stat_descr = m->mem_allocated; m->mem_allocated += 2; // stat descriptor is 2 words
+                    set_context_avail(((unsigned *) m->mem) + stat_descr, gemm_descr);
+
+                    // Create the hpthread general arguments
+                    hpthread_args_t *args = (hpthread_args_t *) malloc(sizeof(hpthread_args_t));
+                    args->mem = m->mem;
+                    args->base_ptr = stat_descr;
+
                     // Declare hpthread and assign attributes
                     hpthread_t *th = (hpthread_t *) malloc(sizeof(hpthread_t));
+                    hpthread_init(th, m->id + 1);
                     hpthread_setargs(th, args);
                     hpthread_setname(th, nn_node_get_name(current));
                     hpthread_setprimitive(th, PRIM_GEMM);
                     hpthread_setpriority(th, m->nprio);
-                    current->th->user_id = m->id + 1;
 
                     HIGH_DEBUG(printf("[NN] Before hpthread create request...\n"));
 
                     // Create a hpthread
-                    hpthread_create(current->th);
+                    hpthread_create(th);
 
                     // Assign the thread to the model mapping
                     current->th = th;
@@ -222,9 +229,11 @@ void nn_module_register(nn_module *m) {
     for (cur = exit->in_edges; cur; cur = cur->next) {
         edge = cur->e;
     } m->output_flag_offset = edge->args->offset;
+    HIGH_DEBUG(printf("[NN] output_flag_offset for model %s = 0x%x\n", nn_module_get_name(m), m->output_flag_offset);)
     for (cur = entry->out_edges; cur; cur = cur->next) {
         edge = cur->e;
     } m->input_flag_offset = edge->args->offset;
+    HIGH_DEBUG(printf("[NN] input_flag_offset for model %s = 0x%x\n", nn_module_get_name(m), m->input_flag_offset);)
 }
 
 // Helper: Load and register a model in one call
@@ -259,6 +268,7 @@ void nn_queue_push(nn_queue_t *q, nn_node_t *n) {
 }
 
 nn_node_t *nn_queue_pop(nn_queue_t *q) {
+    if (!q->head) return NULL;
     nn_node_list *head = q->head;
     nn_node_t *out = head->n;
     q->head = head->next;
@@ -305,5 +315,6 @@ void initialize_data(const char *input_file, nn_token_t *mem, unsigned len) {
                 if (i == 10) printf("\n");
             #endif
         }
+        fclose(file);
     }
 }

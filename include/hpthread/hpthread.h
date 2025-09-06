@@ -23,12 +23,14 @@ typedef struct {
     unsigned active_load; // Active utilization %
     physical_accel_t *accel; // The accelerator this thread is mapped to
     unsigned accel_context; // The accelerator context this thread is mapped to
+	bool is_active;
     // Debug variables
     char name[100]; // Name
     unsigned user_id; // ID of user app
 } hpthread_t;
 
 // User APIs for hpthread
+void hpthread_init(hpthread_t *th, unsigned user_id);
 void hpthread_create(hpthread_t *th);
 int hpthread_join(hpthread_t *th);
 void hpthread_setargs(hpthread_t *th, hpthread_args_t *a);

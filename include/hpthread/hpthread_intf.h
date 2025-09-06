@@ -16,7 +16,7 @@
 
 // hpthread interface definition
 typedef struct {
-    volatile uint8_t *state; // Interface synchronization variable
+    volatile uint8_t state; // Interface synchronization variable
     hpthread_t *th; // hpthread for the request
 } hpthread_intf_t;
 

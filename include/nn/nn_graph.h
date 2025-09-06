@@ -43,7 +43,7 @@ struct nn_node_t {
 };
 
 // User APIs for nn_node
-static inline void nn_node_create(nn_node_t *n, int i, unsigned op) { n->id = i; n->nn_op = op; }
+void nn_node_create(nn_node_t *n, int i, unsigned op);
 void nn_node_add_in_edge(nn_node_t *n, nn_edge_t *e);
 void nn_node_add_out_edge(nn_node_t *n, nn_edge_t *e);
 static inline unsigned nn_node_get_op(nn_node_t *n) { return n->nn_op; }

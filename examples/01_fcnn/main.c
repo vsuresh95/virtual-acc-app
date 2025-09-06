@@ -8,6 +8,7 @@ int main(int argc, char **argv) {
     // Load a model from a text file (and) register with NN frontend
     nn_module *m = (nn_module *) malloc (sizeof(nn_module));
     m->id = 0;
+    m->nprio = 1;
     nn_module_load_and_register(m, "model.txt");
 
     nn_token_t *mem = (nn_token_t *) m->mem;
@@ -24,7 +25,7 @@ int main(int argc, char **argv) {
     while(__atomic_load_n(output_flag, __ATOMIC_SEQ_CST) != 1);
 
     // Load reference output
-    nn_token_t *gold = (nn_token_t *) malloc (sizeof(nn_token_t));
+    nn_token_t *gold = (nn_token_t *) malloc (64 * sizeof(nn_token_t));
     initialize_data("output.txt", gold, 64);
 
     // Compare with actual output

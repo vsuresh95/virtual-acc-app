@@ -3,10 +3,16 @@
 
 #include <hpthread.h>
 
-// Createa a JUMP task descriptor
+// Create a JUMP task descriptor
 static inline void create_jump_descr(unsigned *descr_offset, unsigned jump_offset) {
 	descr_offset[0] = 2;
 	descr_offset[1] = jump_offset;       
+}
+
+// Set the stat descriptor to avail
+static inline void set_context_avail(unsigned *stat_offset, unsigned descr_offset) {
+	stat_offset[0] = CTXT_AVAIL;
+	stat_offset[1] = descr_offset;       
 }
 
 // Createa a JUMP task descriptor
