@@ -121,6 +121,7 @@ void nn_module_register(nn_module *m) {
     nn_queue_t *q = (nn_queue_t *) malloc (sizeof(nn_queue_t));
     q->head = q->tail = NULL;
     nn_node_list *visited = NULL;
+    m->th_list = NULL;
 
     // Do BFS traversal of the routine DFG by starting at the entry node
     nn_node_t *entry = nn_graph_get_entry(m->graph);
@@ -234,6 +235,13 @@ void nn_module_register(nn_module *m) {
         edge = cur->e;
     } m->input_flag_offset = edge->args->offset;
     HIGH_DEBUG(printf("[NN] input_flag_offset for model %s = 0x%x\n", nn_module_get_name(m), m->input_flag_offset);)
+
+    nn_queue_delete(q);
+    while(visited != NULL) {
+        nn_node_list *next = visited->next;
+        free(visited);
+        visited = next;
+    }
 }
 
 // Helper: Load and register a model in one call
@@ -246,9 +254,15 @@ void nn_module_load_and_register(nn_module *m, const char *n) {
 void nn_module_release(nn_module *m) {
     nn_hpthread_list *cur = m->th_list;
     while(cur != NULL) {
+        nn_hpthread_list *next = cur->next;
         hpthread_join(cur->th);
-        cur = cur->next;
+        free(cur->th->args);
+        free(cur->th);
+        free(cur);
+        cur = next;
     }
+    esp_free(m->mem);
+    nn_graph_delete(m->graph);
 }
 
 void nn_module_add_hpthread(nn_module *m, hpthread_t *th) {

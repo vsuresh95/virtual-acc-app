@@ -30,6 +30,7 @@ static inline nn_node_t *nn_graph_get_entry(nn_graph_t *g) { return g->entry; }
 static inline nn_node_t *nn_graph_get_exit(nn_graph_t *g) { return g->exit; }
 static inline const char *nn_graph_get_name(nn_graph_t *g) { return g->name; }
 void nn_graph_dump(nn_graph_t *g);
+void nn_graph_delete(nn_graph_t *g);
 
 // NN node
 struct nn_node_t {
@@ -50,6 +51,7 @@ static inline unsigned nn_node_get_op(nn_node_t *n) { return n->nn_op; }
 const char *nn_node_dump_op(nn_node_t *n);
 static inline const char *nn_node_get_name(nn_node_t *n) { return n->name; }
 void nn_node_dump(nn_node_t *n);
+void nn_node_delete(nn_node_t *n);
 
 // NN node list 
 struct nn_node_list {
@@ -75,6 +77,7 @@ static inline void nn_edge_create(nn_edge_t *e, nn_node_t *s, nn_node_t *d) { e-
 static inline nn_node_t *nn_edge_get_source(nn_edge_t *e) { return e->src; }
 static inline nn_node_t *nn_edge_get_destination(nn_edge_t *e) { return e->dst; }
 void nn_edge_dump(nn_edge_t *e);
+static inline void nn_edge_delete(nn_edge_t *e) { free(e->args); free(e); }
 
 // NN edge list 
 struct nn_edge_list {

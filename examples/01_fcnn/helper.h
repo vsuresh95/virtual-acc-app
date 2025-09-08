@@ -8,5 +8,6 @@
 #include <nn_token.h>
 
 const float ERR_TH = 0.05;
+#define ITERATIONS 20
 
 #endif // __HELPER_H__

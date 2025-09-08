@@ -39,6 +39,7 @@ typedef struct {
 void nn_queue_push(nn_queue_t *q, nn_node_t *n);
 nn_node_t *nn_queue_pop(nn_queue_t *q);
 bool nn_set_add_node(nn_node_list **s, nn_node_t *n);
+static inline void nn_queue_delete(nn_queue_t *q) { while (nn_queue_pop(q) != NULL); }
 
 void initialize_data(const char *input_file, nn_token_t *mem, unsigned len);
 

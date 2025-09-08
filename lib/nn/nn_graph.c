@@ -38,6 +38,17 @@ void nn_graph_dump(nn_graph_t *g) {
     }
 }
 
+void nn_graph_delete(nn_graph_t *g) {
+    nn_node_list *cur = g->nodes;
+    while(cur != NULL) {
+        nn_node_list *next = cur->next;
+        if (cur->n) nn_node_delete(cur->n);
+        free(cur);
+        cur = next;
+    }
+    free(g);
+}
+
 void nn_node_create(nn_node_t *n, int i, unsigned op) { 
     n->id = i;
     n->nn_op = op;
@@ -77,6 +88,17 @@ void nn_node_dump(nn_node_t *n) {
         cur = cur->next;
     }
     printf("\n");
+}
+
+void nn_node_delete(nn_node_t *n) {
+    nn_edge_list *cur = n->out_edges;
+    while(cur != NULL) {
+        nn_edge_list *next = cur->next;
+        if (cur->e) nn_edge_delete(cur->e);
+        free(cur);
+        cur = next;
+    }
+    free(n);
 }
 
 void nn_edge_dump(nn_edge_t *e) {
