@@ -130,13 +130,13 @@ void nn_module_register(nn_module *m) {
     nn_queue_push(q, entry);
     nn_set_add_node(&visited, entry);
 
-    LOW_DEBUG(printf("[NN FE] Parsing NN graph for %s\n", nn_module_get_name(m)));
+    LOW_DEBUG(printf("[NN] Parsing NN graph for %s\n", nn_module_get_name(m)));
 
     while (q->head != NULL) { // !empty
         nn_node_t *current = nn_queue_pop(q);
         if (!current) break;
 
-        HIGH_DEBUG(printf("[NN FE] Found node %s(%d)\n", nn_node_dump_op(current), current->id));
+        HIGH_DEBUG(printf("[NN] Found node %s(%d)\n", nn_node_dump_op(current), current->id));
 
         // Iterate through all out edges of this node and add the destinations to the visitor set and the BFS queue.
         nn_edge_list *cons = current->out_edges;
@@ -187,9 +187,9 @@ void nn_module_register(nn_module *m) {
                     unsigned jump_descr = m->mem_allocated; m->mem_allocated += ACCEL_PARAM_SIZE;
                     create_jump_descr(((unsigned *) m->mem) + jump_descr, gemm_descr);
                     HIGH_DEBUG(
-                        printf("[APP] Printing GEMM descriptor...\n");
+                        printf("[NN] Printing GEMM descriptor...\n");
                         print_descr(((unsigned *) m->mem) + gemm_descr);
-                        printf("[APP] Printing JUMP descriptor...\n");
+                        printf("[NN] Printing JUMP descriptor...\n");
                         print_descr(((unsigned *) m->mem) + jump_descr);
                     )
                     // Create base stat descriptor
@@ -308,14 +308,14 @@ bool nn_set_add_node(nn_node_list **s, nn_node_t *n) {
 
 void initialize_data(const char *input_file, nn_token_t *mem, unsigned len) {
     if (input_file[0] == '\n') {
-        HIGH_DEBUG(printf("[NN FE] Initializing %d words with random input\n", len));
+        HIGH_DEBUG(printf("[NN] Initializing %d words with random input\n", len));
         const float float_min = 0.0f, float_max = 1.0f;
         for (unsigned i = 0; i < len; i++)
             mem[i] = nn_token_from_float(float_min + ((float)rand() / (float)RAND_MAX) * (float_max - float_min));
     } else {
         FILE *file = fopen(input_file, "r");
 
-        HIGH_DEBUG(printf("[NN FE] Initializing %d words from %s\n", len, input_file));
+        HIGH_DEBUG(printf("[NN] Initializing %d words from %s\n", len, input_file));
         for (unsigned i = 0; i < len; i++) {
             float in;
             if (fscanf(file, "%f ", &in) != 1) {

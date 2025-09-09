@@ -27,7 +27,12 @@ void vam_setprio_accel(hpthread_t *th);
 // Insert a new physical accelerator struct or CPU thread
 void insert_physical_accel(physical_accel_t *accel);
 void insert_cpu_thread(physical_accel_t *accel);
-
+// Update utilization metrics for all accelerators
+void vam_check_utilization();
+// Checks whether the load is balanced across all acclerators
+bool vam_check_load_balance();
+// Runs the load balancing algorithm across all accelerators
+void vam_load_balance();
 
 // class vam_backend {
 // public:

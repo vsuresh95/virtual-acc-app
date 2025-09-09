@@ -15,8 +15,9 @@ typedef struct physical_accel_t {
     uint64_t context_start_cycles[MAX_CONTEXTS]; // Start counter for the context to use for utilization
     uint64_t context_active_cycles[MAX_CONTEXTS]; // Active cycles for the context to use for utilization
     hpthread_t *th[MAX_CONTEXTS]; // If allocated, what is the hpthread in the context?
-    unsigned context_load[MAX_CONTEXTS]; // Assigned (predicted) load for each context
     float context_util[MAX_CONTEXTS]; // Actual utilization of the context
+    float total_util; // Total utilization of the accelerator
+    unsigned context_load[MAX_CONTEXTS]; // Assigned (predicted) load for each context
     unsigned effective_load[MAX_CONTEXTS]; // Normalized, actual load for each context
     bool init_done; // Flag to identify whether the device was initialized in the past
     physical_accel_t *next; // Next node in accel list

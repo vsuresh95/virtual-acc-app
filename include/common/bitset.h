@@ -26,4 +26,7 @@ typedef uint8_t bitset_t;            /* uses only the low 4 bits */
 #define bitset_set_all(v)   ((v) = 0x0Fu)
 #define bitset_reset_all(v) ((v) = 0x00u)
 
+/* Macro-only 4-bit popcount (values 0..15) */
+#define bitset_count(v) ((unsigned)("\0\1\1\2\1\2\2\3\1\2\2\3\2\3\3\4"[(uint8_t)((v) & 0x0Fu)]))
+
 #endif // __BITSET_H__
