@@ -20,10 +20,11 @@ typedef struct {
     hpthread_prim_t prim; // Compute primitive
     hpthread_args_t *args; // Arguments for the thread
     unsigned nprio; // Priority of the thread: 1 (highest) - 10 (lowest)
-    unsigned active_load; // Active utilization %
+    float th_util; // Active utilization %
     physical_accel_t *accel; // The accelerator this thread is mapped to
     unsigned accel_context; // The accelerator context this thread is mapped to
-	bool is_active;
+	bool is_active; // Is the thread currently active?
+    uint64_t th_last_move; // When was this thread last migrated?
     // Debug variables
     char name[100]; // Name
     unsigned user_id; // ID of user app

@@ -21,8 +21,9 @@ pthread_t vam_th;
 // Physical accelerator list
 physical_accel_t *accel_list = NULL;
 physical_accel_t *cpu_thread_list = NULL;
-// Current load imbalance
-float load_imbalance = 0;
+// Maximum loaded and minimuim loaded accel for load balancing
+physical_accel_t *max_load_accel = NULL;
+physical_accel_t *min_load_accel = NULL;
 
 // Function to wake up VAM for the first time
 void wakeup_vam() {
@@ -65,14 +66,13 @@ void vam_probe_accel() {
             bitset_reset_all(accel_temp->valid_contexts);
             for (int i = 0; i < MAX_CONTEXTS; i++) {
                 accel_temp->th[i] = NULL;
-                accel_temp->context_load[i] = 0;
-                accel_temp->effective_load[i] = 0;
                 accel_temp->context_start_cycles[i] = 0;
                 accel_temp->context_active_cycles[i] = 0;
                 accel_temp->context_util[i] = 0.0;
             }
             LOW_DEBUG(strcpy(accel_temp->devname, entry->d_name);)
             accel_temp->init_done = false;
+            accel_temp->total_util = 0.0;
 
             // Print out debug message
             HIGH_DEBUG(printf("[VAM] Discovered device %d: %s\n", device_id, accel_temp->devname);)
@@ -122,15 +122,19 @@ void *vam_run_backend(void *arg) {
             case VAM_IDLE: {
                 // Examine the load across all accelerators in the system
                 if (get_counter() - start_time > vam_sleep) {
-                    if(vam_check_load_balance()) {
-                        LOW_DEBUG(printf("[VAM] Trigerring load balancer...\n");)
-
+                    float load_imbalance = vam_check_load_balance();
+                    if (load_imbalance > 0.25) {
                         // Start the load balancing algorithm
+                        LOW_DEBUG(printf("[VAM] Trigerring load balancer...\n");)
                         vam_load_balance();
-                        start_time = get_counter();
+                    }
+                    // If load is very imbalanced, sleep less
+                    if (load_imbalance > 0.5) {
+                        vam_sleep = VAM_SLEEP_MIN;
+                    } else {
+                        if (vam_sleep < VAM_SLEEP_MAX) vam_sleep += VAM_SLEEP_MIN;
                     }
                     start_time = get_counter();
-                    if (vam_sleep < VAM_SLEEP_MAX) vam_sleep += VAM_SLEEP_MIN;
                 }
                 sched_yield();
                 break;
@@ -176,10 +180,11 @@ void vam_search_accel(hpthread_t *th) {
     // First, update the active utilization of each accelerator
     vam_check_utilization();
 
-    // We will find a candidate accelerator that has the lowest assigned load.
+    // We will find a candidate accelerator that has the lowest utiilization.
     // If no accelerator candidates are found, we will consider the CPU as the only candidate.
     physical_accel_t *candidate_accel = NULL;
-    // unsigned candidate_load = INT_MAX;
+    float candidate_util = 2.0;
+    bitset_t candidate_contexts = 255;
     bool accel_allocated = false;
     physical_accel_t *cur_accel = accel_list;
 
@@ -190,12 +195,14 @@ void vam_search_accel(hpthread_t *th) {
         )
         // Is the accelerator suitable and not fully utilized for this primitive?
         if (cur_accel->prim == th->prim && !bitset_all(cur_accel->valid_contexts)) {
-            // // Check if this accelerator's total load is less than the previous min
-            // if (accel.get_effective_load() < candidate_accel.second) {
+            // Check if this accelerator's total load is less than the previous min or fewer contexts (with similar util)
+            if ((cur_accel->total_util < candidate_util - 0.1) ||
+                (fabsf(cur_accel->total_util - candidate_util <= 0.1) && cur_accel->valid_contexts < candidate_contexts)) {
                 candidate_accel = cur_accel;
-                // candidate_load = accel.get_effective_load()};
+                candidate_util = cur_accel->total_util;
+                candidate_contexts = cur_accel->valid_contexts;
                 HIGH_DEBUG(printf("[VAM] Device %s is a candidate!\n", physical_accel_get_name(cur_accel));)
-            // }
+            }
             // Found one accelerator!
             accel_allocated = true;
         }
@@ -209,7 +216,7 @@ void vam_search_accel(hpthread_t *th) {
         LOW_DEBUG(strcpy(cpu_thread->devname, "CPU");)
         candidate_accel = cpu_thread;
         insert_cpu_thread(cpu_thread);
-        // candidate_load = 0;
+        candidate_util = 0.0;
     }
     HIGH_DEBUG(printf("[VAM] Candidate for hpthread %s = %s!\n", hpthread_get_name(th), physical_accel_get_name(candidate_accel));)
     // Identify the valid context to allocate
@@ -264,9 +271,6 @@ void vam_configure_accel(hpthread_t *th, physical_accel_t *accel, unsigned conte
         esp_access_desc->valid_contexts = accel->valid_contexts;
         esp_access_desc->sched_period = AVU_SCHED_PERIOD;
     }
-    // // Retrieve load assigned from device-dependent cfg function (scaled by priority)
-    // accel->context_load[context] = th->assigned_load / th->attr->nprio;
-    // th->active_load = accel->context_load[context];
 
     if (accel->init_done) {
         LOW_DEBUG(printf("[VAM] Adding to accel %s:%d for hpthread %s\n", physical_accel_get_name(accel), context, hpthread_get_name(th));)
@@ -377,6 +381,7 @@ void vam_check_utilization() {
             exit(EXIT_FAILURE);
         }
         uint64_t *mon_extended = (uint64_t *) mon.util;
+        cur_accel->total_util = 0;
 
         for (int i = 0; i < MAX_CONTEXTS; i++) {
             if (bitset_test(cur_accel->valid_contexts, i)) {
@@ -389,7 +394,7 @@ void vam_check_utilization() {
                 cur_accel->context_start_cycles[i] = get_counter();
                 cur_accel->context_active_cycles[i] = mon_extended[i];
                 cur_accel->context_util[i] = util;
-                cur_accel->th[i]->active_load = util;
+                cur_accel->th[i]->th_util = util;
                 cur_accel->total_util += util;
 
                 HIGH_DEBUG(
@@ -403,10 +408,9 @@ void vam_check_utilization() {
     }
 }
 
-bool vam_check_load_balance() {
+float vam_check_load_balance() {
     // First, update the active utilization of each accelerator
     vam_check_utilization();
-
     // Print out the total utilization
     LOW_DEBUG({
         physical_accel_t *cur_accel = accel_list;
@@ -422,42 +426,119 @@ bool vam_check_load_balance() {
 		    cur_accel = cur_accel->next;
         }
     })
-
     // Check whether there is load imbalance across accelerators
     // - calculate average and max/min load across all accelerators with non-zero load assigned
-    float average_load = 0;
-    unsigned count = 0; unsigned max_load = 0; unsigned min_load = INT_MAX;
-    const float imbalance_limit = 0.25;
+    float average_load = 0; float max_load = 0.0; float min_load = 10.0;
+    unsigned count = 0;
     bool skip_load_balance = true;
 
     physical_accel_t *cur_accel = accel_list;
+    physical_accel_t *tmp_max, *tmp_min;
     while(cur_accel != NULL) {
-        unsigned cur_load = cur_accel->total_util;
-        if (cur_load < min_load) min_load = cur_load;
-        if (cur_load > max_load) max_load = cur_load;
+        float cur_load = cur_accel->total_util;
+        if (cur_load < min_load) { min_load = cur_load; tmp_min = cur_accel; }
+        if (cur_load > max_load) { max_load = cur_load; tmp_max = cur_accel; }
         average_load += cur_load;
         count++;
         if (bitset_count(cur_accel->valid_contexts) > 1) skip_load_balance = false;
-        HIGH_DEBUG(printf("[VAM] Current load of %s = %d\n", physical_accel_get_name(cur_accel), cur_load);)
+        HIGH_DEBUG(printf("[VAM] Current load of %s = %0.2f\n", physical_accel_get_name(cur_accel), cur_load);)
+        cur_accel = cur_accel->next;
     }
-
     // If none of the accelerators have more than one valid context, there's no need for load balancing
     if (skip_load_balance) return false;
 
     average_load = average_load/count;
-    HIGH_DEBUG(printf("[VAM] Max load = %d, min load = %d, avg load = %0.2f\n", max_load, min_load, average_load);)
-
-    float new_load_imbalance = ((float) (max_load - min_load)) / (average_load);
-    // Check if the new load imbalance is significantly worse than the previous checkpointed value
-    // If not, do not perform any load balancing.
-    if (new_load_imbalance - load_imbalance > imbalance_limit) {
-        load_imbalance = new_load_imbalance;
-        return true;
-    } else {
-        load_imbalance = new_load_imbalance;
-        return false;
-    }
+    max_load_accel = tmp_max; min_load_accel = tmp_min;
+    HIGH_DEBUG(printf("[VAM] Max load = %0.2f, min load = %0.2f, avg load = %0.2f\n", max_load, min_load, average_load);)
+    return (max_load - min_load) / (average_load);
 }
 
 void vam_load_balance() {
+    // Contexts we are migrating (swap only if both accel are full)
+    unsigned cur_context_min, cur_context_max; 
+    hpthread_t *best_th_max = NULL; hpthread_t *any_th_max = NULL;
+    hpthread_t *best_th_min = NULL; hpthread_t *any_th_min = NULL;
+    hpthread_t *move_th_max, *move_th_min;
+    float best_util_max = 0.0; float any_util_max = 0.0;
+    float best_util_min = 10.0; float any_util_min = 10.0;
+    bool no_min_contexts = false;
+    // Find the most loaded thread on most loaded accel that was not recently moved
+    for (int i = 0; i < MAX_CONTEXTS; i++) {
+        if (bitset_test(max_load_accel->valid_contexts, i)) {
+            hpthread_t *th = max_load_accel->th[i];
+            uint64_t t_last_move = get_counter() - th->th_last_move;
+            float th_util = th->th_util;
+            if (th_util > any_util_max) {
+                any_th_max = th;
+                any_util_max = th_util;
+            }
+            if (th_util > best_util_max && t_last_move > TH_MOVE_COOLDOWN) {
+                best_th_max = th;
+                best_util_max = th_util;
+            }
+        }
+    }
+    move_th_max = best_th_max ? best_th_max : any_th_max;
+    cur_context_max = move_th_max->accel_context;
+    // Release the context first
+    vam_release_accel(move_th_max);
+
+    // Check if there exist any valid contexts on least loaded accel
+    if (bitset_all(min_load_accel->valid_contexts)) {
+        // if not, we need to release the least loaded thread on it.
+        for (int i = 0; i < MAX_CONTEXTS; i++) {
+            if (bitset_test(min_load_accel->valid_contexts, i)) {
+                hpthread_t *th = min_load_accel->th[i];
+                uint64_t t_last_move = get_counter() - th->th_last_move;
+                float th_util = th->th_util;
+                if (th_util < any_util_min) {
+                    any_th_min = th;
+                    any_util_min = th_util;
+                }
+                if (th_util < best_util_min && t_last_move > TH_MOVE_COOLDOWN) {
+                    best_th_min = th;
+                    best_util_min = th_util;
+                }
+            }
+        }
+        move_th_min = best_th_min ? best_th_min : any_th_min;
+        cur_context_min = move_th_min->accel_context;
+        // Release the context
+        vam_release_accel(move_th_min);
+        no_min_contexts = true;
+    } else {
+        // if yes, identify one context to allocate
+        for (unsigned i = 0; i < MAX_CONTEXTS; i++) {
+            if (!bitset_test(min_load_accel->valid_contexts, i)) {
+                cur_context_min = i;
+                break;
+            }
+        }
+    }
+
+    // Update the phy<->virt mapping for the chosen context with the hpthread
+    min_load_accel->th[cur_context_min] = move_th_max;
+    move_th_max->accel = min_load_accel;
+    move_th_max->accel_context = cur_context_min;
+    // Mark the context as allocated.
+    bitset_set(min_load_accel->valid_contexts, cur_context_min);
+    // Configure the device allocated
+    vam_configure_accel(move_th_max, min_load_accel, cur_context_min);
+    move_th_max->th_last_move = get_counter();
+    LOW_DEBUG(printf("[VAM] Map %s from %s:%d to %s:%d\n", hpthread_get_name(move_th_max),
+                        physical_accel_get_name(max_load_accel), cur_context_max, physical_accel_get_name(min_load_accel), cur_context_min);)
+
+    if (no_min_contexts) {
+        // Update the phy<->virt mapping for the chosen context with the hpthread
+        max_load_accel->th[cur_context_max] = move_th_min;
+        move_th_min->accel = max_load_accel;
+        move_th_min->accel_context = cur_context_max;
+        // Mark the context as allocated.
+        bitset_set(max_load_accel->valid_contexts, cur_context_max);
+        // Configure the device allocated
+        vam_configure_accel(move_th_min, max_load_accel, cur_context_max);
+        move_th_min->th_last_move = get_counter();
+        LOW_DEBUG(printf("[VAM] Map %s from %s:%d to %s:%d\n", hpthread_get_name(move_th_min),
+                            physical_accel_get_name(min_load_accel), cur_context_min, physical_accel_get_name(max_load_accel), cur_context_max);)
+    }
 }

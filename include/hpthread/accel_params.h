@@ -10,9 +10,16 @@ static inline void create_jump_descr(unsigned *descr_offset, unsigned jump_offse
 }
 
 // Set the stat descriptor to avail
-static inline void set_context_avail(unsigned *stat_offset, unsigned descr_offset) {
+static inline void set_context_avail(unsigned *stat_offset) {
 	stat_offset[0] = CTXT_AVAIL;
-	stat_offset[1] = descr_offset;       
+	asm volatile ("fence");
+}
+
+// Set the descriptor offset (but keep context invalid) 
+static inline void init_context_descr(unsigned *stat_offset, unsigned descr_offset) {
+	stat_offset[0] = CTXT_INVALID;
+	stat_offset[1] = descr_offset;
+	asm volatile ("fence");
 }
 
 // Createa a JUMP task descriptor

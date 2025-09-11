@@ -194,7 +194,7 @@ void nn_module_register(nn_module *m) {
                     )
                     // Create base stat descriptor
                     unsigned stat_descr = m->mem_allocated; m->mem_allocated += 2; // stat descriptor is 2 words
-                    set_context_avail(((unsigned *) m->mem) + stat_descr, gemm_descr);
+                    init_context_descr(((unsigned *) m->mem) + stat_descr, gemm_descr);
 
                     // Create the hpthread general arguments
                     hpthread_args_t *args = (hpthread_args_t *) malloc(sizeof(hpthread_args_t));
@@ -213,6 +213,9 @@ void nn_module_register(nn_module *m) {
 
                     // Create a hpthread
                     hpthread_create(th);
+
+                    // Set the context available only after the accelerator context is reset
+                    set_context_avail(((unsigned *) m->mem) + stat_descr);
 
                     // Assign the thread to the model mapping
                     current->th = th;

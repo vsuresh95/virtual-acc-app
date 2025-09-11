@@ -39,6 +39,7 @@ void hpthread_create(hpthread_t *th) {
 	while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) sched_yield();
 	HIGH_DEBUG(printf("[HPTHREAD] Received hpthread %s.\n", th->name);)
 	th->is_active = true;
+    th->th_last_move = get_counter();
 }
 
 int hpthread_join(hpthread_t *th) {
