@@ -8,7 +8,7 @@ void *fcnn_worker(void *arg) {
     HIGH_DEBUG(printf("[WORKER%d] Starting worker %d!\n", worker_id, worker_id);)
     // Load a model from a text file (and) register with NN module 
     nn_module *m = (nn_module *) malloc (sizeof(nn_module));
-    m->id = 0;
+    m->id = worker_id;
     m->nprio = (worker_id%4)+1;
     nn_module_load_and_register(m, "model.txt");
 
@@ -97,7 +97,7 @@ int main(int argc, char **argv) {
         }
         if (total_iterations != 0 && total_iterations == old_total_iterations) {
             printf("STALL!!!\n");
-            goto exit;
+            // goto exit;
         } else {
             old_total_iterations = total_iterations;
         }

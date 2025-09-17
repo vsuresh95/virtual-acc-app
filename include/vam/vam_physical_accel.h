@@ -16,7 +16,7 @@ typedef struct physical_accel_t {
     uint64_t context_active_cycles[MAX_CONTEXTS]; // Active cycles for the context to use for utilization
     hpthread_t *th[MAX_CONTEXTS]; // If allocated, what is the hpthread in the context?
     float context_util[MAX_CONTEXTS]; // Actual utilization of the context
-    float total_util; // Total utilization of the accelerator
+    float effective_util; // Total utilization of the accelerator
     bool init_done; // Flag to identify whether the device was initialized in the past
     physical_accel_t *next; // Next node in accel list
     pthread_t cpu_thread; // If mapped toa CPU, this is the pthread ID
@@ -43,7 +43,7 @@ static inline void physical_accel_dump(physical_accel_t *accel) {
         if (bitset_test(accel->valid_contexts, i))
             printf("%d ", accel->th[i]->id);
     printf("\n");
-    printf("\t- total_util = %0.2f\n", accel->total_util);
+    printf("\t- effective_util = %0.2f\n", accel->effective_util);
     printf("\t- devname = %s\n", accel->devname);
     printf("\n");
 }
