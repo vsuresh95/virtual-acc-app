@@ -5,11 +5,12 @@
 // (or CPU threads) and tracking utilization of these mappings
 
 #define VAM_SLEEP_MIN       2 * 78125000 // ~2 seconds
+#define VAM_SLEEP_MID       5 * 78125000 // ~5 seconds
 #define VAM_SLEEP_MAX       10 * 78125000 // ~10 seconds
 // Default scheduling period of AVU
 #define AVU_SCHED_PERIOD    0x800000
 // Cooldown timer for migration
-#define TH_MOVE_COOLDOWN    5 * 78125000 // ~5 seconds
+#define TH_MOVE_COOLDOWN    7 * 78125000 // ~5 seconds
 
 // Function to wake up and create a thread of VAM
 void vam_wakeup();
@@ -33,6 +34,6 @@ void vam_check_utilization();
 // Checks whether the load is balanced across all acclerators
 float vam_check_load_balance();
 // Runs the load balancing algorithm across all accelerators
-void vam_load_balance();
+bool vam_load_balance();
 
 #endif // __VAM_BACKEND_H__

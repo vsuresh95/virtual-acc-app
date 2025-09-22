@@ -57,7 +57,7 @@ void *fcnn_worker(void *arg) {
     }
     nn_module_release(m);
     free(m);
-    printf("[APP%d] Joining worker %d\n", worker_id, worker_id);
+    LOW_DEBUG(printf("[APP%d] Joining worker %d\n", worker_id, worker_id);)
     return NULL;
 }
 
@@ -98,7 +98,7 @@ int main(int argc, char **argv) {
         }
         if (total_iterations != 0 && total_iterations == old_total_iterations) {
             printf("STALL!!!\n");
-            // goto exit;
+            goto exit;
         } else {
             old_total_iterations = total_iterations;
         }

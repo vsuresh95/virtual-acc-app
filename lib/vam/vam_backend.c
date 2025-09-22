@@ -27,7 +27,7 @@ physical_accel_t *min_util_accel = NULL;
 // Current max, min and avg util
 float avg_util, max_util, min_util;
 // Safeguard for not performing load balance repeatedly
-float load_balance_reg; bool load_balance_skipped = false;
+float load_imbalance_reg;
 
 // Function to wake up VAM for the first time
 void wakeup_vam() {
@@ -117,6 +117,13 @@ void *vam_run_backend(void *arg) {
     uint64_t start_time = get_counter();
     uint64_t vam_sleep = VAM_SLEEP_MIN;
 
+    const float LB_RETRY_HIGH = 0.5;
+    const float LB_RETRY_LOW = 0.25;
+    const float LB_RETRY_DIFF = 0.25;
+    const float LB_RETRY_RESET = 0.1;
+    const unsigned MAX_LB_RETRY = 3;
+    unsigned NUM_LB_RETRY = MAX_LB_RETRY;
+
     // Run loop will run forever
     while (1) {
         // Test the interface state
@@ -127,17 +134,36 @@ void *vam_run_backend(void *arg) {
                 // Examine the util across all accelerators in the system
                 if (get_counter() - start_time > vam_sleep) {
                     float load_imbalance = vam_check_load_balance();
-                    if (load_imbalance > 0.25 && !(load_balance_skipped && load_balance_reg - load_imbalance < 0.1)) {
+                    
+                    // Allow load balances if load is sufficiently low.
+                    if ((load_imbalance <= LB_RETRY_RESET)) {
+                        NUM_LB_RETRY = MAX_LB_RETRY;
+                        load_imbalance_reg = load_imbalance; // reset baseline
+                    }
+
+                    // If no retries allowed, but diff is large, allow retries
+                    if ((NUM_LB_RETRY == 0) && fabsf(load_imbalance - load_imbalance_reg) > LB_RETRY_DIFF) NUM_LB_RETRY = MAX_LB_RETRY;
+
+                    // Can we try a load balance?
+                    if (NUM_LB_RETRY != 0 && load_imbalance > LB_RETRY_LOW) {
                         // Start the load balancing algorithm
                         LOW_DEBUG(printf("[VAM] Trigerring load balancer, imbalance=%0.2f\n", load_imbalance);)
-                        vam_load_balance();
+                        if (!vam_load_balance()) {
+                            // If the load balancing was not successful, reduce the retry count
+                            NUM_LB_RETRY--;
+                        }
                     }
-                    // If load is very imbalanced, sleep less
-                    if (load_imbalance > 0.5) {
+
+                    if (load_imbalance > LB_RETRY_HIGH) {
+                        // If load is very imbalanced, sleep less
                         vam_sleep = VAM_SLEEP_MIN;
                     } else {
                         if (vam_sleep < VAM_SLEEP_MAX) vam_sleep += VAM_SLEEP_MIN;
                     }
+
+                    // As a fallback, reset the retry every ~5 seconds of sleep
+                    if (vam_sleep >= VAM_SLEEP_MID) NUM_LB_RETRY = MAX_LB_RETRY;
+
                     start_time = get_counter();
                 }
                 sched_yield();
@@ -425,7 +451,7 @@ float vam_check_load_balance() {
                     printf("C%d(%d)=%05.2f%%, ", i, th->nprio, cur_accel->context_util[i] * 100);
                     total_util += cur_accel->context_util[i];
                 } else {
-                    printf("C%d(0)=00.00%%, ", i);
+                    printf("C%d(-)=--.--%%, ", i);
                 }
             }
             LOW_DEBUG(printf("total=%05.2f%%, e.util=%05.2f%%\n", total_util * 100, cur_accel->effective_util * 100);)
@@ -434,7 +460,7 @@ float vam_check_load_balance() {
     })
     // Check whether there is load imbalance across accelerators
     // - calculate average and max/min util across all accelerators
-    float local_avg_util = 0.0; float local_max_util = 0.0; float local_min_util = 10.0;
+    float local_avg_util = 0.001; float local_max_util = 0.0; float local_min_util = 10.0;
     unsigned count = 0;
     bool skip_load_balance = true;
 
@@ -460,7 +486,7 @@ float vam_check_load_balance() {
     return (local_max_util - local_min_util) / (local_avg_util);
 }
 
-void vam_load_balance() {
+bool vam_load_balance() {
     // Contexts we are migrating (swap only if both accel are full)
     unsigned best_context_min, best_context_max; 
     hpthread_t *best_th_max = NULL; hpthread_t *any_th_max = NULL;
@@ -487,6 +513,7 @@ void vam_load_balance() {
     }
     move_th_max = best_th_max ? best_th_max : any_th_max;
     best_context_max = move_th_max->accel_context;
+    move_th_max->th_last_move = get_counter();
 
     // Check if there exist any valid contexts on least loaded accel
     if (bitset_all(min_util_accel->valid_contexts)) {
@@ -508,6 +535,7 @@ void vam_load_balance() {
         }
         move_th_min = best_th_min ? best_th_min : any_th_min;
         best_context_min = move_th_min->accel_context;
+        move_th_min->th_last_move = get_counter();
         no_min_contexts = true;
     } else {
         // if yes, identify one context to allocate
@@ -523,17 +551,21 @@ void vam_load_balance() {
     float local_max_util = max_util;
     float local_min_util = min_util;
     local_max_util -= move_th_max->th_util / move_th_max->nprio; local_min_util += move_th_max->th_util / move_th_max->nprio;
+    LOW_DEBUG(printf("[VAM] Map %s from %s:%d to %s:%d\n", hpthread_get_name(move_th_max),
+                        physical_accel_get_name(max_util_accel), best_context_max, physical_accel_get_name(min_util_accel), best_context_min);)
     if (no_min_contexts) {
         local_max_util += move_th_min->th_util / move_th_min->nprio; local_min_util -= move_th_min->th_util / move_th_min->nprio;
+        LOW_DEBUG(printf("[VAM] Map %s from %s:%d to %s:%d\n", hpthread_get_name(move_th_min),
+                            physical_accel_get_name(min_util_accel), best_context_min, physical_accel_get_name(max_util_accel), best_context_max);)
     }
     float old_load_imbalance = (max_util - min_util) / (avg_util);
     float new_load_imbalance = (fabsf(local_max_util - local_min_util)) / (avg_util);
-    if (old_load_imbalance - new_load_imbalance < 0.1) {
-        load_balance_skipped = true;
-        load_balance_reg = old_load_imbalance;
-        return;
+    const float LB_RETRY_DIFF = 0.25;
+    if (old_load_imbalance - new_load_imbalance < LB_RETRY_DIFF) {
+        load_imbalance_reg = old_load_imbalance;
+        LOW_DEBUG(printf("[VAM] Skipping load balance, new imbalance = %f\n", new_load_imbalance);)
+        return false;
     }
-    load_balance_skipped = false;
 
     // Release the context first
     vam_release_accel(move_th_max);
@@ -550,9 +582,6 @@ void vam_load_balance() {
     bitset_set(min_util_accel->valid_contexts, best_context_min);
     // Configure the device allocated
     vam_configure_accel(move_th_max, min_util_accel, best_context_min);
-    move_th_max->th_last_move = get_counter();
-    LOW_DEBUG(printf("[VAM] Map %s from %s:%d to %s:%d\n", hpthread_get_name(move_th_max),
-                        physical_accel_get_name(max_util_accel), best_context_max, physical_accel_get_name(min_util_accel), best_context_min);)
 
     if (no_min_contexts) {
         // Update the phy<->virt mapping for the chosen context with the hpthread
@@ -563,8 +592,6 @@ void vam_load_balance() {
         bitset_set(max_util_accel->valid_contexts, best_context_max);
         // Configure the device allocated
         vam_configure_accel(move_th_min, max_util_accel, best_context_max);
-        move_th_min->th_last_move = get_counter();
-        LOW_DEBUG(printf("[VAM] Map %s from %s:%d to %s:%d\n", hpthread_get_name(move_th_min),
-                            physical_accel_get_name(min_util_accel), best_context_min, physical_accel_get_name(max_util_accel), best_context_max);)
     }
+    return true;
 }
