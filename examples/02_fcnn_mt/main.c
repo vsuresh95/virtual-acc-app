@@ -57,6 +57,7 @@ void *fcnn_worker(void *arg) {
     }
     nn_module_release(m);
     free(m);
+    printf("[APP%d] Joining worker %d\n", worker_id, worker_id);
     return NULL;
 }
 

@@ -275,6 +275,15 @@ void nn_module_add_hpthread(nn_module *m, hpthread_t *th) {
     m->th_list = item;
 }
 
+void nn_module_setpriority(nn_module *m, unsigned nprio) {
+    nn_hpthread_list *cur = m->th_list;
+    while(cur != NULL) {
+        nn_hpthread_list *next = cur->next;
+        hpthread_setpriority(cur->th, nprio);
+        cur = next;
+    }
+}
+
 void nn_queue_push(nn_queue_t *q, nn_node_t *n) {
     nn_node_list *qnode = (nn_node_list *) malloc(sizeof(nn_node_list));
     qnode->n = n;

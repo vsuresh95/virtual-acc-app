@@ -201,7 +201,7 @@ void vam_search_accel(hpthread_t *th) {
         if (cur_accel->prim == th->prim && !bitset_all(cur_accel->valid_contexts)) {
             // Check if this accelerator's total load is less than the previous min or fewer contexts (with similar util)
             if ((cur_accel->effective_util < candidate_util - 0.1) ||
-                (fabsf(cur_accel->effective_util - candidate_util <= 0.1) && cur_accel->valid_contexts < candidate_contexts)) {
+                (fabsf(cur_accel->effective_util - candidate_util) <= 0.1 && (cur_accel->valid_contexts < candidate_contexts))) {
                 candidate_accel = cur_accel;
                 candidate_util = cur_accel->effective_util;
                 candidate_contexts = cur_accel->valid_contexts;
@@ -349,8 +349,6 @@ void vam_setprio_accel(hpthread_t *th) {
     physical_accel_t *accel = th->accel;
     unsigned context = th->accel_context;
     LOW_DEBUG(printf("[VAM] Setting priority of accel %s:%d to %d for hpthread %s\n", physical_accel_get_name(accel), context, th->nprio, hpthread_get_name(th));)
-    // Free the allocated context.
-    bitset_reset(accel->valid_contexts, context);
 
     struct esp_access *esp_access_desc = accel->esp_access_desc;
     {
@@ -403,11 +401,11 @@ void vam_check_utilization() {
                 cur_accel->effective_util += util / th->nprio;
 
                 HIGH_DEBUG(
-                    printf("C%d(%d)=%0.2f%%, ", i, th->nprio, util * 100);
+                    printf("C%d(%d)=%05.2f%%, ", i, th->nprio, util * 100);
                 )
             }
         }
-        HIGH_DEBUG(printf("e.util=%0.2f%%\n", cur_accel->effective_util * 100);)
+        HIGH_DEBUG(printf("e.util=%05.2f%%\n", cur_accel->effective_util * 100);)
 		cur_accel = cur_accel->next;
     }
 }
@@ -424,11 +422,13 @@ float vam_check_load_balance() {
             for (int i = 0; i < MAX_CONTEXTS; i++) {
                 if (bitset_test(cur_accel->valid_contexts, i)) {
                     hpthread_t *th = cur_accel->th[i];
-                    printf("C%d(%d)=%0.2f%%, ", i, th->nprio, cur_accel->context_util[i] * 100);
+                    printf("C%d(%d)=%05.2f%%, ", i, th->nprio, cur_accel->context_util[i] * 100);
                     total_util += cur_accel->context_util[i];
+                } else {
+                    printf("C%d(0)=00.00%%, ", i);
                 }
             }
-            LOW_DEBUG(printf("total=%0.2f%%, e.util=%0.2f%%\n", total_util * 100, cur_accel->effective_util * 100);)
+            LOW_DEBUG(printf("total=%05.2f%%, e.util=%05.2f%%\n", total_util * 100, cur_accel->effective_util * 100);)
 		    cur_accel = cur_accel->next;
         }
     })

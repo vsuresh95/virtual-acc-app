@@ -31,6 +31,7 @@ void nn_module_release(nn_module *m);
 static inline const char *nn_module_get_name(nn_module *m) { return m->graph->name; }
 
 void nn_module_add_hpthread(nn_module *m, hpthread_t *th);
+void nn_module_setpriority(nn_module *m, unsigned nprio);
 
 // Data structures for BFS traversal of NN graph
 typedef struct {
