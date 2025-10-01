@@ -1,8 +1,5 @@
-#ifndef __BITSET_H__
-#define __BITSET_H__
-
-//  Number of concurrent contexts possible in a single accelerator
-#define MAX_CONTEXTS 4
+#ifndef __BITSET_4_H__
+#define __BITSET_4_H__
 
 // Custom implementation of bitset
 typedef uint8_t bitset_t;            /* uses only the low 4 bits */
@@ -29,4 +26,4 @@ typedef uint8_t bitset_t;            /* uses only the low 4 bits */
 /* Macro-only 4-bit popcount (values 0..15) */
 #define bitset_count(v) ((unsigned)("\0\1\1\2\1\2\2\3\1\2\2\3\2\3\3\4"[(uint8_t)((v) & 0x0Fu)]))
 
-#endif // __BITSET_H__
+#endif // __BITSET_4_H__
