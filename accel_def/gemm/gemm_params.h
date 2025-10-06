@@ -1,6 +1,8 @@
 #ifndef __GEMM_PARAMS_H__
 #define __GEMM_PARAMS_H__
 
+#define GEMM_PARAM_SIZE 6
+
 // Task parameters for GEMM
 typedef struct {
     // Parameters

@@ -5,8 +5,8 @@
 #include <gemm_params.h>
 
 #define GEMM_QUEUE_SIZE 4
-
-HIGH_DEBUG(static unsigned queue_empty_print = 0;)
+#define GEMM_ENTRIES_OFFSET 4
+#define GEMM_ENTRY_SIZE GEMM_PARAM_SIZE
 
 typedef struct {
     sm_queue_entry_t common;
@@ -22,19 +22,12 @@ extern uint64_t t_push;
 extern uint64_t t_pop;
 
 static inline void gemm_queue_init(gemm_queue_t *q) {
-    __atomic_store_n(&(q->info.stat), QUEUE_INVALID, __ATOMIC_SEQ_CST);
     __atomic_store_n(&(q->info.head), 0, __ATOMIC_SEQ_CST);
     __atomic_store_n(&(q->info.tail), 0, __ATOMIC_SEQ_CST);
-    for (int i = 0; i < GEMM_QUEUE_SIZE; i++) {
-        __atomic_store_n(&(q->entry[i].common.valid), 0, __ATOMIC_SEQ_CST);
-    }
 }
 
 // Createa a JUMP task descriptor
 static inline void print_gemm_entry(gemm_queue_entry_t *e) {
-    printf("\tvalid=%d\n", e->common.valid);
-    printf("\treq_id=%d\n", e->common.req_id);
-    printf("\tdone_offset=%d\n", e->common.done_offset);
     printf("\tdim_m=%d\n", e->gemm_params.dim_m);
     printf("\tdim_n=%d\n", e->gemm_params.dim_n);
     printf("\tdim_k=%d\n", e->gemm_params.dim_k);
@@ -44,7 +37,6 @@ static inline void print_gemm_entry(gemm_queue_entry_t *e) {
 }
 
 static inline bool gemm_queue_push(gemm_queue_t *q, gemm_queue_entry_t *e) {
-    uint64_t t_start = get_counter();
     unsigned head = __atomic_load_n(&(q->info.head), __ATOMIC_ACQUIRE);
     unsigned tail = __atomic_load_n(&(q->info.tail), __ATOMIC_ACQUIRE);
 
@@ -55,53 +47,51 @@ static inline bool gemm_queue_push(gemm_queue_t *q, gemm_queue_entry_t *e) {
         return false;
     }
 
-    // Ensure previous consumer cleared valid at target slot
+    // Copy params to head slot and advance head
     gemm_queue_entry_t *slot = &(q->entry[head]);
-    unsigned *slot_valid = &(slot->common.valid);
-
-    // Copy params and increment head
     *slot = *e;
-    __atomic_store_n(slot_valid, 1, __ATOMIC_RELEASE);
-    // Advance head
     __atomic_store_n(&(q->info.head), next, __ATOMIC_RELEASE);
-    t_push += get_counter() - t_start;
-    HIGH_DEBUG(printf("[SM PUSH] Pushed GEMM entry %u at idx %u\n", e->common.req_id, head);)
+    HIGH_DEBUG(printf("[SM PUSH] Pushed GEMM entry at idx %u\n", head);)
     return true;
 }
 
-static inline gemm_queue_entry_t *gemm_queue_pop(gemm_queue_t *q) {
-    uint64_t t_start = get_counter();
+static inline void gemm_queue_pop(gemm_queue_t *q) {
+    unsigned tail = __atomic_load_n(&(q->info.tail), __ATOMIC_ACQUIRE);
+    __atomic_store_n(&(q->info.tail), (tail + 1) % GEMM_QUEUE_SIZE, __ATOMIC_RELEASE);
+    HIGH_DEBUG(printf("[SM POP] Popped GEMM entry from idx %u\n", tail);)
+}
+
+static inline gemm_queue_entry_t *gemm_queue_can_pop(gemm_queue_t *q) {
     unsigned head = __atomic_load_n(&(q->info.head), __ATOMIC_ACQUIRE);
     unsigned tail = __atomic_load_n(&(q->info.tail), __ATOMIC_ACQUIRE);
 
     // Empty when head == tail
     if (head == tail) {
-        HIGH_DEBUG(
-            if (queue_empty_print < 10) {
-                printf("[SM POP] GEMM queue is empty\n");
-            }
-            queue_empty_print++;
-        )
-        return NULL;
-    }    
-
-    asm volatile ("fence");
-    // Ensure target slot is valid
-    gemm_queue_entry_t *slot = &q->entry[tail];
-    HIGH_DEBUG(queue_empty_print = 0;)
-    unsigned *slot_valid = &(slot->common.valid);
-    if (__atomic_load_n(slot_valid, __ATOMIC_ACQUIRE) != 1) {
-        HIGH_DEBUG(printf("[SM POP] GEMM slot %u not valid yet\n", tail);)
         return NULL;
     }
-
-    // Clear valid before advancing tail to allow producer reuse
-    __atomic_store_n(slot_valid, 0, __ATOMIC_RELEASE);
-    // Advance tail
-    __atomic_store_n(&(q->info.tail), (tail + 1) % GEMM_QUEUE_SIZE, __ATOMIC_RELEASE);
-    t_pop += get_counter() - t_start;
-    HIGH_DEBUG(printf("[SM POP] Popped GEMM entry %u from idx %u\n", slot->common.req_id, tail);)
+    // Read entry and advance tail
+    gemm_queue_entry_t *slot = &q->entry[tail];
+    HIGH_DEBUG(printf("[SM POP] Can pop GEMM entry from idx %u\n", tail);)
     return slot;
 }
 
+static inline bool gemm_queue_empty(gemm_queue_t *q) {
+    sm_queue_t *info = &(q->info);
+    unsigned head = info->head;
+    unsigned tail = info->tail;
+    __atomic_thread_fence(__ATOMIC_ACQUIRE);
+
+    return (head == tail);
+}
+
+static inline bool gemm_queue_full(gemm_queue_t *q) {
+    sm_queue_t *info = &(q->info);
+    unsigned head = info->head;
+    unsigned tail = info->tail;
+    __atomic_thread_fence(__ATOMIC_ACQUIRE);
+
+    unsigned next = (head + 1) % GEMM_QUEUE_SIZE;
+    return (next == tail);
+}
+    
 #endif // __GEMM_QUEUE_H__

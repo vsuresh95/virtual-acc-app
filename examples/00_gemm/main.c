@@ -6,16 +6,13 @@
 // Example application using GEMM
 // accelerator with the hpthread interface
 
-unsigned dim_m = 40;
-unsigned dim_n = 20;
-unsigned dim_k = 40;
+unsigned dim_m = 32;
+unsigned dim_n = 32;
+unsigned dim_k = 32;
 unsigned iterations = 100;
 
 uint64_t t_sw;
 uint64_t t_acc;
-uint64_t t_push;
-uint64_t t_pop;
-uint64_t t_ioctl;
 
 // Compare accelerator output with golden output
 int validate_buffer(nn_token_t *mem_c, nn_token_t *gold_c)
@@ -66,7 +63,6 @@ void init_buffer(nn_token_t *mem_a, nn_token_t *mem_b, nn_token_t *gold_a, nn_to
 int main(int argc, char **argv) {
     unsigned errors = 0;
 	t_sw = 0; t_acc = 0;
-	t_push = 0; t_pop = 0; t_ioctl = 0;
 
     if (argc > 1) {
         dim_m = atoi(argv[1]);
@@ -101,8 +97,7 @@ int main(int argc, char **argv) {
     unsigned mat_b_offset = mat_a_offset + mat_a_len;
     unsigned mat_c_valid_offset = mat_b_offset + mat_b_len;
     unsigned mat_c_offset = mat_c_valid_offset + flag_len;
-    unsigned output_flag_offset = mat_c_offset + mat_c_len;
-    unsigned input_queue_offset = output_flag_offset + GEMM_QUEUE_SIZE;
+    unsigned input_queue_offset = mat_c_offset + mat_c_len;
 
     // Allocate sufficient memory for this hpthread
     unsigned mem_size = (input_queue_offset * sizeof(nn_token_t)) + sizeof(gemm_queue_t);
@@ -116,25 +111,19 @@ int main(int argc, char **argv) {
     // Input task queue
     gemm_queue_t *q = (gemm_queue_t *) &mem[input_queue_offset];
     gemm_queue_init(q);
-    // Output flag
-    volatile unsigned *output_flag = (volatile unsigned *) &mem[output_flag_offset];
-    __atomic_store_n(output_flag, 0, __ATOMIC_SEQ_CST);
 
     // Create GEMM queue entry
     gemm_queue_entry_t e = { 
-        .common = { 
-            .valid = 0,
-            .req_id = 0,
-            .done_offset = output_flag_offset,
-        },
         .gemm_params = {
             dim_m, dim_n, dim_k, mat_b_offset, mat_a_valid_offset, mat_c_valid_offset
         }
     };
-    HIGH_DEBUG(
-        printf("[APP] Printing GEMM queue entry...\n");
-        print_gemm_entry(&e);
-    )
+    HIGH_DEBUG( printf("[APP] Printing GEMM queue entry...\n"); print_gemm_entry(&e); )
+    // Input/output flags
+    unsigned *input_flag = (unsigned *) &mem[mat_a_valid_offset];
+    unsigned *output_flag = (unsigned *) &mem[mat_c_valid_offset];
+    __atomic_store_n(input_flag, 0, __ATOMIC_SEQ_CST);
+    __atomic_store_n(output_flag, 0, __ATOMIC_SEQ_CST);
 
     // Declare hpthread and assign attributes
     hpthread_t *th = (hpthread_t *) malloc(sizeof(hpthread_t));
@@ -158,10 +147,8 @@ int main(int argc, char **argv) {
 
         // Enqueue new GEMM entry
         uint64_t t_start = get_counter();
-        if(!gemm_queue_push(q, &e)) {
-            perror("full queue");
-            exit(1);
-        }
+        gemm_queue_push(q, &e);
+        __atomic_store_n(input_flag, 1, __ATOMIC_RELEASE);
 
         // Wait for the accelerator to send output.
         while(__atomic_load_n(output_flag, __ATOMIC_ACQUIRE) != 1);
@@ -187,9 +174,6 @@ int main(int argc, char **argv) {
     }
 	printf("[APP] Software = %lu\n", t_sw);
 	printf("[APP] Accel = %lu\n", t_acc/iterations);
-	printf("[APP] Push = %lu\n", t_push/iterations);
-	printf("[APP] Pop = %lu\n", t_pop/iterations);
-	printf("[APP] IOCTL = %lu\n", t_ioctl/iterations);
 
     return errors;
 }

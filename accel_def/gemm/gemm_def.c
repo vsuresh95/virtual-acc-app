@@ -62,9 +62,8 @@ void *gemm_invoke(void *a) {
     while (1) {
         if (*kill_pthread) pthread_exit(NULL);
 
-        gemm_queue_entry_t *e = gemm_queue_pop(q);
+        gemm_queue_entry_t *e = gemm_queue_can_pop(q);
         if (e != NULL) {
-            uint64_t t_start = get_counter();
             gemm_params_t *params = &(e->gemm_params);
             gemm_access_desc->dim_m = params->dim_m;
             gemm_access_desc->dim_n = params->dim_n;
@@ -73,13 +72,21 @@ void *gemm_invoke(void *a) {
             gemm_access_desc->input_base = params->input_base;
             gemm_access_desc->output_base = params->output_base;
 
+            // Wait for input to be valid/output to be empty
+            unsigned *input_flag = (unsigned *) &mem[gemm_access_desc->input_base];
+            unsigned *output_flag = (unsigned *) &mem[gemm_access_desc->output_base];
+            while(__atomic_load_n(input_flag, __ATOMIC_ACQUIRE) != 1);
+            while(__atomic_load_n(output_flag, __ATOMIC_ACQUIRE) != 0);
+            // Then change the queue tail
+            gemm_queue_pop(q);
+
             struct esp_access *esp_access_desc = (struct esp_access *) gemm_access_desc;
             if (ioctl(accel->fd, GEMM_STRATUS_IOC_ACCESS, esp_access_desc)) {
                 perror("ioctl");
                 exit(EXIT_FAILURE);
             }
-            __atomic_store_n(&mem[e->common.done_offset], 1, __ATOMIC_RELEASE);
-            t_ioctl += get_counter() - t_start;
+            // Set output valid
+            __atomic_store_n(output_flag, 1, __ATOMIC_RELEASE);
         }
     }
 
