@@ -7,4 +7,7 @@ void *sw_gemm(void *a);
 // Device-dependent probe function
 void gemm_probe(physical_accel_t *accel);
 
+// GEMM accelerator invocation thread
+void *gemm_invoke(void *a);
+
 #endif // __GEMM_DEF_H__

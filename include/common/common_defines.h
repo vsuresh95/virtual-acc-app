@@ -10,9 +10,9 @@
 #define PAYLOAD_OFFSET 8
 
 // Context descriptors status
-#define CTXT_INVALID 0
-#define CTXT_AVAIL 1
-#define CTXT_BUSY 2
+#define QUEUE_INVALID 0
+#define QUEUE_AVAIL 1
+#define QUEUE_BUSY 2
 
 // Different debug levels for prints
 #if defined(HIGH_VERBOSE)

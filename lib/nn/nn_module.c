@@ -180,26 +180,26 @@ void nn_module_register(nn_module *m) {
                     nn_token_t *wgt_address = ((nn_token_t *) m->mem) + params->weight_base;
                     initialize_data(gemm_args->input_file, wgt_address, params->dim_n * params->dim_k);
 
-                    // Create 1 GEMM descriptor
-                    unsigned gemm_descr = m->mem_allocated; m->mem_allocated += ACCEL_PARAM_SIZE;
-                    create_gemm_descr(((unsigned *) m->mem) + gemm_descr, params);
-                    // Create 1 JUMP descriptor 
-                    unsigned jump_descr = m->mem_allocated; m->mem_allocated += ACCEL_PARAM_SIZE;
-                    create_jump_descr(((unsigned *) m->mem) + jump_descr, gemm_descr);
-                    HIGH_DEBUG(
-                        printf("[NN] Printing GEMM descriptor...\n");
-                        print_descr(((unsigned *) m->mem) + gemm_descr);
-                        printf("[NN] Printing JUMP descriptor...\n");
-                        print_descr(((unsigned *) m->mem) + jump_descr);
-                    )
-                    // Create base stat descriptor
-                    unsigned stat_descr = m->mem_allocated; m->mem_allocated += 2; // stat descriptor is 2 words
-                    init_context_descr(((unsigned *) m->mem) + stat_descr, gemm_descr);
+                    // // Create 1 GEMM descriptor
+                    // unsigned gemm_descr = m->mem_allocated; m->mem_allocated += ACCEL_PARAM_SIZE;
+                    // create_gemm_descr(((unsigned *) m->mem) + gemm_descr, params);
+                    // // Create 1 JUMP descriptor 
+                    // unsigned jump_descr = m->mem_allocated; m->mem_allocated += ACCEL_PARAM_SIZE;
+                    // create_jump_descr(((unsigned *) m->mem) + jump_descr, gemm_descr);
+                    // HIGH_DEBUG(
+                    //     printf("[NN] Printing GEMM descriptor...\n");
+                    //     print_descr(((unsigned *) m->mem) + gemm_descr);
+                    //     printf("[NN] Printing JUMP descriptor...\n");
+                    //     print_descr(((unsigned *) m->mem) + jump_descr);
+                    // )
+                    // // Create base stat descriptor
+                    // unsigned stat_descr = m->mem_allocated; m->mem_allocated += 2; // stat descriptor is 2 words
+                    // init_context_descr(((unsigned *) m->mem) + stat_descr, gemm_descr);
 
                     // Create the hpthread general arguments
                     hpthread_args_t *args = (hpthread_args_t *) malloc(sizeof(hpthread_args_t));
                     args->mem = m->mem;
-                    args->base_ptr = stat_descr;
+                    // args->base_ptr = stat_descr;
 
                     // Declare hpthread and assign attributes
                     hpthread_t *th = (hpthread_t *) malloc(sizeof(hpthread_t));
@@ -214,8 +214,8 @@ void nn_module_register(nn_module *m) {
                     // Create a hpthread
                     hpthread_create(th);
 
-                    // Set the context available only after the accelerator context is reset
-                    set_context_avail(((unsigned *) m->mem) + stat_descr);
+                    // // Set the context available only after the accelerator context is reset
+                    // set_context_avail(((unsigned *) m->mem) + stat_descr);
 
                     // Assign the thread to the model mapping
                     current->th = th;

@@ -9,9 +9,9 @@ typedef uint8_t hpthread_prim_t;
 
 // hpthread arguments
 typedef struct {
-    void *mem; // memory pool allocated for the hpthread
-    unsigned base_ptr; // Thread base pointer
-    bool *kill_pthread; // Thread base pointer
+    void *mem; // Memory pool allocated for the hpthread
+    unsigned queue_ptr; // Queue base pointer
+    bool *kill_pthread; // Kill the CPU pthread
 } hpthread_args_t;
 
 // Device-agnostic thread abstraction for accelerators
@@ -25,6 +25,7 @@ typedef struct {
     unsigned accel_context; // The accelerator context this thread is mapped to
 	bool is_active; // Is the thread currently active?
     uint64_t th_last_move; // When was this thread last migrated?
+    bool cpu_invoke; // Is the accelerator invoked by a CPU thread?
     // Debug variables
     char name[100]; // Name
     unsigned user_id; // ID of user app

@@ -83,6 +83,7 @@ void vam_probe_accel() {
 
             if (fnmatch("gemm*", entry->d_name, FNM_NOESCAPE) == 0) {
                 gemm_probe(accel_temp);
+                accel_temp->cpu_invoke = true;
             } else {
                 printf("[ERROR] Device does not match any supported accelerators.\n");
             }
@@ -96,10 +97,12 @@ void vam_probe_accel() {
             }
 
             // Reset the accelerator to be sure
-            struct esp_access *esp_access_desc = (struct esp_access *) accel_temp->esp_access_desc;
-            if (ioctl(accel_temp->fd, accel_temp->reset_ioctl, esp_access_desc)) {
-                perror("ioctl");
-                exit(EXIT_FAILURE);
+            if (!accel_temp->cpu_invoke) {
+                struct esp_access *esp_access_desc = (struct esp_access *) accel_temp->esp_access_desc;
+                if (ioctl(accel_temp->fd, accel_temp->reset_ioctl, esp_access_desc)) {
+                    perror("ioctl");
+                    exit(EXIT_FAILURE);
+                }
             }
 
             insert_physical_accel(accel_temp);
@@ -117,12 +120,12 @@ void *vam_run_backend(void *arg) {
     uint64_t start_time = get_counter();
     uint64_t vam_sleep = VAM_SLEEP_MIN;
 
-    const float LB_RETRY_HIGH = 0.5;
-    const float LB_RETRY_LOW = 0.25;
-    const float LB_RETRY_DIFF = 0.25;
-    const float LB_RETRY_RESET = 0.1;
-    const unsigned MAX_LB_RETRY = 3;
-    unsigned NUM_LB_RETRY = MAX_LB_RETRY;
+    // const float LB_RETRY_HIGH = 0.5;
+    // const float LB_RETRY_LOW = 0.25;
+    // const float LB_RETRY_DIFF = 0.25;
+    // const float LB_RETRY_RESET = 0.1;
+    // const unsigned MAX_LB_RETRY = 3;
+    // unsigned NUM_LB_RETRY = MAX_LB_RETRY;
 
     // Run loop will run forever
     while (1) {
@@ -131,41 +134,41 @@ void *vam_run_backend(void *arg) {
 
         switch(state) {
             case VAM_IDLE: {
-                // Examine the util across all accelerators in the system
-                if (get_counter() - start_time > vam_sleep) {
-                    float load_imbalance = vam_check_load_balance();
+                // // Examine the util across all accelerators in the system
+                // if (get_counter() - start_time > vam_sleep) {
+                //     float load_imbalance = vam_check_load_balance();
                     
-                    // Allow load balances if load is sufficiently low.
-                    if ((load_imbalance <= LB_RETRY_RESET)) {
-                        NUM_LB_RETRY = MAX_LB_RETRY;
-                        load_imbalance_reg = load_imbalance; // reset baseline
-                    }
+                //     // Allow load balances if load is sufficiently low.
+                //     if ((load_imbalance <= LB_RETRY_RESET)) {
+                //         NUM_LB_RETRY = MAX_LB_RETRY;
+                //         load_imbalance_reg = load_imbalance; // reset baseline
+                //     }
 
-                    // If no retries allowed, but diff is large, allow retries
-                    if ((NUM_LB_RETRY == 0) && fabsf(load_imbalance - load_imbalance_reg) > LB_RETRY_DIFF) NUM_LB_RETRY = MAX_LB_RETRY;
+                //     // If no retries allowed, but diff is large, allow retries
+                //     if ((NUM_LB_RETRY == 0) && fabsf(load_imbalance - load_imbalance_reg) > LB_RETRY_DIFF) NUM_LB_RETRY = MAX_LB_RETRY;
 
-                    // Can we try a load balance?
-                    if (NUM_LB_RETRY != 0 && load_imbalance > LB_RETRY_LOW) {
-                        // Start the load balancing algorithm
-                        LOW_DEBUG(printf("[VAM] Trigerring load balancer, imbalance=%0.2f\n", load_imbalance);)
-                        if (!vam_load_balance()) {
-                            // If the load balancing was not successful, reduce the retry count
-                            NUM_LB_RETRY--;
-                        }
-                    }
+                //     // Can we try a load balance?
+                //     if (NUM_LB_RETRY != 0 && load_imbalance > LB_RETRY_LOW) {
+                //         // Start the load balancing algorithm
+                //         LOW_DEBUG(printf("[VAM] Trigerring load balancer, imbalance=%0.2f\n", load_imbalance);)
+                //         if (!vam_load_balance()) {
+                //             // If the load balancing was not successful, reduce the retry count
+                //             NUM_LB_RETRY--;
+                //         }
+                //     }
 
-                    if (load_imbalance > LB_RETRY_HIGH) {
-                        // If load is very imbalanced, sleep less
-                        vam_sleep = VAM_SLEEP_MIN;
-                    } else {
-                        if (vam_sleep < VAM_SLEEP_MAX) vam_sleep += VAM_SLEEP_MIN;
-                    }
+                //     if (load_imbalance > LB_RETRY_HIGH) {
+                //         // If load is very imbalanced, sleep less
+                //         vam_sleep = VAM_SLEEP_MIN;
+                //     } else {
+                //         if (vam_sleep < VAM_SLEEP_MAX) vam_sleep += VAM_SLEEP_MIN;
+                //     }
 
-                    // As a fallback, reset the retry every ~5 seconds of sleep
-                    if (vam_sleep >= VAM_SLEEP_MID) NUM_LB_RETRY = MAX_LB_RETRY;
+                //     // As a fallback, reset the retry every ~5 seconds of sleep
+                //     if (vam_sleep >= VAM_SLEEP_MID) NUM_LB_RETRY = MAX_LB_RETRY;
 
-                    start_time = get_counter();
-                }
+                //     start_time = get_counter();
+                // }
                 sched_yield();
                 break;
             }
@@ -207,8 +210,8 @@ void *vam_run_backend(void *arg) {
 
 void vam_search_accel(hpthread_t *th) {
     HIGH_DEBUG(printf("[VAM] Searching accelerator for hpthread %s\n", hpthread_get_name(th));)
-    // First, update the active utilization of each accelerator
-    vam_check_utilization();
+    // // First, update the active utilization of each accelerator
+    // vam_check_utilization();
 
     // We will find a candidate accelerator that has the lowest utiilization.
     // If no accelerator candidates are found, we will consider the CPU as the only candidate.
@@ -223,6 +226,8 @@ void vam_search_accel(hpthread_t *th) {
             printf("\n[VAM] Checking device %s.\n", physical_accel_get_name(cur_accel));
             physical_accel_dump(cur_accel);
         )
+        // If the thread or accel requires CPU invocation, the other must too
+        if (th->cpu_invoke ^ cur_accel->cpu_invoke) continue;
         // Is the accelerator suitable and not fully utilized for this primitive?
         if (cur_accel->prim == th->prim && !bitset_all(cur_accel->valid_contexts)) {
             // Check if this accelerator's total load is less than the previous min or fewer contexts (with similar util)
@@ -238,16 +243,6 @@ void vam_search_accel(hpthread_t *th) {
         }
 		cur_accel = cur_accel->next;
     }
-    // If no candidate accelerator was found, we will create a new CPU thread for this node.
-    if (accel_allocated == false) {
-        // Create a new physical accelerator for this CPU thread
-        physical_accel_t *cpu_thread = (physical_accel_t *) malloc(sizeof(physical_accel_t));
-        cpu_thread->prim = PRIM_NONE;
-        LOW_DEBUG(strcpy(cpu_thread->devname, "CPU");)
-        candidate_accel = cpu_thread;
-        insert_cpu_thread(cpu_thread);
-        candidate_util = 0.0;
-    }
     HIGH_DEBUG(printf("[VAM] Candidate for hpthread %s = %s!\n", hpthread_get_name(th), physical_accel_get_name(candidate_accel));)
     // Identify the valid context to allocate
     unsigned cur_context = 0;
@@ -259,6 +254,16 @@ void vam_search_accel(hpthread_t *th) {
             }
         }
     }
+    // If no candidate accelerator was found, we will create a new CPU thread for this node.
+    if (accel_allocated == false) {
+        // Create a new physical accelerator for this CPU thread
+        physical_accel_t *cpu_thread = (physical_accel_t *) malloc(sizeof(physical_accel_t));
+        cpu_thread->prim = PRIM_NONE;
+        LOW_DEBUG(strcpy(cpu_thread->devname, "CPU");)
+        candidate_accel = cpu_thread;
+        insert_cpu_thread(cpu_thread);
+        candidate_util = 0.0;
+    }
     // Update the phy<->virt mapping for the chosen context with the hpthread
     candidate_accel->th[cur_context] = th;
     th->accel = candidate_accel;
@@ -267,7 +272,11 @@ void vam_search_accel(hpthread_t *th) {
     bitset_set(candidate_accel->valid_contexts, cur_context);
     // Configure the device allocated
     if (accel_allocated) {
-        vam_configure_accel(th, candidate_accel, cur_context);
+        if (th->cpu_invoke) {
+            vam_configure_cpu_invoke(th, candidate_accel);
+        } else {
+            vam_configure_accel(th, candidate_accel, cur_context);
+        }
     } else {
         vam_configure_cpu(th, candidate_accel);
     }
@@ -296,7 +305,7 @@ void vam_configure_accel(hpthread_t *th, physical_accel_t *accel, unsigned conte
         esp_access_desc->src_offset = 0;
         esp_access_desc->dst_offset = 0;
         esp_access_desc->context_id = context;
-        esp_access_desc->context_base_ptr = th->args->base_ptr;
+        // esp_access_desc->context_base_ptr = th->args->base_ptr;
         esp_access_desc->context_nprio = th->nprio;
         esp_access_desc->valid_contexts = accel->valid_contexts;
         esp_access_desc->sched_period = AVU_SCHED_PERIOD;
@@ -319,6 +328,28 @@ void vam_configure_accel(hpthread_t *th, physical_accel_t *accel, unsigned conte
     // Read the current time for when the accelerator is started.
     accel->context_start_cycles[context] = get_counter();
     accel->context_active_cycles[context] = 0;
+}
+
+void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel) {
+    LOW_DEBUG(printf("[VAM] Launch CPU invoke thread for hpthread %s\n", hpthread_get_name(th));)
+    // Find SW kernel for this thread
+    void *(*sw_kernel)(void *);
+    switch(th->prim) {
+        case PRIM_GEMM: sw_kernel = gemm_invoke; break;
+        default: break;
+    }    
+    // Create a new CPU thread for the SW implementation of this node.
+    pthread_t cpu_thread;
+    th->args->kill_pthread = (bool *) malloc (sizeof(bool)); *(th->args->kill_pthread) = false;
+    cpu_invoke_args_t *args = (cpu_invoke_args_t *) malloc (sizeof(cpu_invoke_args_t)); 
+    args->args = th->args;
+    args->accel = accel;
+    if (pthread_create(&cpu_thread, NULL, sw_kernel, (void *) args) != 0) {
+        perror("Failed to create CPU thread\n");
+    }
+
+    // Add this thread to the physical_accel struct
+    accel->cpu_thread = cpu_thread;
 }
 
 void vam_configure_cpu(hpthread_t *th, physical_accel_t *accel) {
@@ -347,7 +378,7 @@ void vam_release_accel(hpthread_t *th) {
     // Free the allocated context.
     bitset_reset(accel->valid_contexts, context);
 
-    if (accel->prim == PRIM_NONE) {
+    if (accel->prim == PRIM_NONE || accel->cpu_invoke) {
         *(th->args->kill_pthread) = true;
         pthread_join(accel->cpu_thread, NULL);
     } else {

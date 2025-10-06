@@ -20,6 +20,7 @@ typedef struct physical_accel_t {
     bool init_done; // Flag to identify whether the device was initialized in the past
     physical_accel_t *next; // Next node in accel list
     pthread_t cpu_thread; // If mapped toa CPU, this is the pthread ID
+    bool cpu_invoke; // Is the accelerator invoked by a CPU thread?
 
     // ESP-relevant variables
     char devname[384]; // Name of device in file system
@@ -52,5 +53,10 @@ static inline void physical_accel_dump(physical_accel_t *accel) {
 static inline char *physical_accel_get_name(physical_accel_t *accel) {
     return accel->devname;
 }
+
+typedef struct {
+    hpthread_args_t *args;
+    physical_accel_t *accel;
+} cpu_invoke_args_t;
 
 #endif // __VAM_PHYSICAL_ACCEL_H__
