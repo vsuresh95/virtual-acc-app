@@ -78,7 +78,7 @@ void *gemm_invoke(void *a) {
                 perror("ioctl");
                 exit(EXIT_FAILURE);
             }
-            __atomic_store_n(&mem[e->common.done_offset], 1, __ATOMIC_SEQ_CST);
+            __atomic_store_n(&mem[e->common.done_offset], 1, __ATOMIC_RELEASE);
             t_ioctl += get_counter() - t_start;
         }
     }

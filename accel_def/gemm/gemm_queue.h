@@ -45,8 +45,8 @@ static inline void print_gemm_entry(gemm_queue_entry_t *e) {
 
 static inline bool gemm_queue_push(gemm_queue_t *q, gemm_queue_entry_t *e) {
     uint64_t t_start = get_counter();
-    unsigned head = __atomic_load_n(&(q->info.head), __ATOMIC_SEQ_CST);
-    unsigned tail = __atomic_load_n(&(q->info.tail), __ATOMIC_SEQ_CST);
+    unsigned head = __atomic_load_n(&(q->info.head), __ATOMIC_ACQUIRE);
+    unsigned tail = __atomic_load_n(&(q->info.tail), __ATOMIC_ACQUIRE);
 
     // Full when advancing head would equal tail
     unsigned next = (head + 1) % GEMM_QUEUE_SIZE;
@@ -58,16 +58,12 @@ static inline bool gemm_queue_push(gemm_queue_t *q, gemm_queue_entry_t *e) {
     // Ensure previous consumer cleared valid at target slot
     gemm_queue_entry_t *slot = &(q->entry[head]);
     unsigned *slot_valid = &(slot->common.valid);
-    HIGH_DEBUG(if (__atomic_load_n(slot_valid, __ATOMIC_SEQ_CST) == 1) {
-        printf("[SM PUSH] Slot %u still marked valid; overwriting blocked\n", head);
-        return false;
-    })
 
     // Copy params and increment head
     *slot = *e;
-    __atomic_store_n(slot_valid, 1, __ATOMIC_SEQ_CST);
+    __atomic_store_n(slot_valid, 1, __ATOMIC_RELEASE);
     // Advance head
-    __atomic_store_n(&(q->info.head), next, __ATOMIC_SEQ_CST);
+    __atomic_store_n(&(q->info.head), next, __ATOMIC_RELEASE);
     t_push += get_counter() - t_start;
     HIGH_DEBUG(printf("[SM PUSH] Pushed GEMM entry %u at idx %u\n", e->common.req_id, head);)
     return true;
@@ -75,8 +71,8 @@ static inline bool gemm_queue_push(gemm_queue_t *q, gemm_queue_entry_t *e) {
 
 static inline gemm_queue_entry_t *gemm_queue_pop(gemm_queue_t *q) {
     uint64_t t_start = get_counter();
-    unsigned head = __atomic_load_n(&(q->info.head), __ATOMIC_SEQ_CST);
-    unsigned tail = __atomic_load_n(&(q->info.tail), __ATOMIC_SEQ_CST);
+    unsigned head = __atomic_load_n(&(q->info.head), __ATOMIC_ACQUIRE);
+    unsigned tail = __atomic_load_n(&(q->info.tail), __ATOMIC_ACQUIRE);
 
     // Empty when head == tail
     if (head == tail) {
@@ -94,15 +90,15 @@ static inline gemm_queue_entry_t *gemm_queue_pop(gemm_queue_t *q) {
     gemm_queue_entry_t *slot = &q->entry[tail];
     HIGH_DEBUG(queue_empty_print = 0;)
     unsigned *slot_valid = &(slot->common.valid);
-    if (__atomic_load_n(slot_valid, __ATOMIC_SEQ_CST) != 1) {
+    if (__atomic_load_n(slot_valid, __ATOMIC_ACQUIRE) != 1) {
         HIGH_DEBUG(printf("[SM POP] GEMM slot %u not valid yet\n", tail);)
         return NULL;
     }
 
     // Clear valid before advancing tail to allow producer reuse
-    __atomic_store_n(slot_valid, 0, __ATOMIC_SEQ_CST);
+    __atomic_store_n(slot_valid, 0, __ATOMIC_RELEASE);
     // Advance tail
-    __atomic_store_n(&(q->info.tail), (tail + 1) % GEMM_QUEUE_SIZE, __ATOMIC_SEQ_CST);
+    __atomic_store_n(&(q->info.tail), (tail + 1) % GEMM_QUEUE_SIZE, __ATOMIC_RELEASE);
     t_pop += get_counter() - t_start;
     HIGH_DEBUG(printf("[SM POP] Popped GEMM entry %u from idx %u\n", slot->common.req_id, tail);)
     return slot;

@@ -188,7 +188,7 @@ int main(int argc, char **argv) {
 	printf("[APP] Software = %lu\n", t_sw/iterations);
 	printf("[APP] Accel = %lu\n", t_acc/iterations);
 	printf("[APP] Push = %lu\n", t_push/iterations);
-	printf("[APP] Pop1 = %lu\n", t_pop/iterations);
+	printf("[APP] Pop = %lu\n", t_pop/iterations);
 	printf("[APP] IOCTL = %lu\n", t_ioctl/iterations);
 
     return errors;
