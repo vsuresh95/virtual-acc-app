@@ -29,13 +29,13 @@ void gemm_probe(physical_accel_t *accel) {
 }
 
 void *gemm_invoke(void *a) {
-    printf("[SW GEMM] Started thread for invoking GeMM!\n");
+    printf("[INVOKE] Started thread for invoking GeMM!\n");
     // Run invoke thread on CPU 1 if available.
     long online = sysconf(_SC_NPROCESSORS_ONLN);
     if (online > 1) {
         cpu_set_t set;
         CPU_ZERO(&set);
-        CPU_SET(1, &set); // CPU index 1 (0-based)
+        CPU_SET(1, &set);
         if (pthread_setaffinity_np(pthread_self(), sizeof(set), &set) != 0) {
             perror("pthread_setaffinity_np");
         }
@@ -79,6 +79,8 @@ void *gemm_invoke(void *a) {
             while(__atomic_load_n(output_flag, __ATOMIC_ACQUIRE) != 0);
             // Then change the queue tail
             gemm_queue_pop(q);
+            __atomic_store_n(input_flag, 0, __ATOMIC_RELEASE);
+            HIGH_DEBUG(printf("[INVOKE] Starting GEMM on new input\n");)
 
             struct esp_access *esp_access_desc = (struct esp_access *) gemm_access_desc;
             if (ioctl(accel->fd, GEMM_STRATUS_IOC_ACCESS, esp_access_desc)) {

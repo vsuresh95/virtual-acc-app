@@ -43,7 +43,6 @@ static inline bool gemm_queue_push(gemm_queue_t *q, gemm_queue_entry_t *e) {
     // Full when advancing head would equal tail
     unsigned next = (head + 1) % GEMM_QUEUE_SIZE;
     if (next == tail) {
-        HIGH_DEBUG(printf("[SM PUSH] GEMM queue is full\n");)
         return false;
     }
 
@@ -51,14 +50,12 @@ static inline bool gemm_queue_push(gemm_queue_t *q, gemm_queue_entry_t *e) {
     gemm_queue_entry_t *slot = &(q->entry[head]);
     *slot = *e;
     __atomic_store_n(&(q->info.head), next, __ATOMIC_RELEASE);
-    HIGH_DEBUG(printf("[SM PUSH] Pushed GEMM entry at idx %u\n", head);)
     return true;
 }
 
 static inline void gemm_queue_pop(gemm_queue_t *q) {
     unsigned tail = __atomic_load_n(&(q->info.tail), __ATOMIC_ACQUIRE);
     __atomic_store_n(&(q->info.tail), (tail + 1) % GEMM_QUEUE_SIZE, __ATOMIC_RELEASE);
-    HIGH_DEBUG(printf("[SM POP] Popped GEMM entry from idx %u\n", tail);)
 }
 
 static inline gemm_queue_entry_t *gemm_queue_can_pop(gemm_queue_t *q) {
@@ -71,7 +68,6 @@ static inline gemm_queue_entry_t *gemm_queue_can_pop(gemm_queue_t *q) {
     }
     // Read entry and advance tail
     gemm_queue_entry_t *slot = &q->entry[tail];
-    HIGH_DEBUG(printf("[SM POP] Can pop GEMM entry from idx %u\n", tail);)
     return slot;
 }
 

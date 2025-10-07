@@ -6,68 +6,12 @@
 // Example application using GEMM
 // accelerator with the hpthread interface
 
-unsigned dim_m = 40;
-unsigned dim_n = 20;
-unsigned dim_k = 40;
+unsigned dim_m = 32;
+unsigned dim_n = 32;
+unsigned dim_k = 32;
 unsigned iterations = 100;
 
-uint64_t t_sw;
-uint64_t t_acc;
-uint64_t t_push;
-uint64_t t_pop;
-uint64_t t_ioctl;
-
-// Compare accelerator output with golden output
-int validate_buffer(nn_token_t *mem_c, nn_token_t *gold_c)
-{
-    unsigned errors = 0;
-    const unsigned len = dim_m * dim_n;
-
-    for (unsigned j = 0; j < len; j++) {
-        if ((fabs(nn_token_to_float(nn_token_sub(gold_c[j], mem_c[j]))) / fabs(nn_token_to_float(gold_c[j]))) > ERR_TH) {
-            if (errors < 2) { HIGH_DEBUG(printf("\tGOLD[%u] = %f vs %f = out[%u]\n", j, nn_token_to_float(gold_c[j]), nn_token_to_float(mem_c[j]), j);) }
-            errors++;
-        }
-    }
-
-    HIGH_DEBUG(printf("\tRelative error > %.02f for %d values out of %d\n", ERR_TH, errors, len);)
-
-    return errors;
-}
-
-// Initialize input and calculate golden output
-void init_buffer(nn_token_t *mem_a, nn_token_t *mem_b, nn_token_t *gold_a, nn_token_t *gold_b, nn_token_t *gold_c)
-{
-    const float LO = -2.0;
-    const float HI = 2.0;
-    const unsigned len_a = dim_m * dim_k;
-    const unsigned len_b = dim_n * dim_k;
-
-    srand((unsigned int) time(NULL));
-
-    for (unsigned j = 0; j < len_a; j++) {
-        float scaling_factor = (float) rand() / (float) RAND_MAX;
-        gold_a[j] = nn_token_from_float(LO + scaling_factor * (HI - LO));
-        mem_a[j] = nn_token_from_float(LO + scaling_factor * (HI - LO));
-    }
-
-    for (unsigned j = 0; j < len_b; j++) {
-        float scaling_factor = (float) rand() / (float) RAND_MAX;
-        gold_b[j] = nn_token_from_float(LO + scaling_factor * (HI - LO));
-        mem_b[j] = nn_token_from_float(LO + scaling_factor * (HI - LO));
-    }
-
-    // Compute golden output
-    uint64_t t_start = get_counter();
-    gemm(gold_a, gold_b, gold_c, dim_m, dim_n, dim_k);
-    t_sw += get_counter() - t_start;
-}
-
 int main(int argc, char **argv) {
-    unsigned errors = 0;
-	t_sw = 0; t_acc = 0;
-	t_push = 0; t_pop = 0; t_ioctl = 0;
-
     if (argc > 1) {
         dim_m = atoi(argv[1]);
         dim_n = atoi(argv[2]);
@@ -84,7 +28,7 @@ int main(int argc, char **argv) {
     if (online > 1) {
         cpu_set_t set;
         CPU_ZERO(&set);
-        CPU_SET(0, &set); // CPU index 1 (0-based)
+        CPU_SET(0, &set);
         if (pthread_setaffinity_np(pthread_self(), sizeof(set), &set) != 0) {
             perror("pthread_setaffinity_np");
         }
@@ -96,45 +40,42 @@ int main(int argc, char **argv) {
     unsigned mat_b_len = dim_n * dim_k;
     unsigned mat_c_len = dim_m * dim_n;
     // Sync flag and data offsets
-    unsigned mat_a_valid_offset = VALID_OFFSET;
-    unsigned mat_a_offset = mat_a_valid_offset + flag_len;
-    unsigned mat_b_offset = mat_a_offset + mat_a_len;
-    unsigned mat_c_valid_offset = mat_b_offset + mat_b_len;
-    unsigned mat_c_offset = mat_c_valid_offset + flag_len;
-    unsigned output_flag_offset = mat_c_offset + mat_c_len;
-    unsigned input_queue_offset = output_flag_offset + GEMM_QUEUE_SIZE;
+    unsigned mat_a_valid_offset[GEMM_QUEUE_SIZE];
+    unsigned mat_a_offset[GEMM_QUEUE_SIZE];
+    unsigned mat_b_offset[GEMM_QUEUE_SIZE];
+    unsigned mat_c_valid_offset[GEMM_QUEUE_SIZE];
+    unsigned mat_c_offset[GEMM_QUEUE_SIZE];
+    unsigned mem_offset = 0;
+    for (int i = 0; i < GEMM_QUEUE_SIZE; i++) {
+        mat_a_valid_offset[i]  = mem_offset + VALID_OFFSET;
+        mat_a_offset[i]        = mem_offset + mat_a_valid_offset[i] + flag_len;
+        mat_b_offset[i]        = mem_offset + mat_a_offset[i] + mat_a_len;
+        mat_c_valid_offset[i]  = mem_offset + mat_b_offset[i] + mat_b_len;
+        mat_c_offset[i]        = mem_offset + mat_c_valid_offset[i] + flag_len;
+        mem_offset             = mat_c_offset[i] + mat_c_len;
+    }
+    unsigned input_queue_offset = mem_offset;
+    unsigned output_queue_offset = input_queue_offset + sizeof(gemm_queue_t)/sizeof(nn_token_t);
 
     // Allocate sufficient memory for this hpthread
-    unsigned mem_size = (input_queue_offset * sizeof(nn_token_t)) + sizeof(gemm_queue_t);
+    unsigned mem_size = (output_queue_offset * sizeof(nn_token_t)) + sizeof(gemm_queue_t);
     nn_token_t *mem = (nn_token_t *) esp_alloc(mem_size);
 
     HIGH_DEBUG(printf("[APP] Memory allocated for size %d\n", mem_size));
 
-    // Reference output for comparison
-    nn_token_t *gold = (nn_token_t *) malloc((mat_c_offset + mat_c_len) * sizeof(nn_token_t));
+    // In/Out task queue
+    gemm_queue_t *in_q = (gemm_queue_t *) &mem[input_queue_offset];
+    gemm_queue_init(in_q);
+    gemm_queue_t *out_q = (gemm_queue_t *) &mem[output_queue_offset];
+    gemm_queue_init(out_q);
 
-    // Input task queue
-    gemm_queue_t *q = (gemm_queue_t *) &mem[input_queue_offset];
-    gemm_queue_init(q);
-    // Output flag
-    volatile unsigned *output_flag = (volatile unsigned *) &mem[output_flag_offset];
-    __atomic_store_n(output_flag, 0, __ATOMIC_SEQ_CST);
-
-    // Create GEMM queue entry
-    gemm_queue_entry_t e = { 
-        .common = { 
-            .valid = 0,
-            .req_id = 0,
-            .done_offset = output_flag_offset,
-        },
-        .gemm_params = {
-            dim_m, dim_n, dim_k, mat_b_offset, mat_a_valid_offset, mat_c_valid_offset
-        }
-    };
-    HIGH_DEBUG(
-        printf("[APP] Printing GEMM queue entry...\n");
-        print_gemm_entry(&e);
-    )
+    // Reset input output flags
+    for (int i = 0; i < GEMM_QUEUE_SIZE; i++) {
+        unsigned *input_flag = (unsigned *) &mem[mat_a_valid_offset[i]];
+        unsigned *output_flag = (unsigned *) &mem[mat_c_valid_offset[i]];
+        __atomic_store_n(input_flag, 0, __ATOMIC_SEQ_CST);
+        __atomic_store_n(output_flag, 0, __ATOMIC_SEQ_CST);
+    }
 
     // Declare hpthread and assign attributes
     hpthread_t *th = (hpthread_t *) malloc(sizeof(hpthread_t));
@@ -149,47 +90,57 @@ int main(int argc, char **argv) {
 
     // Create a hpthread
     hpthread_create(th);
-
-    init_buffer(&mem[mat_a_offset], &mem[mat_b_offset],
-                &gold[mat_a_offset], &gold[mat_b_offset], &gold[mat_c_offset]);
         
-    for (unsigned j = 0; j < iterations; j++) {
-        HIGH_DEBUG(printf("[APP] Starting iteration %d!\n", j);)
-
-        // Enqueue new GEMM entry
-        uint64_t t_start = get_counter();
-        if(!gemm_queue_push(q, &e)) {
-            perror("full queue");
-            exit(1);
+    unsigned inputs_remaining = iterations;
+    unsigned outputs_remaining = iterations;
+    gemm_queue_entry_t e; // Entry to use for all enqueue
+    unsigned id = 0; // ID for data offset
+    
+    uint64_t t_start = get_counter();
+    while (inputs_remaining != 0 || outputs_remaining != 0) {
+        if (inputs_remaining != 0) {
+            // Check if queues are full
+            if (!gemm_queue_full(in_q) && !gemm_queue_full(out_q)) {
+                HIGH_DEBUG(printf("[APP] Enqueueing new input %d\n", iterations - inputs_remaining));
+                // Input queue entry
+                e.gemm_params = (gemm_params_t) {
+                    dim_m, dim_n, dim_k, mat_b_offset[id], mat_a_valid_offset[id], mat_c_valid_offset[id]
+                };
+                gemm_queue_push(in_q, &e);
+                // Output queue entry (just placeholder for this input queue offset)
+                e.gemm_params =  (gemm_params_t) { 0, 0, 0, 0, mat_c_valid_offset[id], 0 };
+                gemm_queue_push(out_q, &e);
+                // Set input flag valid
+                unsigned *input_flag = (unsigned *) &mem[mat_a_valid_offset[id]];
+                __atomic_store_n(input_flag, 1, __ATOMIC_RELEASE);
+                id = (id+1) % GEMM_QUEUE_SIZE; // Only GEMM_QUEUE_SIZE buffers reserved
+                inputs_remaining--;
+            }
         }
-
-        // Wait for the accelerator to send output.
-        while(__atomic_load_n(output_flag, __ATOMIC_SEQ_CST) != 1);
-        t_acc += get_counter() - t_start;
-
-        // Reset for next iteration.
-        __atomic_store_n(output_flag, 0, __ATOMIC_SEQ_CST);
-
-        LOW_DEBUG( if (j % 10 == 0) printf("[APP] Iter %d done!\n", j); )
+        if (outputs_remaining != 0) {
+            // Check if output queue is not empty
+            if (!gemm_queue_empty(out_q)) {
+                // Silenty pop the queue to check if input is valid
+                gemm_queue_entry_t *e = gemm_queue_can_pop(out_q);
+                if (e != NULL) {
+                    gemm_params_t *params = &(e->gemm_params);
+                    // Wait for input to be valid
+                    unsigned *input_flag = (unsigned *) &mem[params->input_base];
+                    if (__atomic_load_n(input_flag, __ATOMIC_ACQUIRE) == 1) {
+                        // Then change the queue tail
+                        HIGH_DEBUG(printf("[APP] Dequeueing new output %d\n", iterations - outputs_remaining));
+                        gemm_queue_pop(out_q);
+                        __atomic_store_n(input_flag, 0, __ATOMIC_RELEASE);
+                        outputs_remaining--;
+                    }
+                }
+            }
+        }
     }
-
-    errors += validate_buffer(&mem[mat_c_offset], &gold[mat_c_offset]);
+    uint64_t t_loop = get_counter() - t_start;
 
     hpthread_join(th);
-
-    free(gold);
     esp_free(mem);
-
-    if (errors) {
-        printf("[APP] FAIL: errors = %d!\n", errors);
-    } else {
-        printf("[APP] PASS: no errors!\n");
-    }
-	printf("[APP] Software = %lu\n", t_sw/iterations);
-	printf("[APP] Accel = %lu\n", t_acc/iterations);
-	printf("[APP] Push = %lu\n", t_push/iterations);
-	printf("[APP] Pop = %lu\n", t_pop/iterations);
-	printf("[APP] IOCTL = %lu\n", t_ioctl/iterations);
-
-    return errors;
+	printf("[APP] Avg time = %lu\n", t_loop/iterations);
+    return 0;
 }

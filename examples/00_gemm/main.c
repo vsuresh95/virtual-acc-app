@@ -80,7 +80,7 @@ int main(int argc, char **argv) {
     if (online > 1) {
         cpu_set_t set;
         CPU_ZERO(&set);
-        CPU_SET(0, &set); // CPU index 1 (0-based)
+        CPU_SET(0, &set);
         if (pthread_setaffinity_np(pthread_self(), sizeof(set), &set) != 0) {
             perror("pthread_setaffinity_np");
         }
