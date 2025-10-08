@@ -85,6 +85,11 @@ int main(int argc, char **argv) {
             perror("pthread_setaffinity_np");
         }
     }
+    // Set scheduling attributes
+    struct sched_param sp = { .sched_priority = 1 };
+    if (pthread_setschedparam(pthread_self(), SCHED_RR, &sp) != 0) {
+        perror("pthread_setschedparam");
+    }
 
     // Matrix lengths
     unsigned flag_len = PAYLOAD_OFFSET/sizeof(nn_token_t); // Number of nn_token_t elements reserved for flags

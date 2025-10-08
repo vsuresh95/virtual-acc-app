@@ -17,8 +17,6 @@
 // ESP API for getting contig_alloc handle
 extern contig_handle_t *lookup_handle(void *buf, enum contig_alloc_policy *policy);
 
-extern uint64_t t_ioctl;
-
 // Device-dependent probe function
 void gemm_probe(physical_accel_t *accel) {
     accel->prim = PRIM_GEMM;
@@ -30,16 +28,6 @@ void gemm_probe(physical_accel_t *accel) {
 
 void *gemm_invoke(void *a) {
     printf("[INVOKE] Started thread for invoking GeMM!\n");
-    // Run invoke thread on CPU 1 if available.
-    long online = sysconf(_SC_NPROCESSORS_ONLN);
-    if (online > 1) {
-        cpu_set_t set;
-        CPU_ZERO(&set);
-        CPU_SET(1, &set);
-        if (pthread_setaffinity_np(pthread_self(), sizeof(set), &set) != 0) {
-            perror("pthread_setaffinity_np");
-        }
-    }
     cpu_invoke_args_t *args = (cpu_invoke_args_t *) a;
     hpthread_args_t *h_args = args->args;
     physical_accel_t *accel = args->accel;

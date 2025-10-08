@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <common_helper.h>
 #include <hpthread_intf.h>
 #include <vam_physical_accel.h>
@@ -28,21 +29,39 @@ physical_accel_t *min_util_accel = NULL;
 float avg_util, max_util, min_util;
 // Safeguard for not performing load balance repeatedly
 float load_imbalance_reg;
+// Counter for core affinity
+static uint8_t core_affinity_ctr = 1;
+// Number of CPUs online
+long cpu_online;
 
 // Function to wake up VAM for the first time
 void wakeup_vam() {
 	HIGH_DEBUG(printf("[VAM] Launching a new thread for VAM BACKEND!\n");)
-    // Create an object of VAM and launch a std::thread for VAM
-    pthread_attr_t attr;
+    // Find the number of cores available
+    cpu_online = sysconf(_SC_NPROCESSORS_ONLN);
     // Create pthread attributes
+    pthread_attr_t attr;
     if (pthread_attr_init(&attr) != 0) {
         perror("attr_init");
-        exit(1);
+    }
+    // Set CPU affinity
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    CPU_SET(core_affinity_ctr % cpu_online, &set);
+    if (pthread_attr_setaffinity_np(&attr, sizeof(set), &set) != 0) {
+        perror("pthread_attr_setaffinity_np");
+    }
+    // Set SCHED_RR scheduling policy with priority 1
+    if (pthread_attr_setschedpolicy(&attr, SCHED_RR) != 0) {
+        perror("pthread_attr_setschedpolicy");
+    }
+    struct sched_param sp = { .sched_priority = 1 };
+    if (pthread_attr_setschedparam(&attr, &sp) != 0) {
+        perror("pthread_attr_setschedparam");
     }
     // Set pthread attributes to be detached; no join required
     if (pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0) {
         perror("attr_setdetachstate");
-        exit(1);
     }
     // Create VAM pthread
     if (pthread_create(&vam_th, &attr, vam_run_backend, NULL) != 0) {
@@ -344,7 +363,27 @@ void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel) {
     cpu_invoke_args_t *args = (cpu_invoke_args_t *) malloc (sizeof(cpu_invoke_args_t)); 
     args->args = th->args;
     args->accel = accel;
-    if (pthread_create(&cpu_thread, NULL, sw_kernel, (void *) args) != 0) {
+    // Create pthread attributes
+    pthread_attr_t attr;
+    if (pthread_attr_init(&attr) != 0) {
+        perror("attr_init");
+    }
+    // Set CPU affinity
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    CPU_SET(core_affinity_ctr % cpu_online, &set);
+    if (pthread_attr_setaffinity_np(&attr, sizeof(set), &set) != 0) {
+        perror("pthread_attr_setaffinity_np");
+    }
+    // Set SCHED_RR scheduling policy with priority 1
+    if (pthread_attr_setschedpolicy(&attr, SCHED_RR) != 0) {
+        perror("pthread_attr_setschedpolicy");
+    }
+    struct sched_param sp = { .sched_priority = 1 };
+    if (pthread_attr_setschedparam(&attr, &sp) != 0) {
+        perror("pthread_attr_setschedparam");
+    }
+    if (pthread_create(&cpu_thread, &attr, sw_kernel, (void *) args) != 0) {
         perror("Failed to create CPU thread\n");
     }
 
