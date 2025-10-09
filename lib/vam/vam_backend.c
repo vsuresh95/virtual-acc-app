@@ -33,6 +33,8 @@ float load_imbalance_reg;
 static uint8_t core_affinity_ctr = 1;
 // Number of CPUs online
 long cpu_online;
+// Physical accelerator list
+hpthread_cand_t *hpthread_cand_list = NULL;
 
 // Function to wake up VAM for the first time
 void wakeup_vam() {
@@ -85,7 +87,9 @@ void vam_probe_accel() {
     while ((entry = readdir(dir)) != NULL) {
         if (fnmatch("*_stratus.*", entry->d_name, FNM_NOESCAPE) == 0) {
             physical_accel_t *accel_temp = (physical_accel_t *) malloc(sizeof(physical_accel_t));
+            hpthread_cand_t *cand_temp = (hpthread_cand_t *) malloc(sizeof(hpthread_cand_t));
             accel_temp->accel_id = device_id++;
+            cand_temp->accel_id = accel_temp->accel_id ;
             bitset_reset_all(accel_temp->valid_contexts);
             for (int i = 0; i < MAX_CONTEXTS; i++) {
                 accel_temp->th[i] = NULL;
@@ -93,16 +97,17 @@ void vam_probe_accel() {
                 accel_temp->context_active_cycles[i] = 0;
                 accel_temp->context_util[i] = 0.0;
             }
-            LOW_DEBUG(strcpy(accel_temp->devname, entry->d_name);)
+            strcpy(accel_temp->devname, entry->d_name);
             accel_temp->init_done = false;
             accel_temp->effective_util = 0.0;
-
             // Print out debug message
             HIGH_DEBUG(printf("[VAM] Discovered device %d: %s\n", device_id, accel_temp->devname);)
 
             if (fnmatch("gemm*", entry->d_name, FNM_NOESCAPE) == 0) {
                 gemm_probe(accel_temp);
                 accel_temp->cpu_invoke = true;
+                cand_temp->prim = accel_temp->prim;
+                cand_temp->cpu_invoke = true;
             } else {
                 printf("[ERROR] Device does not match any supported accelerators.\n");
             }
@@ -114,7 +119,6 @@ void vam_probe_accel() {
                 fprintf(stderr, "Error: cannot open %s", full_path);
                 exit(EXIT_FAILURE);
             }
-
             // Reset the accelerator to be sure
             if (!accel_temp->cpu_invoke) {
                 struct esp_access *esp_access_desc = (struct esp_access *) accel_temp->esp_access_desc;
@@ -123,8 +127,8 @@ void vam_probe_accel() {
                     exit(EXIT_FAILURE);
                 }
             }
-
             insert_physical_accel(accel_temp);
+            insert_hpthread_cand(cand_temp);
         }
     }
 
@@ -209,6 +213,11 @@ void *vam_run_backend(void *arg) {
             case VAM_REPORT: {
                 HIGH_DEBUG(printf("[VAM] Received a report request\n");)
                 // print_report();
+                break;
+            }
+            case VAM_QUERY: {
+                HIGH_DEBUG(printf("[VAM] Received a query request\n");)
+                intf.list = hpthread_cand_list;
                 break;
             }
             default:
@@ -460,6 +469,11 @@ void vam_setprio_accel(hpthread_t *th) {
 void insert_physical_accel(physical_accel_t *accel) {
 	accel->next = accel_list;
 	accel_list = accel;
+}
+
+void insert_hpthread_cand(hpthread_cand_t *cand) {
+    cand->next = hpthread_cand_list;
+    hpthread_cand_list = cand;
 }
 
 void insert_cpu_thread(physical_accel_t *accel) {

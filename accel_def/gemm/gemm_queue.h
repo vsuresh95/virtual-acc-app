@@ -5,7 +5,7 @@
 #include <gemm_node_args.h>
 
 #define GEMM_QUEUE_SIZE 4
-#define GEMM_ENTRIES_OFFSET 4
+#define GEMM_ENTRIES_OFFSET 2
 #define GEMM_ENTRY_SIZE GEMM_PARAM_SIZE
 
 typedef struct {

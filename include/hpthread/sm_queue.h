@@ -11,4 +11,9 @@ typedef struct {
     unsigned tail;
 } sm_queue_t;
 
+static inline void sm_queue_init(sm_queue_t *q) {
+    __atomic_store_n(&(q->head), 0, __ATOMIC_SEQ_CST);
+    __atomic_store_n(&(q->tail), 0, __ATOMIC_SEQ_CST);
+}
+
 #endif // __SM_QUEUE_H__

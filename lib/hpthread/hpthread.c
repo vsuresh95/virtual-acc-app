@@ -90,6 +90,27 @@ void hpthread_setpriority(hpthread_t *th, unsigned p) {
 	}
 }
 
+hpthread_cand_t *hpthread_query() {
+	HIGH_DEBUG(printf("[HPTHREAD] Requested hpthread candidate list.\n");)
+
+    // If VAM has not yet been started (i.e., interface is in vam_state_t::RESET, start one thread now)
+    if (hpthread_intf_swap(VAM_RESET, VAM_WAKEUP)) {
+		// Only one thread should enter here; remaining will wait for idle state
+		wakeup_vam();
+		hpthread_intf_set(VAM_IDLE);
+    }
+
+	// Check if the interface is IDLE. If yes, swap to BUSY. If not, block until it is
+	while (!hpthread_intf_swap(VAM_IDLE, VAM_BUSY)) sched_yield();
+	// Set the interface state to QUERY
+    hpthread_intf_set(VAM_QUERY);
+	// Block until the request is complete (interface state is DONE), then swap to IDLE
+	while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) sched_yield();
+	HIGH_DEBUG(printf("[HPTHREAD] Received hpthread candidate list.\n");)
+	// Return the empty hpthread candidate list to the caller
+	return intf.list;
+}
+
 // Helper function for printing hpthread primitive
 const char *hpthread_get_prim_name(hpthread_prim_t p) {
     switch(p) {

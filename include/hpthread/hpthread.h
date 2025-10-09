@@ -6,6 +6,8 @@
 struct physical_accel_t;
 typedef struct physical_accel_t physical_accel_t;
 typedef uint8_t hpthread_prim_t;
+struct hpthread_cand_t;
+typedef struct hpthread_cand_t hpthread_cand_t;
 
 // hpthread arguments
 typedef struct {
@@ -39,6 +41,7 @@ void hpthread_setargs(hpthread_t *th, hpthread_args_t *a);
 void hpthread_setname(hpthread_t *th, const char *n);
 void hpthread_setprimitive(hpthread_t *th, hpthread_prim_t p);
 void hpthread_setpriority(hpthread_t *th, unsigned p);
+hpthread_cand_t *hpthread_query();
 static inline hpthread_prim_t hpthread_get_prim(hpthread_t *th) { return th->prim; }
 
 // Debug API
@@ -51,5 +54,12 @@ const char *hpthread_get_prim_name(hpthread_prim_t p);
 #define PRIM_AUDIO_FIR 2
 #define PRIM_AUDIO_FFI 3
 #define PRIM_GEMM 4
+
+struct hpthread_cand_t {
+    unsigned accel_id;
+    hpthread_prim_t prim;
+    bool cpu_invoke;
+    hpthread_cand_t *next;
+};
 
 #endif // __HPTHREAD_H__

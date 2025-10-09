@@ -13,11 +13,13 @@
 #define VAM_JOIN 6
 #define VAM_SETPRIO 7
 #define VAM_REPORT 8
+#define VAM_QUERY 9
 
 // hpthread interface definition
 typedef struct {
     volatile uint8_t state; // Interface synchronization variable
     hpthread_t *th; // hpthread for the request
+    hpthread_cand_t *list; // hpthread candidate list
 } hpthread_intf_t;
 
 // Helper function for swapping the state of the interface

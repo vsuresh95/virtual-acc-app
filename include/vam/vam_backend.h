@@ -30,6 +30,7 @@ void vam_release_accel(hpthread_t *th);
 void vam_setprio_accel(hpthread_t *th);
 // Insert a new physical accelerator struct or CPU thread
 void insert_physical_accel(physical_accel_t *accel);
+void insert_hpthread_cand(hpthread_cand_t *cand);
 void insert_cpu_thread(physical_accel_t *accel);
 // Update utilization metrics for all accelerators
 void vam_check_utilization();

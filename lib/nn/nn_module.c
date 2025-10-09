@@ -4,6 +4,8 @@
 #include <string.h>
 #include <libesp.h>
 
+static unsigned gemm_node_count = 0;
+
 // Load a model using a description in a txt model_def
 void nn_module_load(nn_module *m, const char *n) {
     // Check if the model description file exists
@@ -16,12 +18,11 @@ void nn_module_load(nn_module *m, const char *n) {
     // Create an NN computational graph and memory for this model
     m->graph = (nn_graph_t *) malloc (sizeof(nn_graph_t));
     nn_graph_create(m->graph);
-    const unsigned mem_size = 2 * 1024 * 1024; // 2MB
+    const unsigned mem_size = 8 * 1024 * 1024; // 2MB
     m->mem = esp_alloc(mem_size);
     m->mem_allocated = 0;
 
 	char in_line_buf[256]; // Max 256 characters in one line
-
     if (fgets(in_line_buf, 100, model_def) != NULL) {
         if ((strlen(in_line_buf) > 0) && (in_line_buf[strlen (in_line_buf) - 1] == '\n')) {
             in_line_buf[strlen(in_line_buf) - 1] = '\0';
@@ -30,16 +31,13 @@ void nn_module_load(nn_module *m, const char *n) {
 	    char module_name[50];
         sscanf(in_line_buf, "%s %d", module_name, &m->nprio);
         snprintf(m->graph->name, 100, "%s.%d", module_name, m->id);
-
 	    HIGH_DEBUG(printf("[NN] MODEL NAME = %s\n", nn_module_get_name(m)));
     }
 
     while (fgets(in_line_buf, 256, model_def) != NULL) {
-
         if ((strlen(in_line_buf) > 0) && (in_line_buf[strlen (in_line_buf) - 1] == '\n')) {
             in_line_buf[strlen(in_line_buf) - 1] = '\0';
         }
-
 	    HIGH_DEBUG(printf("[NN] IN LINE = %s\n", in_line_buf));
 
         // Check first letter of trace line
@@ -69,6 +67,7 @@ void nn_module_load(nn_module *m, const char *n) {
                             printf("\t[NN] Adding node %s...", nn_node_get_name(gemm_node));
                             nn_node_dump(gemm_node);
                         )
+                        gemm_node_count++;
                         break;
                     }
                     case NN_OP_NONE: {
@@ -117,19 +116,58 @@ void nn_module_load(nn_module *m, const char *n) {
 
 // Register the model with NN frontend
 void nn_module_register(nn_module *m) {
+    // First, we will create hpthreads for each layer or each accel (whichever smaller)
+    unsigned local_gemm_count = gemm_node_count;
+    hpthread_cand_t *cand_list = hpthread_query();
+    m->th_list = NULL;
+    m->descr_list = NULL;
+    while (cand_list != NULL) {
+        switch(cand_list->prim) {
+            case PRIM_GEMM: {
+                if (local_gemm_count != 0) {
+                    // Create the hpthread general arguments
+                    hpthread_args_t *args = (hpthread_args_t *) malloc(sizeof(hpthread_args_t));
+                    args->mem = m->mem;
+                    size_t queue_len = GEMM_ENTRIES_OFFSET + (GEMM_QUEUE_SIZE * GEMM_ENTRY_SIZE);
+                    args->queue_ptr = m->mem_allocated; m->mem_allocated += queue_len;
+                    // Init the queue
+                    sm_queue_t *q = (sm_queue_t *) ((unsigned *) (m->mem) + args->queue_ptr);
+                    sm_queue_init(q);
+
+                    // Declare hpthread and assign attributes
+                    hpthread_t *th = (hpthread_t *) malloc(sizeof(hpthread_t));
+                    th->cpu_invoke = m->cpu_invoke;
+                    hpthread_init(th, m->id + 1);
+                    hpthread_setargs(th, args);
+	                char hpthread_name[50];
+                    snprintf(hpthread_name, 50, "gemm_th.%d", gemm_node_count - local_gemm_count);
+                    hpthread_setname(th, hpthread_name);
+                    hpthread_setprimitive(th, PRIM_GEMM);
+                    hpthread_setpriority(th, m->nprio);
+                    HIGH_DEBUG(printf("[NN] Before hpthread create for %s...\n", hpthread_name));
+                    // Create a hpthread
+                    hpthread_create(th);
+                    // Assign the thread to the model list
+                    nn_module_add_hpthread(m, th);
+                    local_gemm_count--;
+                }                
+                break;
+            }
+            default: break;
+        }
+        cand_list = cand_list->next;
+    }
+    HIGH_DEBUG(print_hpthread_list(m);)
+
     // We will maintain a queue of nodes to-be-visited in BFS order and a list of visited nodes
     nn_queue_t *q = (nn_queue_t *) malloc (sizeof(nn_queue_t));
     q->head = q->tail = NULL;
     nn_node_list *visited = NULL;
-    m->th_list = NULL;
-
     // Do BFS traversal of the routine DFG by starting at the entry node
     nn_node_t *entry = nn_graph_get_entry(m->graph);
-    
     // Add entry to queue and set
     nn_queue_push(q, entry);
     nn_set_add_node(&visited, entry);
-
     LOW_DEBUG(printf("[NN] Parsing NN graph for %s\n", nn_module_get_name(m)));
 
     while (q->head != NULL) { // !empty
@@ -168,76 +206,25 @@ void nn_module_register(nn_module *m) {
                     // Allocate memory for weights
                     params->weight_base = m->mem_allocated; m->mem_allocated += params->dim_n * params->dim_k; 
                     // Retrieve input and output offsets from its first edges
-                    nn_edge_list *cur; nn_edge_t *edge = NULL;
-                    for (cur = current->in_edges; cur; cur = cur->next) {
-                        edge = cur->e;
-                    } params->input_base = edge->args->offset;
-                    for (cur = current->out_edges; cur; cur = cur->next) {
-                        edge = cur->e;
-                    } params->output_base = edge->args->offset;
-
+                    // TODO: assumes single producer, single consumer
+                    params->input_base = current->in_edges->e->args->offset;
+                    params->output_base = current->out_edges->e->args->offset;
                     // Initialize the weights if present
                     nn_token_t *wgt_address = ((nn_token_t *) m->mem) + params->weight_base;
                     initialize_data(gemm_args->input_file, wgt_address, params->dim_n * params->dim_k);
 
-                    // // Create 1 GEMM descriptor
-                    // unsigned gemm_descr = m->mem_allocated; m->mem_allocated += ACCEL_PARAM_SIZE;
-                    // create_gemm_descr(((unsigned *) m->mem) + gemm_descr, params);
-                    // // Create 1 JUMP descriptor 
-                    // unsigned jump_descr = m->mem_allocated; m->mem_allocated += ACCEL_PARAM_SIZE;
-                    // create_jump_descr(((unsigned *) m->mem) + jump_descr, gemm_descr);
-                    // HIGH_DEBUG(
-                    //     printf("[NN] Printing GEMM descriptor...\n");
-                    //     print_descr(((unsigned *) m->mem) + gemm_descr);
-                    //     printf("[NN] Printing JUMP descriptor...\n");
-                    //     print_descr(((unsigned *) m->mem) + jump_descr);
-                    // )
-                    // // Create base stat descriptor
-                    // unsigned stat_descr = m->mem_allocated; m->mem_allocated += 2; // stat descriptor is 2 words
-                    // init_context_descr(((unsigned *) m->mem) + stat_descr, gemm_descr);
-
-                    // Create the hpthread general arguments
-                    hpthread_args_t *args = (hpthread_args_t *) malloc(sizeof(hpthread_args_t));
-                    args->mem = m->mem;
-                    // args->base_ptr = stat_descr;
-
-                    // Declare hpthread and assign attributes
-                    hpthread_t *th = (hpthread_t *) malloc(sizeof(hpthread_t));
-                    hpthread_init(th, m->id + 1);
-                    hpthread_setargs(th, args);
-                    hpthread_setname(th, nn_node_get_name(current));
-                    hpthread_setprimitive(th, PRIM_GEMM);
-                    hpthread_setpriority(th, m->nprio);
-
-                    HIGH_DEBUG(printf("[NN] Before hpthread create request...\n"));
-
-                    // Create a hpthread
-                    hpthread_create(th);
-
-                    // // Set the context available only after the accelerator context is reset
-                    // set_context_avail(((unsigned *) m->mem) + stat_descr);
-
-                    // Assign the thread to the model mapping
-                    current->th = th;
-                    nn_module_add_hpthread(m, th);
+                    // Add descr to the list in the model
+                    gemm_task_descr *descr = (gemm_task_descr *) malloc (sizeof(gemm_task_descr));
+                    descr->common.prim = PRIM_GEMM;
+                    descr->params = *params;
+                    nn_module_add_task_descr(m, (nn_task_descr *) descr);
                     break;
                 }
                 default: break;
             }
         }
     }
-
-    // Calculate the input and output flag addresses for this module
-    nn_node_t *exit = nn_graph_get_exit(m->graph);
-    nn_edge_list *cur; nn_edge_t *edge = NULL;
-    for (cur = exit->in_edges; cur; cur = cur->next) {
-        edge = cur->e;
-    } m->output_flag_offset = edge->args->offset;
-    HIGH_DEBUG(printf("[NN] output_flag_offset for model %s = 0x%x\n", nn_module_get_name(m), m->output_flag_offset);)
-    for (cur = entry->out_edges; cur; cur = cur->next) {
-        edge = cur->e;
-    } m->input_flag_offset = edge->args->offset;
-    HIGH_DEBUG(printf("[NN] input_flag_offset for model %s = 0x%x\n", nn_module_get_name(m), m->input_flag_offset);)
+    HIGH_DEBUG(print_descr_list(m);)
 
     nn_queue_delete(q);
     while(visited != NULL) {
@@ -282,6 +269,81 @@ void nn_module_setpriority(nn_module *m, unsigned nprio) {
         hpthread_setpriority(cur->th, nprio);
         cur = next;
     }
+}
+
+nn_token_t *nn_module_forward_file(nn_module *m, const char *input_file) {
+    HIGH_DEBUG(printf("[NN] Starting forward for %s from %s\n", nn_module_get_name(m), input_file));
+    // Traverse the task descriptor list and assign each descriptor to an hpthread queue
+    nn_task_descr *descr_list = m->descr_list;
+    nn_hpthread_list *th_list = m->th_list;
+    unsigned *input_flag = NULL; 
+    bool init_done = false;
+    nn_task_descr *output_descr = NULL;
+    while (descr_list != NULL) {
+        switch(descr_list->prim) {
+            case PRIM_GEMM: {
+                HIGH_DEBUG(printf("[NN] Programming PRIM_GEMM descr...\n"));
+                gemm_task_descr *descr = (gemm_task_descr *) descr_list;
+                gemm_params_t *params = &(descr->params);
+                // For this function: at the first descriptor, we also load the input file
+                if (!init_done) {
+                    nn_token_t *input_address = ((nn_token_t *) m->mem) + params->input_base;
+                    initialize_data(input_file, input_address + (PAYLOAD_OFFSET/sizeof(nn_token_t)), params->dim_n * params->dim_k);
+                    input_flag = (unsigned *) input_address;
+                    init_done = true;
+                }
+                // Try to send each param to one of the queues in round robin fashion
+                gemm_queue_entry_t e;
+                e.gemm_params = *params;
+                nn_hpthread_list *orig_th = th_list;
+                while(1) {
+                    hpthread_args_t *args = th_list->th->args;
+                    unsigned *mem = (unsigned *) args->mem;
+                    unsigned queue_offset = args->queue_ptr;
+                    gemm_queue_t *q = (gemm_queue_t *) &mem[queue_offset];
+                    // If the current queue is full, try the next
+                    if (gemm_queue_push(q, &e)) {
+                        HIGH_DEBUG(printf("Enqueued descr to hpthread %s.\n", hpthread_get_name(th_list->th)));
+                        break;
+                    } else {
+                        th_list = th_list->next;
+                        if (th_list == NULL) th_list = m->th_list;
+                        // If we cycled back to the original thread, wait and try again.
+                        if (th_list == orig_th) {
+                            printf("[NN] ALL QUEUES FULL!\n");
+                            sleep(1);
+                        }
+                    }
+                }
+                // For the next descriptor, we should try the next queue
+                th_list = th_list->next;
+                if (th_list == NULL) th_list = m->th_list;
+            }
+            default: break;
+        }
+        output_descr = descr_list;
+        descr_list = descr_list->next;
+    }
+    // Once all the descrtiptors are queued, set the input flag for the first descriptor here (ensure it's not already set)
+    while(__atomic_load_n(input_flag, __ATOMIC_ACQUIRE) == 1);
+    __atomic_store_n(input_flag, 1, __ATOMIC_RELEASE);
+    HIGH_DEBUG(printf("Input flag set...\n"));
+    // Retrieve the output flag and data pointer from the last descriptor
+    nn_token_t *output_data = NULL;
+    switch(output_descr->prim) {
+        case PRIM_GEMM: {
+            // Wait for inference to finish
+            gemm_task_descr *descr = (gemm_task_descr *) output_descr;
+            gemm_params_t *params = &(descr->params);
+            unsigned *output_flag= ((unsigned *) m->mem) + params->output_base;
+            output_data = (nn_token_t *) (output_flag + (PAYLOAD_OFFSET/sizeof(unsigned)));
+            while(__atomic_load_n(output_flag, __ATOMIC_ACQUIRE) == 1);
+            __atomic_store_n(output_flag, 0, __ATOMIC_RELEASE);
+            HIGH_DEBUG(printf("Output flag test success...\n"));
+        }
+        default: break;
+    }
+    return output_data;
 }
 
 void nn_queue_push(nn_queue_t *q, nn_node_t *n) {
@@ -342,5 +404,57 @@ void initialize_data(const char *input_file, nn_token_t *mem, unsigned len) {
             #endif
         }
         fclose(file);
+    }
+}
+
+void nn_module_add_task_descr(nn_module *m, nn_task_descr *descr) {
+    descr->next = NULL;
+    if (!m->descr_list) {
+        m->descr_list = descr;
+        return;
+    }
+    nn_task_descr *p = m->descr_list;
+    while (p->next) p = p->next;
+    p->next = descr;
+}
+
+void print_descr_list(nn_module *m) {
+    printf("[NN] Printing task descriptor for model %s...\n", nn_module_get_name(m));
+    nn_task_descr *descr_list = m->descr_list;
+    unsigned count = 0;
+    while (descr_list != NULL) {
+        printf("\t[D%d] prim=%s\n", count, hpthread_get_prim_name(descr_list->prim));
+        switch(descr_list->prim) {
+            case PRIM_GEMM: {
+                gemm_task_descr *descr = (gemm_task_descr *) descr_list;
+                printf("\t[D%d] dim_m=%d\n", count, descr->params.dim_m);
+                printf("\t[D%d] dim_n=%d\n", count, descr->params.dim_n);
+                printf("\t[D%d] dim_k=%d\n", count, descr->params.dim_k);
+                printf("\t[D%d] weight_base=%d\n", count, descr->params.weight_base);
+                printf("\t[D%d] input_base=%d\n", count, descr->params.input_base);
+                printf("\t[D%d] output_base=%d\n", count, descr->params.output_base);
+            }
+            default: break;
+        }
+        printf("\n");
+        count++;
+        descr_list = descr_list->next;
+    }
+}
+
+void print_hpthread_list(nn_module *m) {
+    printf("[NN] Printing hpthread list for model %s...\n", nn_module_get_name(m));
+    nn_hpthread_list *th_list = m->th_list;
+    unsigned count = 0;
+    while (th_list != NULL) {
+        hpthread_t *th = th_list->th;
+        printf("\t[H%d] ID=%d\n", count, th->id);
+        printf("\t[H%d] Prim=%s\n", count, hpthread_get_prim_name(hpthread_get_prim(th)));
+        printf("\t[H%d] Name=%s\n", count, hpthread_get_name(th));
+        unsigned *mem = (unsigned *) th->args->mem;
+        printf("\t[H%d] Queue Ptr=%p\n", count, &(mem[th->args->queue_ptr]));
+        printf("\n");
+        count++;
+        th_list = th_list->next;
     }
 }

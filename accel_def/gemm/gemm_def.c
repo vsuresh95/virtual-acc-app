@@ -27,13 +27,13 @@ void gemm_probe(physical_accel_t *accel) {
 }
 
 void *gemm_invoke(void *a) {
-    printf("[INVOKE] Started thread for invoking GeMM!\n");
     cpu_invoke_args_t *args = (cpu_invoke_args_t *) a;
     hpthread_args_t *h_args = args->args;
     physical_accel_t *accel = args->accel;
     unsigned *mem = (unsigned *) h_args->mem;
     gemm_queue_t *q = (gemm_queue_t *) &mem[h_args->queue_ptr];
     bool *kill_pthread = h_args->kill_pthread;
+    LOW_DEBUG(printf("[INVOKE] Started thread for invoking GeMM on %s!\n", accel->devname);)
 
 	// Setting up ESP memory buffer
     enum contig_alloc_policy policy;
@@ -68,7 +68,7 @@ void *gemm_invoke(void *a) {
             // Then change the queue tail
             gemm_queue_pop(q);
             __atomic_store_n(input_flag, 0, __ATOMIC_RELEASE);
-            HIGH_DEBUG(printf("[INVOKE] Starting GEMM on new input\n");)
+            HIGH_DEBUG(printf("[INVOKE] Starting GEMM on %s\n", accel->devname);)
 
             struct esp_access *esp_access_desc = (struct esp_access *) gemm_access_desc;
             if (ioctl(accel->fd, GEMM_STRATUS_IOC_ACCESS, esp_access_desc)) {
