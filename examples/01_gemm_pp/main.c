@@ -45,21 +45,12 @@ int main(int argc, char **argv) {
     unsigned mat_b_len = dim_n * dim_k;
     unsigned mat_c_len = dim_m * dim_n;
     // Sync flag and data offsets
-    unsigned mat_a_valid_offset[GEMM_QUEUE_SIZE];
-    unsigned mat_a_offset[GEMM_QUEUE_SIZE];
-    unsigned mat_b_offset[GEMM_QUEUE_SIZE];
-    unsigned mat_c_valid_offset[GEMM_QUEUE_SIZE];
-    unsigned mat_c_offset[GEMM_QUEUE_SIZE];
-    unsigned mem_offset = 0;
-    for (int i = 0; i < GEMM_QUEUE_SIZE; i++) {
-        mat_a_valid_offset[i]  = mem_offset + VALID_OFFSET;
-        mat_a_offset[i]        = mem_offset + mat_a_valid_offset[i] + flag_len;
-        mat_b_offset[i]        = mem_offset + mat_a_offset[i] + mat_a_len;
-        mat_c_valid_offset[i]  = mem_offset + mat_b_offset[i] + mat_b_len;
-        mat_c_offset[i]        = mem_offset + mat_c_valid_offset[i] + flag_len;
-        mem_offset             = mat_c_offset[i] + mat_c_len;
-    }
-    unsigned input_queue_offset = mem_offset;
+    unsigned mat_a_valid_offset = VALID_OFFSET;
+    unsigned mat_a_offset = mat_a_valid_offset + flag_len;
+    unsigned mat_b_offset = mat_a_offset + mat_a_len;
+    unsigned mat_c_valid_offset = mat_b_offset + mat_b_len;
+    unsigned mat_c_offset = mat_c_valid_offset + flag_len;
+    unsigned input_queue_offset = mat_c_offset + mat_c_len;
     unsigned output_queue_offset = input_queue_offset + sizeof(gemm_queue_t)/sizeof(nn_token_t);
 
     // Allocate sufficient memory for this hpthread
@@ -70,17 +61,15 @@ int main(int argc, char **argv) {
 
     // In/Out task queue
     gemm_queue_t *in_q = (gemm_queue_t *) &mem[input_queue_offset];
-    gemm_queue_init(in_q);
+    sm_queue_init((sm_queue_t *) in_q);
     gemm_queue_t *out_q = (gemm_queue_t *) &mem[output_queue_offset];
-    gemm_queue_init(out_q);
+    sm_queue_init((sm_queue_t *) out_q);
 
-    // Reset input output flags
-    for (int i = 0; i < GEMM_QUEUE_SIZE; i++) {
-        unsigned *input_flag = (unsigned *) &mem[mat_a_valid_offset[i]];
-        unsigned *output_flag = (unsigned *) &mem[mat_c_valid_offset[i]];
-        __atomic_store_n(input_flag, 0, __ATOMIC_SEQ_CST);
-        __atomic_store_n(output_flag, 0, __ATOMIC_SEQ_CST);
-    }
+    // Input/output flags
+    unsigned *input_flag = (unsigned *) &mem[mat_a_valid_offset];
+    unsigned *output_flag = (unsigned *) &mem[mat_c_valid_offset];
+    __atomic_store_n(input_flag, 0, __ATOMIC_SEQ_CST);
+    __atomic_store_n(output_flag, 0, __ATOMIC_SEQ_CST);
 
     // Declare hpthread and assign attributes
     hpthread_t *th = (hpthread_t *) malloc(sizeof(hpthread_t));
@@ -96,30 +85,46 @@ int main(int argc, char **argv) {
     // Create a hpthread
     hpthread_create(th);
         
+    unsigned input_tasks_remaining = iterations;
     unsigned inputs_remaining = iterations;
+    unsigned output_tasks_remaining = iterations;
     unsigned outputs_remaining = iterations;
-    gemm_queue_entry_t e; // Entry to use for all enqueue
-    unsigned id = 0; // ID for data offset
+    gemm_queue_entry_t in_e = { 
+        .gemm_params = {
+            dim_m, dim_n, dim_k, mat_b_offset, mat_a_valid_offset, mat_c_valid_offset
+        }
+    };
+    gemm_queue_entry_t out_e = { 
+        .gemm_params = { 0, 0, 0, 0, mat_c_valid_offset, 0 }
+    };
     
     uint64_t t_start = get_counter();
-    while (inputs_remaining != 0 || outputs_remaining != 0) {
+    while (input_tasks_remaining != 0 || inputs_remaining != 0 || output_tasks_remaining != 0 || outputs_remaining != 0) {
+        if (input_tasks_remaining != 0) {
+            // Check if input queue is full
+            if (!gemm_queue_full(in_q)) {
+                HIGH_DEBUG(printf("[APP] Enqueueing new input %d\n", iterations - input_tasks_remaining));
+                gemm_queue_push(in_q, &in_e);
+                input_tasks_remaining--;
+            }
+        }
         if (inputs_remaining != 0) {
-            // Check if queues are full
-            if (!gemm_queue_full(in_q) && !gemm_queue_full(out_q)) {
-                HIGH_DEBUG(printf("[APP] Enqueueing new input %d\n", iterations - inputs_remaining));
-                // Input queue entry
-                e.gemm_params = (gemm_params_t) {
-                    dim_m, dim_n, dim_k, mat_b_offset[id], mat_a_valid_offset[id], mat_c_valid_offset[id]
-                };
-                gemm_queue_push(in_q, &e);
-                // Output queue entry (just placeholder for this input queue offset)
-                e.gemm_params =  (gemm_params_t) { 0, 0, 0, 0, mat_c_valid_offset[id], 0 };
-                gemm_queue_push(out_q, &e);
+            // Check if input queue is not empty and input data is invalid
+            unsigned *input_flag = (unsigned *) &mem[mat_a_valid_offset];
+            bool input_is_invaid = (__atomic_load_n(input_flag, __ATOMIC_ACQUIRE) == 0);
+            if (!gemm_queue_empty(in_q) && input_is_invaid) {
+                HIGH_DEBUG(printf("[APP] Sending new input %d\n", iterations - inputs_remaining));
                 // Set input flag valid
-                unsigned *input_flag = (unsigned *) &mem[mat_a_valid_offset[id]];
                 __atomic_store_n(input_flag, 1, __ATOMIC_RELEASE);
-                id = (id+1) % GEMM_QUEUE_SIZE; // Only GEMM_QUEUE_SIZE buffers reserved
                 inputs_remaining--;
+            }
+        }
+        if (output_tasks_remaining != 0) {
+            // Check if output queue is full
+            if (!gemm_queue_full(out_q)) {
+                HIGH_DEBUG(printf("[APP] Enqueueing new output %d\n", iterations - output_tasks_remaining));
+                gemm_queue_push(out_q, &out_e);
+                output_tasks_remaining--;
             }
         }
         if (outputs_remaining != 0) {

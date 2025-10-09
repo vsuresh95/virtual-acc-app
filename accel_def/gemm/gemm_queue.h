@@ -2,7 +2,7 @@
 #define __GEMM_QUEUE_H__
 
 #include <sm_queue.h>
-#include <gemm_params.h>
+#include <gemm_node_args.h>
 
 #define GEMM_QUEUE_SIZE 4
 #define GEMM_ENTRIES_OFFSET 4
@@ -18,15 +18,6 @@ typedef struct {
     gemm_queue_entry_t entry[GEMM_QUEUE_SIZE];
 } gemm_queue_t;
 
-extern uint64_t t_push;
-extern uint64_t t_pop;
-
-static inline void gemm_queue_init(gemm_queue_t *q) {
-    __atomic_store_n(&(q->info.head), 0, __ATOMIC_SEQ_CST);
-    __atomic_store_n(&(q->info.tail), 0, __ATOMIC_SEQ_CST);
-}
-
-// Createa a JUMP task descriptor
 static inline void print_gemm_entry(gemm_queue_entry_t *e) {
     printf("\tdim_m=%d\n", e->gemm_params.dim_m);
     printf("\tdim_n=%d\n", e->gemm_params.dim_n);

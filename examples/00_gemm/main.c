@@ -115,7 +115,7 @@ int main(int argc, char **argv) {
 
     // Input task queue
     gemm_queue_t *q = (gemm_queue_t *) &mem[input_queue_offset];
-    gemm_queue_init(q);
+    sm_queue_init((sm_queue_t *) q);
 
     // Create GEMM queue entry
     gemm_queue_entry_t e = { 
