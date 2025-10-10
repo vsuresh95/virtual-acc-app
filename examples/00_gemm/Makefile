@@ -2,6 +2,7 @@ BUILD_DIR=$(PWD)/build
 APP_NAME?=$(notdir $(PWD))
 
 CFLAGS+=-I./
+CFLAGS+=-DNO_YIELD
 APPSRCFILES+=$(PWD)/main.c
 
 OPT_APP_OBJ=$(patsubst $(PWD)/%.c,$(BUILD_DIR)/%.app.opt.o,$(APPSRCFILES))

@@ -63,8 +63,8 @@ void *gemm_invoke(void *a) {
             // Wait for input to be valid/output to be empty
             unsigned *input_flag = (unsigned *) &mem[gemm_access_desc->input_base];
             unsigned *output_flag = (unsigned *) &mem[gemm_access_desc->output_base];
-            while(__atomic_load_n(input_flag, __ATOMIC_ACQUIRE) != 1);
-            while(__atomic_load_n(output_flag, __ATOMIC_ACQUIRE) != 0);
+            while(__atomic_load_n(input_flag, __ATOMIC_ACQUIRE) != 1) { SCHED_YIELD; };
+            while(__atomic_load_n(output_flag, __ATOMIC_ACQUIRE) != 0) { SCHED_YIELD; };
             // Then change the queue tail
             gemm_queue_pop(q);
             __atomic_store_n(input_flag, 0, __ATOMIC_RELEASE);
@@ -77,6 +77,8 @@ void *gemm_invoke(void *a) {
             }
             // Set output valid
             __atomic_store_n(output_flag, 1, __ATOMIC_RELEASE);
+        } else {
+            SCHED_YIELD;
         }
     }
 

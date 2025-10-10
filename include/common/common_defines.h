@@ -26,4 +26,10 @@
 #define LOW_DEBUG(x)
 #endif
 
+#ifndef NO_YIELD
+#define SCHED_YIELD sched_yield()
+#else
+#define SCHED_YIELD
+#endif
+
 #endif // __COMMON_DEFS_H__

@@ -210,8 +210,8 @@ void nn_module_register(nn_module *m) {
                     params->input_base = current->in_edges->e->args->offset;
                     params->output_base = current->out_edges->e->args->offset;
                     // Initialize the weights if present
-                    nn_token_t *wgt_address = ((nn_token_t *) m->mem) + params->weight_base;
-                    initialize_data(gemm_args->input_file, wgt_address, params->dim_n * params->dim_k);
+                    LOW_DEBUG(nn_token_t *wgt_address = ((nn_token_t *) m->mem) + params->weight_base;
+                    initialize_data(gemm_args->input_file, wgt_address, params->dim_n * params->dim_k);)
 
                     // Add descr to the list in the model
                     gemm_task_descr *descr = (gemm_task_descr *) malloc (sizeof(gemm_task_descr));
@@ -288,7 +288,7 @@ nn_token_t *nn_module_forward_file(nn_module *m, const char *input_file) {
                 // For this function: at the first descriptor, we also load the input file
                 if (!init_done) {
                     nn_token_t *input_address = ((nn_token_t *) m->mem) + params->input_base;
-                    initialize_data(input_file, input_address + (PAYLOAD_OFFSET/sizeof(nn_token_t)), params->dim_n * params->dim_k);
+                    LOW_DEBUG(initialize_data(input_file, input_address + (PAYLOAD_OFFSET/sizeof(nn_token_t)), params->dim_n * params->dim_k);)
                     input_flag = (unsigned *) input_address;
                     init_done = true;
                 }
@@ -311,7 +311,7 @@ nn_token_t *nn_module_forward_file(nn_module *m, const char *input_file) {
                         // If we cycled back to the original thread, wait and try again.
                         if (th_list == orig_th) {
                             printf("[NN] ALL QUEUES FULL!\n");
-                            sleep(1);
+                            SCHED_YIELD;
                         }
                     }
                 }
@@ -325,7 +325,7 @@ nn_token_t *nn_module_forward_file(nn_module *m, const char *input_file) {
         descr_list = descr_list->next;
     }
     // Once all the descrtiptors are queued, set the input flag for the first descriptor here (ensure it's not already set)
-    while(__atomic_load_n(input_flag, __ATOMIC_ACQUIRE) == 1);
+    while(__atomic_load_n(input_flag, __ATOMIC_ACQUIRE) != 0) { SCHED_YIELD; };
     __atomic_store_n(input_flag, 1, __ATOMIC_RELEASE);
     HIGH_DEBUG(printf("Input flag set...\n"));
     // Retrieve the output flag and data pointer from the last descriptor
@@ -337,7 +337,7 @@ nn_token_t *nn_module_forward_file(nn_module *m, const char *input_file) {
             gemm_params_t *params = &(descr->params);
             unsigned *output_flag= ((unsigned *) m->mem) + params->output_base;
             output_data = (nn_token_t *) (output_flag + (PAYLOAD_OFFSET/sizeof(unsigned)));
-            while(__atomic_load_n(output_flag, __ATOMIC_ACQUIRE) == 1);
+            while(__atomic_load_n(output_flag, __ATOMIC_ACQUIRE) != 1) { SCHED_YIELD; };
             __atomic_store_n(output_flag, 0, __ATOMIC_RELEASE);
             HIGH_DEBUG(printf("Output flag test success...\n"));
         }
