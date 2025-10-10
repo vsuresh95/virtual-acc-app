@@ -6,6 +6,12 @@
 #include <gemm_queue.h>
 #include <nn_token.h>
 
+#ifdef PINGPONG_EN
+#define PINGPONG 2
+#else
+#define PINGPONG 1
+#endif
+
 // NN hpthread list 
 typedef struct nn_hpthread_list {
     hpthread_t *th;
@@ -20,7 +26,7 @@ typedef struct nn_task_descr {
 
 typedef struct gemm_task_descr {
     nn_task_descr common;
-    gemm_params_t params;
+    gemm_params_t params[PINGPONG];
 } gemm_task_descr;
 
 // NN handle provides an API endpoint for registering and interacting with a model
@@ -28,7 +34,8 @@ typedef struct {
     nn_graph_t *graph; // computational graph
     void *mem; // Memory handle for the module
     unsigned mem_allocated; // how much memory already allocated in this module
-    unsigned* input_flag, *output_flag; // Offsets for sync flags
+    unsigned *input_flag[PINGPONG], *output_flag[PINGPONG]; // Offsets for sync flags
+    unsigned pingpong_cnt_in, pingpong_cnt_out;
     unsigned id; // Module ID
     unsigned nprio; // Priority: 1 (highest) - 10 (lowest)
     bool cpu_invoke; // Should we invoke accelerator through CPU?

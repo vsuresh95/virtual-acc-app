@@ -21,6 +21,7 @@ void nn_module_load(nn_module *m, const char *n) {
     const unsigned mem_size = 8 * 1024 * 1024; // 2MB
     m->mem = esp_alloc(mem_size);
     m->mem_allocated = 0;
+    m->pingpong_cnt_in = m->pingpong_cnt_out = 0;
 
 	char in_line_buf[256]; // Max 256 characters in one line
     if (fgets(in_line_buf, 100, model_def) != NULL) {
@@ -168,7 +169,7 @@ void nn_module_create_descr(nn_module *m) {
     q->head = q->tail = NULL;
     nn_node_list *visited = NULL;
     bool init_done = false; // For capturing input flag address
-    unsigned output_base; // For capturing output flag address
+    unsigned output_base[PINGPONG]; // For capturing output flag address
     // Do BFS traversal of the routine DFG by starting at the entry node
     nn_node_t *entry = nn_graph_get_entry(m->graph);
     // Add entry to queue and set
@@ -192,13 +193,16 @@ void nn_module_create_descr(nn_module *m) {
                 nn_queue_push(q, dst);
             }
             
-            // Allocate memory for the edge and store the offset in the args
+            // Allocate memory for the edge and store the offset in the args (for pingpong)
             nn_edge_args *args = out->args;
             size_t buf_len = args->len + PAYLOAD_OFFSET/sizeof(nn_token_t);
-            args->offset = m->mem_allocated; m->mem_allocated += buf_len;
-            // Zero out the sync flag
-            unsigned *sync = ((unsigned *) (m->mem)) + args->offset;
-            sync[0] = 0; sync[1] = 0;
+            args->offset = m->mem_allocated; m->mem_allocated += 
+            PINGPONG * buf_len;
+            // Zero out the sync flag (for pingpong)
+            for (int i = 0; i < PINGPONG; i++) {
+                unsigned *sync = ((unsigned *) (m->mem)) + args->offset + (i * buf_len);
+                sync[0] = 0; sync[1] = 0;
+            }
             cons = cons->next;
         }
 
@@ -213,21 +217,28 @@ void nn_module_create_descr(nn_module *m) {
                     params->weight_base = m->mem_allocated; m->mem_allocated += params->dim_n * params->dim_k; 
                     // Retrieve input and output offsets from its first edges
                     // TODO: assumes single producer, single consumer
-                    params->input_base = current->in_edges->e->args->offset;
-                    params->output_base = current->out_edges->e->args->offset;
-                    output_base = params->output_base;
+                    nn_edge_args *in_args = current->in_edges->e->args; nn_edge_args *out_args = current->out_edges->e->args;
+                    // Allocate a task descriptor
+                    gemm_task_descr *descr = (gemm_task_descr *) malloc (sizeof(gemm_task_descr));
+                    gemm_params_t *descr_params[PINGPONG];
+                    for (int i = 0; i < PINGPONG; i++) {
+                        descr_params[i] = &(descr->params[i]);
+                        *(descr_params[i]) = *params;
+                        descr_params[i]->input_base = in_args->offset + i * (in_args->len + PAYLOAD_OFFSET/sizeof(nn_token_t));
+                        descr_params[i]->output_base = out_args->offset + i * (out_args->len + PAYLOAD_OFFSET/sizeof(nn_token_t));
+                        output_base[i] = descr_params[i]->output_base;
+                    }
                     // Initialize the weights if present
                     LOW_DEBUG(nn_token_t *wgt_address = ((nn_token_t *) m->mem) + params->weight_base;
                     initialize_data(gemm_args->input_file, wgt_address, params->dim_n * params->dim_k);)
                     // For this function: at the first descriptor, we also load the input file
                     if (!init_done) {
-                        m->input_flag = ((unsigned *) m->mem) + params->input_base;
+                        for (int i = 0; i < PINGPONG; i++)
+                            m->input_flag[i] = ((unsigned *) m->mem) + descr_params[i]->input_base;
                         init_done = true;
                     }
                     // Add descr to the list in the model
-                    gemm_task_descr *descr = (gemm_task_descr *) malloc (sizeof(gemm_task_descr));
                     descr->common.prim = PRIM_GEMM;
-                    descr->params = *params;
                     nn_module_add_task_descr(m, (nn_task_descr *) descr);
                     break;
                 }
@@ -244,7 +255,8 @@ void nn_module_create_descr(nn_module *m) {
         visited = next;
     }
     // Register the output flag location
-    m->output_flag= ((unsigned *) m->mem) + output_base;
+    for (int i = 0; i < PINGPONG; i++)
+        m->output_flag[i] = ((unsigned *) m->mem) + output_base[i];
 }
 
 // Helper: Load and register a model in one call
@@ -289,12 +301,13 @@ void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len) {
     // Traverse the task descriptor list and assign each descriptor to an hpthread queue
     nn_task_descr *descr_list = m->descr_list;
     nn_hpthread_list *th_list = m->th_list;
+    unsigned pingpong = (m->pingpong_cnt_in++) % PINGPONG; 
     while (descr_list != NULL) {
         switch(descr_list->prim) {
             case PRIM_GEMM: {
                 HIGH_DEBUG(printf("[NN] Programming PRIM_GEMM descr...\n"));
                 gemm_task_descr *descr = (gemm_task_descr *) descr_list;
-                gemm_params_t *params = &(descr->params);
+                gemm_params_t *params = &(descr->params[pingpong]);
                 // Try to send each param to one of the queues in round robin fashion
                 gemm_queue_entry_t e;
                 e.gemm_params = *params;
@@ -327,23 +340,24 @@ void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len) {
         descr_list = descr_list->next;
     }
     // Once all the descrtiptors are queued, set the input flag for the first descriptor here (ensure it's not already set)
-    while(__atomic_load_n(m->input_flag, __ATOMIC_ACQUIRE) != 0) { SCHED_YIELD; }
+    while(__atomic_load_n(m->input_flag[pingpong], __ATOMIC_ACQUIRE) != 0) { SCHED_YIELD; }
     LOW_DEBUG (
-        nn_token_t *input_addr = (nn_token_t *) (m->input_flag) + (PAYLOAD_OFFSET/sizeof(nn_token_t));
+        nn_token_t *input_addr = (nn_token_t *) (m->input_flag[pingpong]) + (PAYLOAD_OFFSET/sizeof(nn_token_t));
         memcpy(input_addr, input_data, data_len);
     )
-    __atomic_store_n(m->input_flag, 1, __ATOMIC_RELEASE);
+    __atomic_store_n(m->input_flag[pingpong], 1, __ATOMIC_RELEASE);
     HIGH_DEBUG(printf("Input flag set...\n"));
 }
 
 void nn_module_rsp(nn_module *m, nn_token_t *output_data, unsigned data_len) {
     // Wait for inference to finish
-    while(__atomic_load_n(m->output_flag, __ATOMIC_ACQUIRE) != 1) { SCHED_YIELD; }
+    unsigned pingpong = (m->pingpong_cnt_out++) % PINGPONG; 
+    while(__atomic_load_n(m->output_flag[pingpong], __ATOMIC_ACQUIRE) != 1) { SCHED_YIELD; }
     LOW_DEBUG (
-        nn_token_t *output_addr = (nn_token_t *) (m->output_flag) + (PAYLOAD_OFFSET/sizeof(nn_token_t));
+        nn_token_t *output_addr = (nn_token_t *) (m->output_flag[pingpong]) + (PAYLOAD_OFFSET/sizeof(nn_token_t));
         memcpy(output_data, output_addr, data_len);
     )
-    __atomic_store_n(m->output_flag, 0, __ATOMIC_RELEASE);
+    __atomic_store_n(m->output_flag[pingpong], 0, __ATOMIC_RELEASE);
     HIGH_DEBUG(printf("Output flag test success...\n"));
 }
 
@@ -428,12 +442,14 @@ void print_descr_list(nn_module *m) {
         switch(descr_list->prim) {
             case PRIM_GEMM: {
                 gemm_task_descr *descr = (gemm_task_descr *) descr_list;
-                printf("\t[D%d] dim_m=%d\n", count, descr->params.dim_m);
-                printf("\t[D%d] dim_n=%d\n", count, descr->params.dim_n);
-                printf("\t[D%d] dim_k=%d\n", count, descr->params.dim_k);
-                printf("\t[D%d] weight_base=%d\n", count, descr->params.weight_base);
-                printf("\t[D%d] input_base=%d\n", count, descr->params.input_base);
-                printf("\t[D%d] output_base=%d\n", count, descr->params.output_base);
+                for (int i = 0; i < PINGPONG; i++) {
+                    printf("\t[D%d] dim_m=%d\n", count, descr->params[i].dim_m);
+                    printf("\t[D%d] dim_n=%d\n", count, descr->params[i].dim_n);
+                    printf("\t[D%d] dim_k=%d\n", count, descr->params[i].dim_k);
+                    printf("\t[D%d] weight_base=%d\n", count, descr->params[i].weight_base);
+                    printf("\t[D%d] input_base=%d\n", count, descr->params[i].input_base);
+                    printf("\t[D%d] output_base=%d\n", count, descr->params[i].output_base);
+                }
             }
             default: break;
         }
