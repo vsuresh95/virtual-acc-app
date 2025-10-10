@@ -28,7 +28,7 @@ typedef struct {
     nn_graph_t *graph; // computational graph
     void *mem; // Memory handle for the module
     unsigned mem_allocated; // how much memory already allocated in this module
-    unsigned input_flag_offset, output_flag_offset; // Offsets for sync flags
+    unsigned* input_flag, *output_flag; // Offsets for sync flags
     unsigned id; // Module ID
     unsigned nprio; // Priority: 1 (highest) - 10 (lowest)
     bool cpu_invoke; // Should we invoke accelerator through CPU?
@@ -41,12 +41,15 @@ void nn_module_load(nn_module *m, const char *n);
 void nn_module_register(nn_module *m);
 void nn_module_load_and_register(nn_module *m, const char *n);
 void nn_module_release(nn_module *m);
+void nn_module_create_hpthread(nn_module *m);
+void nn_module_create_descr(nn_module *m);
 static inline const char *nn_module_get_name(nn_module *m) { return m->graph->name; }
 
 void nn_module_add_hpthread(nn_module *m, hpthread_t *th);
 void nn_module_setpriority(nn_module *m, unsigned nprio);
 
-nn_token_t *nn_module_forward_file(nn_module *m, const char *input_file);
+void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len);
+void nn_module_rsp(nn_module *m, nn_token_t *output_data, unsigned data_len);
 
 // Data structures for BFS traversal of NN graph
 typedef struct {
