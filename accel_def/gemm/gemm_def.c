@@ -67,7 +67,6 @@ void *gemm_invoke(void *a) {
             while(__atomic_load_n(output_flag, __ATOMIC_ACQUIRE) != 0) { SCHED_YIELD; }
             // Then change the queue tail
             gemm_queue_pop(q);
-            __atomic_store_n(input_flag, 0, __ATOMIC_RELEASE);
             HIGH_DEBUG(printf("[INVOKE] Starting GEMM on %s\n", accel->devname);)
 
             struct esp_access *esp_access_desc = (struct esp_access *) gemm_access_desc;
@@ -76,10 +75,11 @@ void *gemm_invoke(void *a) {
                 exit(EXIT_FAILURE);
             }
             // Set output valid
+            __atomic_store_n(input_flag, 0, __ATOMIC_RELEASE);
             __atomic_store_n(output_flag, 1, __ATOMIC_RELEASE);
-        } else {
-            SCHED_YIELD;
+            HIGH_DEBUG(printf("[INVOKE] Finished GEMM on %s\n", accel->devname);)
         }
+        SCHED_YIELD;
     }
 
     return NULL;

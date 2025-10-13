@@ -18,7 +18,7 @@ void nn_module_load(nn_module *m, const char *n) {
     // Create an NN computational graph and memory for this model
     m->graph = (nn_graph_t *) malloc (sizeof(nn_graph_t));
     nn_graph_create(m->graph);
-    const unsigned mem_size = 8 * 1024 * 1024; // 2MB
+    const unsigned mem_size = 8 * 1024 * 1024; // 8MB
     m->mem = esp_alloc(mem_size);
     m->mem_allocated = 0;
     m->pingpong_cnt_in = m->pingpong_cnt_out = 0;
@@ -319,7 +319,7 @@ void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len) {
                     gemm_queue_t *q = (gemm_queue_t *) &mem[queue_offset];
                     // If the current queue is full, try the next
                     if (th_list->th->prim == PRIM_GEMM && gemm_queue_push(q, &e)) {
-                        HIGH_DEBUG(printf("Enqueued descr to hpthread %s.\n", hpthread_get_name(th_list->th)));
+                        HIGH_DEBUG(printf("[NN] Enqueued descr to hpthread %s.\n", hpthread_get_name(th_list->th)));
                         break;
                     } else {
                         th_list = th_list->next;
@@ -346,7 +346,7 @@ void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len) {
         memcpy(input_addr, input_data, data_len);
     )
     __atomic_store_n(m->input_flag[pingpong], 1, __ATOMIC_RELEASE);
-    HIGH_DEBUG(printf("Input flag set...\n"));
+    HIGH_DEBUG(printf("[NN] Input flag set...\n"));
 }
 
 void nn_module_rsp(nn_module *m, nn_token_t *output_data, unsigned data_len) {
@@ -358,7 +358,7 @@ void nn_module_rsp(nn_module *m, nn_token_t *output_data, unsigned data_len) {
         memcpy(output_data, output_addr, data_len);
     )
     __atomic_store_n(m->output_flag[pingpong], 0, __ATOMIC_RELEASE);
-    HIGH_DEBUG(printf("Output flag test success...\n"));
+    HIGH_DEBUG(printf("[NN] Output flag test success...\n"));
 }
 
 void nn_queue_push(nn_queue_t *q, nn_node_t *n) {

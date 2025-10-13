@@ -395,6 +395,7 @@ void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel) {
     if (pthread_create(&cpu_thread, &attr, sw_kernel, (void *) args) != 0) {
         perror("Failed to create CPU thread\n");
     }
+    pthread_attr_destroy(&attr);
 
     // Add this thread to the physical_accel struct
     accel->cpu_thread = cpu_thread;

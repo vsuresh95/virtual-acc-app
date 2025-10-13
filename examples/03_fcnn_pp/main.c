@@ -2,18 +2,32 @@
 #include <helper.h>
 #include <nn_module.h>
 
-unsigned iterations = 100;
+typedef struct {
+    nn_module *m;
+    unsigned iterations;
+} rsp_thread_args;
+
+void *rsp_thread(void *a) {
+    HIGH_DEBUG(printf("[APP] Starting response thread...\n");)
+    rsp_thread_args *args = (rsp_thread_args *) a;
+    nn_module *m = args->m;
+    unsigned iterations = args->iterations;
+    nn_token_t *output_data = (nn_token_t *) malloc (1);
+
+    for (int i = 0; i < iterations; i++) {
+        nn_module_rsp(m, output_data, 0);
+        if (i % 10 == 0) printf("[APP] Iter %d done!\n", i);
+    }
+    return NULL;
+}
 
 // Example application for fully connected neural network (FCNN)
 int main(int argc, char **argv) {
+    unsigned iterations = 100;
     if (argc > 1) {
         iterations = atoi(argv[1]);
 	}
     printf("[APP] Starting app: FCNN pipelined, %d iters!\n", iterations);
-    uint64_t t_load_register;
-    uint64_t t_forward;
-    uint64_t t_release;
-    uint64_t t_start;
 
     // Run main thread on CPU 0 always.
     long online = sysconf(_SC_NPROCESSORS_ONLN);
@@ -31,27 +45,54 @@ int main(int argc, char **argv) {
         perror("pthread_setschedparam");
     }
 
-    for (int i = 0; i < iterations; i++) {
-        // Load a model from a text file (and) register with NN frontend
-        t_start = get_counter();
-        nn_module *m = (nn_module *) malloc (sizeof(nn_module));
-        m->id = 0;
-        m->nprio = 1;
-        m->cpu_invoke = true;
-        nn_module_load_and_register(m, "model.txt");
-        t_load_register = get_counter() - t_start;
+    // Load a model from a text file (and) register with NN frontend
+    nn_module *m = (nn_module *) malloc (sizeof(nn_module));
+    m->id = 0;
+    m->nprio = 1;
+    m->cpu_invoke = true;
+    nn_module_load_and_register(m, "model.txt");
 
-        // Push a new input to the model queue direct from file
-        t_start = get_counter();
-        nn_module_forward(m);
-        t_forward = get_counter() - t_start;
+    rsp_thread_args *args = (rsp_thread_args *) malloc (sizeof(rsp_thread_args));
+    args->m = m;
+    args->iterations = iterations;
 
-        t_start = get_counter();
-        nn_module_release(m);
-        free(m);
-        t_release = get_counter() - t_start;
+    // Start response thread on CPU 1
+    pthread_t rsp_th;
+    // Create pthread attributes
+    pthread_attr_t attr;
+    if (pthread_attr_init(&attr) != 0) {
+        perror("attr_init");
     }
-    printf("Load register = %lu\n", t_load_register/iterations);
-    printf("Forward = %lu\n", t_forward/iterations);
-    printf("Release = %lu\n", t_release/iterations);
+    // Set CPU affinity
+    if (online > 1) {
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        CPU_SET(1, &set);
+        if (pthread_attr_setaffinity_np(&attr, sizeof(set), &set) != 0) {
+            perror("pthread_attr_setaffinity_np");
+        }
+    }
+    // Set SCHED_RR scheduling policy with priority 1
+    if (pthread_attr_setschedpolicy(&attr, SCHED_RR) != 0) {
+        perror("pthread_attr_setschedpolicy");
+    }
+    if (pthread_attr_setschedparam(&attr, &sp) != 0) {
+        perror("pthread_attr_setschedparam");
+    }
+    // Create VAM pthread
+    if (pthread_create(&rsp_th, &attr, rsp_thread, (void *) args) != 0) {
+        perror("pthread_create");
+        exit(1);
+    }
+    pthread_attr_destroy(&attr);
+
+    nn_token_t *input_data = (nn_token_t *) malloc (1);
+
+    for (int i = 0; i < iterations; i++) {
+        nn_module_req(m, input_data, 0);
+    }
+
+    pthread_join(rsp_th, NULL);
+    nn_module_release(m);
+    free(m);
 }
