@@ -30,7 +30,7 @@ float avg_util, max_util, min_util;
 // Safeguard for not performing load balance repeatedly
 float load_imbalance_reg;
 // Counter for core affinity
-static uint8_t core_affinity_ctr = 1;
+static uint8_t core_affinity_ctr = 0;
 // Number of CPUs online
 long cpu_online;
 // Physical accelerator list
@@ -192,7 +192,6 @@ void *vam_run_backend(void *arg) {
 
                 //     start_time = get_counter();
                 // }
-                sched_yield();
                 break;
             }
             case VAM_CREATE: {
@@ -232,6 +231,7 @@ void *vam_run_backend(void *arg) {
             start_time = get_counter();
             vam_sleep = VAM_SLEEP_MIN;
         }
+        sched_yield();
     }
     return NULL;
 }

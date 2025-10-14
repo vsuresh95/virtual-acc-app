@@ -14,10 +14,15 @@ void *rsp_thread(void *a) {
     unsigned iterations = args->iterations;
     nn_token_t *output_data = (nn_token_t *) malloc (1);
 
+    uint64_t t_start;
     for (int i = 0; i < iterations; i++) {
+        if (i == 5) t_start = get_counter();
         nn_module_rsp(m, output_data, 0);
-        if (i % 10 == 0) printf("[APP] Iter %d done!\n", i);
+        SCHED_YIELD;
+        LOW_DEBUG( if (i % 100 == 0) printf("[APP] Iter %d done!\n", i); )
     }
+    uint64_t t_loop = get_counter() - t_start;
+    printf("[APP] Average time = %lu\n", t_loop/(iterations - 5));
     return NULL;
 }
 
@@ -90,6 +95,7 @@ int main(int argc, char **argv) {
 
     for (int i = 0; i < iterations; i++) {
         nn_module_req(m, input_data, 0);
+        SCHED_YIELD;
     }
 
     pthread_join(rsp_th, NULL);

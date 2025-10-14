@@ -47,6 +47,8 @@ void *gemm_invoke(void *a) {
     gemm_access_desc->esp.dst_offset = 0;
     gemm_access_desc->esp.coherence = ACC_COH_RECALL;
 
+    unsigned invoke_count = 0;
+
     while (1) {
         if (*kill_pthread) pthread_exit(NULL);
 
@@ -67,7 +69,7 @@ void *gemm_invoke(void *a) {
             while(__atomic_load_n(output_flag, __ATOMIC_ACQUIRE) != 0) { SCHED_YIELD; }
             // Then change the queue tail
             gemm_queue_pop(q);
-            HIGH_DEBUG(printf("[INVOKE] Starting GEMM on %s\n", accel->devname);)
+            HIGH_DEBUG(printf("[INVOKE] Starting GEMM %d on %s\n", invoke_count, accel->devname);)
 
             struct esp_access *esp_access_desc = (struct esp_access *) gemm_access_desc;
             if (ioctl(accel->fd, GEMM_STRATUS_IOC_ACCESS, esp_access_desc)) {
@@ -77,7 +79,7 @@ void *gemm_invoke(void *a) {
             // Set output valid
             __atomic_store_n(input_flag, 0, __ATOMIC_RELEASE);
             __atomic_store_n(output_flag, 1, __ATOMIC_RELEASE);
-            HIGH_DEBUG(printf("[INVOKE] Finished GEMM on %s\n", accel->devname);)
+            HIGH_DEBUG(printf("[INVOKE] Finished GEMM %d on %s\n", invoke_count++, accel->devname);)
         }
         SCHED_YIELD;
     }

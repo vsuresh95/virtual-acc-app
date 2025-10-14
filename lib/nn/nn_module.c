@@ -6,6 +6,9 @@
 
 static unsigned gemm_node_count = 0;
 
+static unsigned req_count = 0;
+static unsigned rsp_count = 0;
+
 // Load a model using a description in a txt model_def
 void nn_module_load(nn_module *m, const char *n) {
     // Check if the model description file exists
@@ -301,11 +304,12 @@ void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len) {
     // Traverse the task descriptor list and assign each descriptor to an hpthread queue
     nn_task_descr *descr_list = m->descr_list;
     nn_hpthread_list *th_list = m->th_list;
-    unsigned pingpong = (m->pingpong_cnt_in++) % PINGPONG; 
+    unsigned pingpong = (m->pingpong_cnt_in++) % PINGPONG;
+    unsigned descr_cnt = 0;
     while (descr_list != NULL) {
         switch(descr_list->prim) {
             case PRIM_GEMM: {
-                HIGH_DEBUG(printf("[NN] Programming PRIM_GEMM descr...\n"));
+                HIGH_DEBUG(printf("[NN] Programming PRIM_GEMM descr %d for req %d...\n", descr_cnt, req_count););
                 gemm_task_descr *descr = (gemm_task_descr *) descr_list;
                 gemm_params_t *params = &(descr->params[pingpong]);
                 // Try to send each param to one of the queues in round robin fashion
@@ -319,7 +323,7 @@ void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len) {
                     gemm_queue_t *q = (gemm_queue_t *) &mem[queue_offset];
                     // If the current queue is full, try the next
                     if (th_list->th->prim == PRIM_GEMM && gemm_queue_push(q, &e)) {
-                        HIGH_DEBUG(printf("[NN] Enqueued descr to hpthread %s.\n", hpthread_get_name(th_list->th)));
+                        HIGH_DEBUG(printf("[NN] Enqueued descr %d to hpthread %s.\n", descr_cnt++, hpthread_get_name(th_list->th)));
                         break;
                     } else {
                         th_list = th_list->next;
@@ -346,7 +350,7 @@ void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len) {
         memcpy(input_addr, input_data, data_len);
     )
     __atomic_store_n(m->input_flag[pingpong], 1, __ATOMIC_RELEASE);
-    HIGH_DEBUG(printf("[NN] Input flag set...\n"));
+    HIGH_DEBUG(printf("[NN] Input flag set %d...\n", req_count++));
 }
 
 void nn_module_rsp(nn_module *m, nn_token_t *output_data, unsigned data_len) {
@@ -358,7 +362,7 @@ void nn_module_rsp(nn_module *m, nn_token_t *output_data, unsigned data_len) {
         memcpy(output_data, output_addr, data_len);
     )
     __atomic_store_n(m->output_flag[pingpong], 0, __ATOMIC_RELEASE);
-    HIGH_DEBUG(printf("[NN] Output flag test success...\n"));
+    HIGH_DEBUG(printf("[NN] Output flag test success %d...\n", rsp_count++));
 }
 
 void nn_queue_push(nn_queue_t *q, nn_node_t *n) {

@@ -38,6 +38,7 @@ static inline bool gemm_queue_push(gemm_queue_t *q, gemm_queue_entry_t *e) {
     }
 
     // Copy params to head slot and advance head
+    __atomic_thread_fence(__ATOMIC_ACQ_REL);
     gemm_queue_entry_t *slot = &(q->entry[head]);
     *slot = *e;
     __atomic_store_n(&(q->info.head), next, __ATOMIC_RELEASE);
