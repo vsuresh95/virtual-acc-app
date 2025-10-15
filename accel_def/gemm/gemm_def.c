@@ -47,7 +47,7 @@ void *gemm_invoke(void *a) {
     gemm_access_desc->esp.dst_offset = 0;
     gemm_access_desc->esp.coherence = ACC_COH_RECALL;
 
-    unsigned invoke_count = 0;
+    HIGH_DEBUG(unsigned invoke_count = 0;)
 
     while (1) {
         if (*kill_pthread) pthread_exit(NULL);

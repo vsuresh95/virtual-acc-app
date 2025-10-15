@@ -49,7 +49,7 @@ void wakeup_vam() {
     // Set CPU affinity
     cpu_set_t set;
     CPU_ZERO(&set);
-    CPU_SET(core_affinity_ctr % cpu_online, &set);
+    CPU_SET((core_affinity_ctr++) % cpu_online, &set);
     if (pthread_attr_setaffinity_np(&attr, sizeof(set), &set) != 0) {
         perror("pthread_attr_setaffinity_np");
     }
@@ -380,7 +380,7 @@ void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel) {
     // Set CPU affinity
     cpu_set_t set;
     CPU_ZERO(&set);
-    CPU_SET(core_affinity_ctr % cpu_online, &set);
+    CPU_SET((core_affinity_ctr++) % cpu_online, &set);
     if (pthread_attr_setaffinity_np(&attr, sizeof(set), &set) != 0) {
         perror("pthread_attr_setaffinity_np");
     }

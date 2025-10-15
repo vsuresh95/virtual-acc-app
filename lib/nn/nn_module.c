@@ -6,8 +6,8 @@
 
 static unsigned gemm_node_count = 0;
 
-static unsigned req_count = 0;
-static unsigned rsp_count = 0;
+HIGH_DEBUG(static unsigned req_count = 0;)
+HIGH_DEBUG(static unsigned rsp_count = 0;)
 
 // Load a model using a description in a txt model_def
 void nn_module_load(nn_module *m, const char *n) {
@@ -305,7 +305,7 @@ void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len) {
     nn_task_descr *descr_list = m->descr_list;
     nn_hpthread_list *th_list = m->th_list;
     unsigned pingpong = (m->pingpong_cnt_in++) % PINGPONG;
-    unsigned descr_cnt = 0;
+    HIGH_DEBUG(unsigned descr_cnt = 0;)
     while (descr_list != NULL) {
         switch(descr_list->prim) {
             case PRIM_GEMM: {
@@ -315,26 +315,16 @@ void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len) {
                 // Try to send each param to one of the queues in round robin fashion
                 gemm_queue_entry_t e;
                 e.gemm_params = *params;
-                nn_hpthread_list *orig_th = th_list;
-                while(1) {
-                    hpthread_args_t *args = th_list->th->args;
-                    unsigned *mem = (unsigned *) args->mem;
-                    unsigned queue_offset = args->queue_ptr;
-                    gemm_queue_t *q = (gemm_queue_t *) &mem[queue_offset];
-                    // If the current queue is full, try the next
-                    if (th_list->th->prim == PRIM_GEMM && gemm_queue_push(q, &e)) {
-                        HIGH_DEBUG(printf("[NN] Enqueued descr %d to hpthread %s.\n", descr_cnt++, hpthread_get_name(th_list->th)));
-                        break;
-                    } else {
-                        th_list = th_list->next;
-                        if (th_list == NULL) th_list = m->th_list;
-                        // If we cycled back to the original thread, wait and try again.
-                        if (th_list == orig_th) {
-                            LOW_DEBUG(printf("[NN] ALL QUEUES FULL!\n");)
-                            SCHED_YIELD;
-                        }
-                    }
+                hpthread_args_t *args = th_list->th->args;
+                unsigned *mem = (unsigned *) args->mem;
+                unsigned queue_offset = args->queue_ptr;
+                gemm_queue_t *q = (gemm_queue_t *) &mem[queue_offset];
+                // If the current queue is full, keep trying
+                if (th_list->th->prim == PRIM_GEMM) {
+                    while(!gemm_queue_push(q, &e)) { SCHED_YIELD; }
                 }
+                HIGH_DEBUG(printf("[NN] Enqueued descr %d to hpthread %s.\n", descr_cnt++, hpthread_get_name(th_list->th)));
+
                 // For the next descriptor, we should try the next queue
                 th_list = th_list->next;
                 if (th_list == NULL) th_list = m->th_list;

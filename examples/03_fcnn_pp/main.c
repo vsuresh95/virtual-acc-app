@@ -14,15 +14,10 @@ void *rsp_thread(void *a) {
     unsigned iterations = args->iterations;
     nn_token_t *output_data = (nn_token_t *) malloc (1);
 
-    uint64_t t_start;
-    for (int i = 0; i < iterations; i++) {
-        if (i == 5) t_start = get_counter();
+    for (int i = 0; i < iterations + 5; i++) {
         nn_module_rsp(m, output_data, 0);
         SCHED_YIELD;
-        LOW_DEBUG( if (i % 100 == 0) printf("[APP] Iter %d done!\n", i); )
     }
-    uint64_t t_loop = get_counter() - t_start;
-    printf("[APP] Average time = %lu\n", t_loop/(iterations - 5));
     return NULL;
 }
 
@@ -72,7 +67,7 @@ int main(int argc, char **argv) {
     if (online > 1) {
         cpu_set_t set;
         CPU_ZERO(&set);
-        CPU_SET(1, &set);
+        CPU_SET(0, &set);
         if (pthread_attr_setaffinity_np(&attr, sizeof(set), &set) != 0) {
             perror("pthread_attr_setaffinity_np");
         }
@@ -91,12 +86,21 @@ int main(int argc, char **argv) {
     }
     pthread_attr_destroy(&attr);
 
+    // Warm up
     nn_token_t *input_data = (nn_token_t *) malloc (1);
-
-    for (int i = 0; i < iterations; i++) {
+    for (int i = 0; i < 5; i++) {
         nn_module_req(m, input_data, 0);
         SCHED_YIELD;
     }
+
+    uint64_t t_start = get_counter();
+    for (int i = 0; i < iterations; i++) {
+        nn_module_req(m, input_data, 0);
+        SCHED_YIELD;
+        LOW_DEBUG( if (i % 100 == 0) printf("[APP] Iter %d done!\n", i); )
+    }
+    uint64_t t_loop = get_counter() - t_start;
+    printf("[APP] Average time = %lu\n", t_loop/iterations);
 
     pthread_join(rsp_th, NULL);
     nn_module_release(m);
