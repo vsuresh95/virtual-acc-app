@@ -24,10 +24,14 @@ void *rsp_thread(void *a) {
 // Example application for fully connected neural network (FCNN)
 int main(int argc, char **argv) {
     unsigned iterations = 100;
+    const char *model_file = "model.txt";
+    if (argc > 2) {
+        model_file = argv[2];
+	}
     if (argc > 1) {
         iterations = atoi(argv[1]);
 	}
-    printf("[APP] Starting app: FCNN pipelined, %d iters!\n", iterations);
+    printf("[APP] Starting app: FCNN pipelined, %d iters from %s!\n", iterations, model_file);
 
     // Run main thread on CPU 0 always.
     long online = sysconf(_SC_NPROCESSORS_ONLN);
@@ -50,7 +54,7 @@ int main(int argc, char **argv) {
     m->id = 0;
     m->nprio = 1;
     m->cpu_invoke = true;
-    nn_module_load_and_register(m, "model.txt");
+    nn_module_load_and_register(m, model_file);
 
     rsp_thread_args *args = (rsp_thread_args *) malloc (sizeof(rsp_thread_args));
     args->m = m;
