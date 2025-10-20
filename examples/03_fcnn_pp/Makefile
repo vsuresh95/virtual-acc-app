@@ -3,6 +3,7 @@ APP_NAME?=$(notdir $(PWD))
 
 CFLAGS+=-I./
 CFLAGS+=-DPINGPONG_EN
+# CFLAGS+=-DDO_CHAIN
 APPSRCFILES+=$(PWD)/main.c
 
 OPT_APP_OBJ=$(patsubst $(PWD)/%.c,$(BUILD_DIR)/%.app.opt.o,$(APPSRCFILES))

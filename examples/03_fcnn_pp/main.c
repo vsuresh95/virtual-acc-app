@@ -61,6 +61,7 @@ int main(int argc, char **argv) {
     args->iterations = iterations;
 
     // Start response thread on CPU 1
+    #ifndef DO_CHAIN
     pthread_t rsp_th;
     // Create pthread attributes
     pthread_attr_t attr;
@@ -89,24 +90,36 @@ int main(int argc, char **argv) {
         exit(1);
     }
     pthread_attr_destroy(&attr);
+    #endif
 
     // Warm up
     nn_token_t *input_data = (nn_token_t *) malloc (1);
+    #ifdef DO_CHAIN
+    nn_token_t *output_data = (nn_token_t *) malloc (1);
+    #endif
     for (int i = 0; i < 5; i++) {
         nn_module_req(m, input_data, 0);
         SCHED_YIELD;
+        #ifdef DO_CHAIN
+        nn_module_rsp(m, output_data, 0);
+        #endif
     }
 
     uint64_t t_start = get_counter();
     for (int i = 0; i < iterations; i++) {
         nn_module_req(m, input_data, 0);
         SCHED_YIELD;
+        #ifdef DO_CHAIN
+        nn_module_rsp(m, output_data, 0);
+        #endif
         LOW_DEBUG( if (i % 100 == 0) printf("[APP] Iter %d done!\n", i); )
     }
     uint64_t t_loop = get_counter() - t_start;
     printf("[APP] Average time = %lu\n", t_loop/iterations);
 
+    #ifndef DO_CHAIN
     pthread_join(rsp_th, NULL);
+    #endif
     nn_module_release(m);
     free(m);
 }
