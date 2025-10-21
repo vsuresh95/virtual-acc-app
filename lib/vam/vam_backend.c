@@ -35,6 +35,12 @@ static uint8_t core_affinity_ctr = 0;
 long cpu_online;
 // Physical accelerator list
 hpthread_cand_t *hpthread_cand_list = NULL;
+// CPU invoke thread active flags and thread ID
+bool gemm_cpu_thread_active = false;
+static unsigned gemm_cpu_thread_count = 0;
+pthread_t gemm_cpu_thread;
+bool kill_gemm_pthread = false;
+extern cpu_invoke_intf_t gemm_cpu_invoke_intf;
 
 // Function to wake up VAM for the first time
 void wakeup_vam() {
@@ -359,44 +365,78 @@ void vam_configure_accel(hpthread_t *th, physical_accel_t *accel, unsigned conte
 }
 
 void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel) {
-    LOW_DEBUG(printf("[VAM] Launch CPU invoke thread for hpthread %s\n", hpthread_get_name(th));)
-    // Find SW kernel for this thread
-    void *(*sw_kernel)(void *);
-    switch(th->prim) {
-        case PRIM_GEMM: sw_kernel = gemm_invoke; break;
-        default: break;
-    }    
-    // Create a new CPU thread for the SW implementation of this node.
+    // Check if CPU thread is already active for this accel
+    bool cpu_thread_active = false;
     pthread_t cpu_thread;
-    th->args->kill_pthread = (bool *) malloc (sizeof(bool)); *(th->args->kill_pthread) = false;
+    switch(th->prim) {
+        case PRIM_GEMM: {
+            if (gemm_cpu_thread_active) {
+                cpu_thread_active = true;
+                cpu_thread = gemm_cpu_thread;
+                break;
+            }            
+        }
+        default: break;
+    }
+    if (!cpu_thread_active) {
+        LOW_DEBUG(printf("[VAM] Launch CPU invoke thread for hpthread %s\n", hpthread_get_name(th));)
+        // Find SW kernel for this thread
+        void *(*sw_kernel)(void *);
+        switch(th->prim) {
+            case PRIM_GEMM: { 
+                sw_kernel = gemm_invoke;
+                gemm_cpu_thread_active = true;
+                // Initialize CPU invoke args interface
+                __atomic_store_n(&gemm_cpu_invoke_intf.state, INVOKE_ARGS_INVALID, __ATOMIC_RELEASE);
+                break;
+            }
+            default: break;
+        }
+
+        // Create pthread attributes
+        pthread_attr_t attr;
+        if (pthread_attr_init(&attr) != 0) {
+            perror("attr_init");
+        }
+        // Set CPU affinity
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        CPU_SET((core_affinity_ctr++) % cpu_online, &set);
+        if (pthread_attr_setaffinity_np(&attr, sizeof(set), &set) != 0) {
+            perror("pthread_attr_setaffinity_np");
+        }
+        // Set SCHED_RR scheduling policy with priority 1
+        if (pthread_attr_setschedpolicy(&attr, SCHED_RR) != 0) {
+            perror("pthread_attr_setschedpolicy");
+        }
+        struct sched_param sp = { .sched_priority = 1 };
+        if (pthread_attr_setschedparam(&attr, &sp) != 0) {
+            perror("pthread_attr_setschedparam");
+        }
+        if (pthread_create(&cpu_thread, &attr, sw_kernel, (void *) &kill_gemm_pthread) != 0) {
+            perror("Failed to create CPU thread\n");
+        }
+        pthread_attr_destroy(&attr);
+
+        // Save the thread ID for this primitive
+        switch(th->prim) {
+            case PRIM_GEMM: { 
+                gemm_cpu_thread = cpu_thread;
+                break;
+            }
+            default: break;
+        }
+    }
+    // Add the args for this hpthread to the invoke interface
+    th->args->kill_hpthread = (bool *) malloc (sizeof(bool)); *(th->args->kill_hpthread) = false;
     cpu_invoke_args_t *args = (cpu_invoke_args_t *) malloc (sizeof(cpu_invoke_args_t)); 
     args->args = th->args;
     args->accel = accel;
-    // Create pthread attributes
-    pthread_attr_t attr;
-    if (pthread_attr_init(&attr) != 0) {
-        perror("attr_init");
-    }
-    // Set CPU affinity
-    cpu_set_t set;
-    CPU_ZERO(&set);
-    CPU_SET((core_affinity_ctr++) % cpu_online, &set);
-    if (pthread_attr_setaffinity_np(&attr, sizeof(set), &set) != 0) {
-        perror("pthread_attr_setaffinity_np");
-    }
-    // Set SCHED_RR scheduling policy with priority 1
-    if (pthread_attr_setschedpolicy(&attr, SCHED_RR) != 0) {
-        perror("pthread_attr_setschedpolicy");
-    }
-    struct sched_param sp = { .sched_priority = 1 };
-    if (pthread_attr_setschedparam(&attr, &sp) != 0) {
-        perror("pthread_attr_setschedparam");
-    }
-    if (pthread_create(&cpu_thread, &attr, sw_kernel, (void *) args) != 0) {
-        perror("Failed to create CPU thread\n");
-    }
-    pthread_attr_destroy(&attr);
-
+    // Check if the interface is free
+    while (__atomic_load_n(&gemm_cpu_invoke_intf.state, __ATOMIC_ACQUIRE) != INVOKE_ARGS_INVALID) sched_yield();
+    gemm_cpu_invoke_intf.args = args;
+    __atomic_store_n(&gemm_cpu_invoke_intf.state, INVOKE_ARGS_VALID, __ATOMIC_RELEASE);
+    gemm_cpu_thread_count++;
     // Add this thread to the physical_accel struct
     accel->cpu_thread = cpu_thread;
 }
@@ -411,7 +451,7 @@ void vam_configure_cpu(hpthread_t *th, physical_accel_t *accel) {
     }    
     // Create a new CPU thread for the SW implementation of this node.
     pthread_t cpu_thread;
-    th->args->kill_pthread = (bool *) malloc (sizeof(bool)); *(th->args->kill_pthread) = false;
+    th->args->kill_hpthread = (bool *) malloc (sizeof(bool)); *(th->args->kill_hpthread) = false;
     if (pthread_create(&cpu_thread, NULL, sw_kernel, (void *) th->args) != 0) {
         perror("Failed to create CPU thread\n");
     }
@@ -428,8 +468,13 @@ void vam_release_accel(hpthread_t *th) {
     bitset_reset(accel->valid_contexts, context);
 
     if (accel->prim == PRIM_NONE || accel->cpu_invoke) {
-        *(th->args->kill_pthread) = true;
-        pthread_join(accel->cpu_thread, NULL);
+        *(th->args->kill_hpthread) = true;
+        gemm_cpu_thread_count--;
+        if (gemm_cpu_thread_count == 0) {
+            kill_gemm_pthread = true;
+            pthread_join(accel->cpu_thread, NULL);
+            gemm_cpu_thread_active = false;
+        }
     } else {
         struct esp_access *esp_access_desc = accel->esp_access_desc;
         {
