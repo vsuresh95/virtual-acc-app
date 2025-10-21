@@ -468,12 +468,16 @@ void vam_release_accel(hpthread_t *th) {
     bitset_reset(accel->valid_contexts, context);
 
     if (accel->prim == PRIM_NONE || accel->cpu_invoke) {
+        // Kill the entry in the CPU thread, and wait for ack
         *(th->args->kill_hpthread) = true;
+        while(*(th->args->kill_hpthread)) sched_yield();
         gemm_cpu_thread_count--;
         if (gemm_cpu_thread_count == 0) {
             kill_gemm_pthread = true;
             pthread_join(accel->cpu_thread, NULL);
             gemm_cpu_thread_active = false;
+            kill_gemm_pthread = false;
+            HIGH_DEBUG(printf("[VAM] Killed invoke thread for accel %s\n", physical_accel_get_name(accel));)
         }
     } else {
         struct esp_access *esp_access_desc = accel->esp_access_desc;

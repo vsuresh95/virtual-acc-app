@@ -45,7 +45,8 @@ void *gemm_invoke(void *a) {
     bool *kill_thread = (bool *) a;
     // Initialize current invoke args list
     gemm_invoke_args *cur_entry = NULL;
-    struct epoll_event out; // Dummy struct for epoll wait
+    struct epoll_event out; // Dummy struct for epoll wait// Before the while(1) loop:
+    gemm_invoke_args *prev_entry = NULL;  // track previous node
     while (1) {
         // Check for exit
         if (*kill_thread) pthread_exit(NULL);
@@ -115,13 +116,20 @@ void *gemm_invoke(void *a) {
         if (cur_entry == NULL) cur_entry = gemm_invoke_args_list;
 
         // Check if the current entry must be killed
-        if (*(cur_entry->kill_hpthread)) {
-            gemm_invoke_args *to_free = cur_entry;
-            cur_entry = cur_entry->next;
-            free(to_free);
-            // Move to next entry
-            if (cur_entry == NULL) cur_entry = gemm_invoke_args_list;
-            LOW_DEBUG(printf("[INVOKE] Terminated invoke thread for %s\n", cur_entry->accel->devname);)
+        if (cur_entry && *(cur_entry->kill_hpthread)) {
+            epoll_ctl(cur_entry->ep, EPOLL_CTL_DEL, cur_entry->accel->fd, NULL);
+            close(cur_entry->ep);
+            *(cur_entry->kill_hpthread) = false;
+            LOW_DEBUG(printf("[INVOKE] Terminating invoke thread for %s\n", cur_entry->accel->devname);)
+            gemm_invoke_args *next = cur_entry->next;
+            if (prev_entry == NULL) gemm_invoke_args_list = next; // removing head
+            else prev_entry->next = next;
+            free(cur_entry);
+            cur_entry = next;
+            if (cur_entry == NULL) {
+                cur_entry = gemm_invoke_args_list; // wrap to new head 
+                prev_entry = NULL;
+            }
             SCHED_YIELD;
             continue;
         }
@@ -163,7 +171,7 @@ void *gemm_invoke(void *a) {
             // Wait for input to be valid/output to be empty
             unsigned *input_flag = (unsigned *) &cur_entry->mem[gemm_access_desc->input_base];
             unsigned *output_flag = (unsigned *) &cur_entry->mem[gemm_access_desc->output_base];
-            if (!multi_poll(input_flag, 1, 100) || !multi_poll(output_flag, 0, 100)) {
+            if (!multi_poll(input_flag, 1, 5) || !multi_poll(output_flag, 0, 5)) {
                 cur_entry = cur_entry->next;
                 continue;
             }
@@ -181,7 +189,14 @@ void *gemm_invoke(void *a) {
         }
 
         // Switch to the next round-robin
-        cur_entry = cur_entry->next;
+        if (cur_entry) {
+            prev_entry = cur_entry;
+            cur_entry = cur_entry->next;
+            if (cur_entry == NULL) {
+                cur_entry = gemm_invoke_args_list;
+                prev_entry = NULL;
+            }
+        }
         SCHED_YIELD;
     }
 
