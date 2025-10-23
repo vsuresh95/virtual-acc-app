@@ -31,7 +31,12 @@ int main(int argc, char **argv) {
     if (argc > 1) {
         iterations = atoi(argv[1]);
 	}
-    printf("[APP] Starting app: FCNN pipelined, %d iters from %s!\n", iterations, model_file);
+    #ifdef DO_CHAIN
+    const char *mode = "Chained";
+    #else
+    const char *mode = "Pipelined";
+    #endif
+    printf("[APP] Starting app: FCNN %s, %d iters from %s!\n", mode, iterations, model_file);
 
     // Run main thread on CPU 0 always.
     long online = sysconf(_SC_NPROCESSORS_ONLN);
