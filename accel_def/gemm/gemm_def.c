@@ -48,9 +48,13 @@ void *gemm_invoke(void *a) {
     gemm_access_desc->esp.coherence = ACC_COH_RECALL;
 
     HIGH_DEBUG(unsigned invoke_count = 0;)
+    uint64_t accum_cycles = 0;
 
     while (1) {
-        if (*kill_pthread) pthread_exit(NULL);
+        if (*kill_pthread) {
+            HIGH_DEBUG(printf("[INVOKE] Average cycles for %d invocations on %s: %lu\n", invoke_count, accel->devname, accum_cycles / invoke_count);)
+            pthread_exit(NULL);
+        }
 
         gemm_queue_entry_t *e = gemm_queue_can_pop(q);
         if (e != NULL) {
@@ -79,6 +83,8 @@ void *gemm_invoke(void *a) {
             // Set output valid
             __atomic_store_n(input_flag, 0, __ATOMIC_RELEASE);
             __atomic_store_n(output_flag, 1, __ATOMIC_RELEASE);
+            uint64_t *mon_extended = (uint64_t *) esp_access_desc->mon_info.util;
+            accum_cycles += mon_extended[0]; // Single context only
             HIGH_DEBUG(printf("[INVOKE] Finished GEMM %d on %s\n", invoke_count++, accel->devname);)
         }
         SCHED_YIELD;
