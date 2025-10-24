@@ -24,7 +24,7 @@ void *rsp_thread(void *a) {
 // Example application for fully connected neural network (FCNN)
 int main(int argc, char **argv) {
     unsigned iterations = 100;
-    const char *model_file = "model.txt";
+    const char *model_file = "model_16_1.txt";
     if (argc > 2) {
         model_file = argv[2];
 	}

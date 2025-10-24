@@ -296,18 +296,18 @@ void vam_search_accel(hpthread_t *th) {
     candidate_accel->th[cur_context] = th;
     th->accel = candidate_accel;
     th->accel_context = cur_context;
-    // Mark the context as allocated.
-    bitset_set(candidate_accel->valid_contexts, cur_context);
     // Configure the device allocated
     if (accel_allocated) {
         if (th->cpu_invoke) {
-            vam_configure_cpu_invoke(th, candidate_accel);
+            vam_configure_cpu_invoke(th, candidate_accel, cur_context);
         } else {
             vam_configure_accel(th, candidate_accel, cur_context);
         }
     } else {
         vam_configure_cpu(th, candidate_accel);
     }
+    // Mark the context as allocated.
+    bitset_set(candidate_accel->valid_contexts, cur_context);
 }
 
 void vam_configure_accel(hpthread_t *th, physical_accel_t *accel, unsigned context) {
@@ -333,7 +333,6 @@ void vam_configure_accel(hpthread_t *th, physical_accel_t *accel, unsigned conte
         esp_access_desc->src_offset = 0;
         esp_access_desc->dst_offset = 0;
         esp_access_desc->context_id = context;
-        // esp_access_desc->context_base_ptr = th->args->base_ptr;
         esp_access_desc->context_nprio = th->nprio;
         esp_access_desc->valid_contexts = accel->valid_contexts;
         esp_access_desc->sched_period = AVU_SCHED_PERIOD;
@@ -358,47 +357,61 @@ void vam_configure_accel(hpthread_t *th, physical_accel_t *accel, unsigned conte
     accel->context_active_cycles[context] = 0;
 }
 
-void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel) {
-    LOW_DEBUG(printf("[VAM] Launch CPU invoke thread for hpthread %s\n", hpthread_get_name(th));)
-    // Find SW kernel for this thread
-    void *(*sw_kernel)(void *);
-    switch(th->prim) {
-        case PRIM_GEMM: sw_kernel = gemm_invoke; break;
-        default: break;
-    }    
-    // Create a new CPU thread for the SW implementation of this node.
-    pthread_t cpu_thread;
-    th->args->kill_pthread = (bool *) malloc (sizeof(bool)); *(th->args->kill_pthread) = false;
-    cpu_invoke_args_t *args = (cpu_invoke_args_t *) malloc (sizeof(cpu_invoke_args_t)); 
-    args->args = th->args;
-    args->accel = accel;
-    // Create pthread attributes
-    pthread_attr_t attr;
-    if (pthread_attr_init(&attr) != 0) {
-        perror("attr_init");
-    }
-    // Set CPU affinity
-    cpu_set_t set;
-    CPU_ZERO(&set);
-    CPU_SET((core_affinity_ctr++) % cpu_online, &set);
-    if (pthread_attr_setaffinity_np(&attr, sizeof(set), &set) != 0) {
-        perror("pthread_attr_setaffinity_np");
-    }
-    // Set SCHED_RR scheduling policy with priority 1
-    if (pthread_attr_setschedpolicy(&attr, SCHED_RR) != 0) {
-        perror("pthread_attr_setschedpolicy");
-    }
-    struct sched_param sp = { .sched_priority = 1 };
-    if (pthread_attr_setschedparam(&attr, &sp) != 0) {
-        perror("pthread_attr_setschedparam");
-    }
-    if (pthread_create(&cpu_thread, &attr, sw_kernel, (void *) args) != 0) {
-        perror("Failed to create CPU thread\n");
-    }
-    pthread_attr_destroy(&attr);
+void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel, unsigned context) {
+    if (accel->init_done) {
+        LOW_DEBUG(printf("[VAM] Added hpthread %s to context %d of invoke thread on %s\n", hpthread_get_name(th), context, physical_accel_get_name(accel));)
+        bitset_reset(accel->args->valid_contexts_ack, context);
+    } else {
+        LOW_DEBUG(printf("[VAM] Launch CPU invoke thread for hpthread %s on %s\n", hpthread_get_name(th), physical_accel_get_name(accel));)
+        cpu_invoke_args_t *args = (cpu_invoke_args_t *) malloc (sizeof(cpu_invoke_args_t));
+        args->accel = accel;
+        bitset_reset_all(args->valid_contexts_ack);
+        for (int i = 0; i < MAX_CONTEXTS; i++) {
+            args->active_cycles[i] = 0;
+        }
+        args->kill_pthread = false;
+        accel->args = args;
+        // Find SW kernel for this thread
+        void *(*sw_kernel)(void *);
+        switch(th->prim) {
+            case PRIM_GEMM: sw_kernel = gemm_invoke; break;
+            default: break;
+        }    
+        // Create a new CPU thread for the SW implementation of this node.
+        pthread_t cpu_thread;
+        // Create pthread attributes
+        pthread_attr_t attr;
+        if (pthread_attr_init(&attr) != 0) {
+            perror("attr_init");
+        }
+        // Set CPU affinity
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        CPU_SET((core_affinity_ctr++) % cpu_online, &set);
+        if (pthread_attr_setaffinity_np(&attr, sizeof(set), &set) != 0) {
+            perror("pthread_attr_setaffinity_np");
+        }
+        // Set SCHED_RR scheduling policy with priority 1
+        if (pthread_attr_setschedpolicy(&attr, SCHED_RR) != 0) {
+            perror("pthread_attr_setschedpolicy");
+        }
+        struct sched_param sp = { .sched_priority = 1 };
+        if (pthread_attr_setschedparam(&attr, &sp) != 0) {
+            perror("pthread_attr_setschedparam");
+        }
+        // Set pthread attributes to be detached; no join required
+        if (pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0) {
+            perror("attr_setdetachstate");
+        }
+        if (pthread_create(&cpu_thread, &attr, sw_kernel, (void *) args) != 0) {
+            perror("Failed to create CPU thread\n");
+        }
+        pthread_attr_destroy(&attr);
 
-    // Add this thread to the physical_accel struct
-    accel->cpu_thread = cpu_thread;
+        // Add this thread to the physical_accel struct
+        accel->cpu_thread = cpu_thread;
+        accel->init_done = true;
+    }
 }
 
 void vam_configure_cpu(hpthread_t *th, physical_accel_t *accel) {
@@ -427,22 +440,28 @@ void vam_release_accel(hpthread_t *th) {
     // Free the allocated context.
     bitset_reset(accel->valid_contexts, context);
 
-    if (accel->prim == PRIM_NONE || accel->cpu_invoke) {
-        *(th->args->kill_pthread) = true;
-        pthread_join(accel->cpu_thread, NULL);
+    if (th->cpu_invoke) {
+        while(bitset_test(accel->args->valid_contexts_ack, context)) {
+            SCHED_YIELD;
+        }
     } else {
-        struct esp_access *esp_access_desc = accel->esp_access_desc;
-        {
-            esp_access_desc->context_id = context;
-            esp_access_desc->valid_contexts = accel->valid_contexts;
-        }
-        if (ioctl(accel->fd, accel->del_ctxt_ioctl, esp_access_desc)) {
-            perror("ioctl");
-            exit(EXIT_FAILURE);
-        }
-        // If there is no context active, we should re-init the accelerator the next time
-        if (bitset_none(accel->valid_contexts)) {
-            accel->init_done = false;
+        if (accel->prim == PRIM_NONE) {
+            *(th->args->kill_pthread) = true;
+            pthread_join(accel->cpu_thread, NULL);
+        } else {
+            struct esp_access *esp_access_desc = accel->esp_access_desc;
+            {
+                esp_access_desc->context_id = context;
+                esp_access_desc->valid_contexts = accel->valid_contexts;
+            }
+            if (ioctl(accel->fd, accel->del_ctxt_ioctl, esp_access_desc)) {
+                perror("ioctl");
+                exit(EXIT_FAILURE);
+            }
+            // If there is no context active, we should re-init the accelerator the next time
+            if (bitset_none(accel->valid_contexts)) {
+                accel->init_done = false;
+            }
         }
     }
 
@@ -489,10 +508,14 @@ void vam_check_utilization() {
         HIGH_DEBUG(
             printf("[VAM] Util of %s: ", physical_accel_get_name(cur_accel));
         )
-        if (ioctl(cur_accel->fd, ESP_IOC_MON, &mon)) {
-            perror("ioctl");
-            exit(EXIT_FAILURE);
+        if (cur_accel->cpu_invoke) {
+        } else {
+            if (ioctl(cur_accel->fd, ESP_IOC_MON, &mon)) {
+                perror("ioctl");
+                exit(EXIT_FAILURE);
+            }
         }
+
         uint64_t *mon_extended = (uint64_t *) mon.util;
         cur_accel->effective_util = 0;
 

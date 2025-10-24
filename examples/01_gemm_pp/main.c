@@ -94,8 +94,11 @@ int main(int argc, char **argv) {
         args->queue_ptr = i * (thread_offset) + input_queue_offset;
         th[i]->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
         hpthread_setargs(th[i], args);
-        hpthread_setname(th[i], "gemm");
+        char th_name[100];
+        snprintf(th_name, 384, "gemm.%d", i);
+        hpthread_setname(th[i], th_name);
         hpthread_setprimitive(th[i], PRIM_GEMM);
+        hpthread_setpriority(th[i], 1);
 
         HIGH_DEBUG(printf("[APP] Before hpthread create request for thread %d...\n", i));
 

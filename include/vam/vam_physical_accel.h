@@ -4,6 +4,14 @@
 #include <hpthread.h>
 #include <pthread.h>
 
+// Invoke arguments for CPU-invoked accelerators
+typedef struct {
+    physical_accel_t *accel;
+    bitset_t valid_contexts_ack;
+    uint64_t active_cycles[MAX_CONTEXTS];
+    bool kill_pthread;
+} cpu_invoke_args_t;
+
 // Definition of the physical accelerator struct
 // -- includes all information and current status of the physical accelerators
 // -- in the system. The same struct is reused to track CPU threads as well.
@@ -21,6 +29,7 @@ typedef struct physical_accel_t {
     physical_accel_t *next; // Next node in accel list
     pthread_t cpu_thread; // If mapped toa CPU, this is the pthread ID
     bool cpu_invoke; // Is the accelerator invoked by a CPU thread?
+    cpu_invoke_args_t *args; // If invoked by CPU, these are the arguments
 
     // ESP-relevant variables
     char devname[384]; // Name of device in file system
@@ -53,10 +62,5 @@ static inline void physical_accel_dump(physical_accel_t *accel) {
 static inline char *physical_accel_get_name(physical_accel_t *accel) {
     return accel->devname;
 }
-
-typedef struct {
-    hpthread_args_t *args;
-    physical_accel_t *accel;
-} cpu_invoke_args_t;
 
 #endif // __VAM_PHYSICAL_ACCEL_H__

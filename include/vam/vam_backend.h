@@ -21,7 +21,7 @@ void vam_search_accel(hpthread_t *th);
 // Once accelerator candidate is identified, configure the accelerator
 void vam_configure_accel(hpthread_t *th, physical_accel_t *accel, unsigned context);
 // Launch a CPU thread for invoking the accelerator
-void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel);
+void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel, unsigned context);
 // Similar as accelerator counterpart; this function launches a pthread.
 void vam_configure_cpu(hpthread_t *th, physical_accel_t *accel);
 // Release the accelerator allocated to the hpthread

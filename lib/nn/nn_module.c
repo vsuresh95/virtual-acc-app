@@ -134,7 +134,7 @@ void nn_module_create_hpthread(nn_module *m) {
                     // Create the hpthread general arguments
                     hpthread_args_t *args = (hpthread_args_t *) malloc(sizeof(hpthread_args_t));
                     args->mem = m->mem;
-                    size_t queue_len = GEMM_ENTRIES_OFFSET + (GEMM_QUEUE_SIZE * GEMM_ENTRY_SIZE);
+                    size_t queue_len = SM_ENTRY_SIZE + (GEMM_QUEUE_SIZE * GEMM_ENTRY_SIZE);
                     args->queue_ptr = m->mem_allocated; m->mem_allocated += queue_len;
                     // Init the queue
                     sm_queue_t *q = (sm_queue_t *) ((unsigned *) (m->mem) + args->queue_ptr);
