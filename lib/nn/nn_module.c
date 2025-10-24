@@ -50,7 +50,8 @@ void nn_module_load(nn_module *m, const char *n) {
             case 'N': { // Node
                 int node_id;
                 unsigned nn_op;
-                sscanf(in_line_buf+2, "%d %d", &node_id, &nn_op);
+                int ofs = 0;
+                sscanf(in_line_buf, "N %d %d %n", &node_id, &nn_op, &ofs);
                 switch(nn_op) {
                     case NN_OP_GEMM: { // GEMM operator
                         // Add a new GEMM node to the graph
@@ -59,8 +60,9 @@ void nn_module_load(nn_module *m, const char *n) {
                         // Read the parameters of the GEMM from the following chars
                         gemm_node_args *args = (gemm_node_args *) malloc (sizeof(gemm_node_args));
                         gemm_params_t *params= &(args->params);
-                        if (sscanf(in_line_buf+5, "%d %d %d %s", &params->dim_m, &params->dim_n, &params->dim_k, args->input_file) == 3) {
+                        if (sscanf(in_line_buf + ofs, "%d %d %d %s", &params->dim_m, &params->dim_n, &params->dim_k, args->input_file) == 3) {
                             // If no input file was provided, the pointer is marked invalid.
+                            HIGH_DEBUG(printf("[NN] No input file provided for GEMM node %d, using random data.\n", node_id);)
                             args->input_file[0] = '\n'; args->input_file[1] = '\0';
                         } 
                         gemm_node->args = (void *) args;
