@@ -126,6 +126,10 @@ void vam_probe_accel() {
                     perror("ioctl");
                     exit(EXIT_FAILURE);
                 }
+            } else {
+                // No reset required for CPU invoke threads
+                cpu_invoke_args_t *args = (cpu_invoke_args_t *) malloc (sizeof(cpu_invoke_args_t));
+                accel_temp->args = args;
             }
             insert_physical_accel(accel_temp);
             insert_hpthread_cand(cand_temp);
@@ -157,41 +161,41 @@ void *vam_run_backend(void *arg) {
 
         switch(state) {
             case VAM_IDLE: {
-                // // Examine the util across all accelerators in the system
-                // if (get_counter() - start_time > vam_sleep) {
-                //     float load_imbalance = vam_check_load_balance();
+                // Examine the util across all accelerators in the system
+                if (get_counter() - start_time > vam_sleep) {
+                    float load_imbalance = vam_check_load_balance();
                     
-                //     // Allow load balances if load is sufficiently low.
-                //     if ((load_imbalance <= LB_RETRY_RESET)) {
-                //         NUM_LB_RETRY = MAX_LB_RETRY;
-                //         load_imbalance_reg = load_imbalance; // reset baseline
-                //     }
+                    // // Allow load balances if load is sufficiently low.
+                    // if ((load_imbalance <= LB_RETRY_RESET)) {
+                    //     NUM_LB_RETRY = MAX_LB_RETRY;
+                    //     load_imbalance_reg = load_imbalance; // reset baseline
+                    // }
 
-                //     // If no retries allowed, but diff is large, allow retries
-                //     if ((NUM_LB_RETRY == 0) && fabsf(load_imbalance - load_imbalance_reg) > LB_RETRY_DIFF) NUM_LB_RETRY = MAX_LB_RETRY;
+                    // // If no retries allowed, but diff is large, allow retries
+                    // if ((NUM_LB_RETRY == 0) && fabsf(load_imbalance - load_imbalance_reg) > LB_RETRY_DIFF) NUM_LB_RETRY = MAX_LB_RETRY;
 
-                //     // Can we try a load balance?
-                //     if (NUM_LB_RETRY != 0 && load_imbalance > LB_RETRY_LOW) {
-                //         // Start the load balancing algorithm
-                //         LOW_DEBUG(printf("[VAM] Trigerring load balancer, imbalance=%0.2f\n", load_imbalance);)
-                //         if (!vam_load_balance()) {
-                //             // If the load balancing was not successful, reduce the retry count
-                //             NUM_LB_RETRY--;
-                //         }
-                //     }
+                    // // Can we try a load balance?
+                    // if (NUM_LB_RETRY != 0 && load_imbalance > LB_RETRY_LOW) {
+                    //     // Start the load balancing algorithm
+                    //     LOW_DEBUG(printf("[VAM] Trigerring load balancer, imbalance=%0.2f\n", load_imbalance);)
+                    //     if (!vam_load_balance()) {
+                    //         // If the load balancing was not successful, reduce the retry count
+                    //         NUM_LB_RETRY--;
+                    //     }
+                    // }
 
-                //     if (load_imbalance > LB_RETRY_HIGH) {
-                //         // If load is very imbalanced, sleep less
-                //         vam_sleep = VAM_SLEEP_MIN;
-                //     } else {
-                //         if (vam_sleep < VAM_SLEEP_MAX) vam_sleep += VAM_SLEEP_MIN;
-                //     }
+                    // if (load_imbalance > LB_RETRY_HIGH) {
+                    //     // If load is very imbalanced, sleep less
+                    //     vam_sleep = VAM_SLEEP_MIN;
+                    // } else {
+                    //     if (vam_sleep < VAM_SLEEP_MAX) vam_sleep += VAM_SLEEP_MIN;
+                    // }
 
-                //     // As a fallback, reset the retry every ~5 seconds of sleep
-                //     if (vam_sleep >= VAM_SLEEP_MID) NUM_LB_RETRY = MAX_LB_RETRY;
+                    // // As a fallback, reset the retry every ~5 seconds of sleep
+                    // if (vam_sleep >= VAM_SLEEP_MID) NUM_LB_RETRY = MAX_LB_RETRY;
 
-                //     start_time = get_counter();
-                // }
+                    start_time = get_counter();
+                }
                 break;
             }
             case VAM_CREATE: {
@@ -238,8 +242,8 @@ void *vam_run_backend(void *arg) {
 
 void vam_search_accel(hpthread_t *th) {
     HIGH_DEBUG(printf("[VAM] Searching accelerator for hpthread %s\n", hpthread_get_name(th));)
-    // // First, update the active utilization of each accelerator
-    // vam_check_utilization();
+    // First, update the active utilization of each accelerator
+    vam_check_utilization();
 
     // We will find a candidate accelerator that has the lowest utiilization.
     // If no accelerator candidates are found, we will consider the CPU as the only candidate.
@@ -363,14 +367,11 @@ void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel, unsigned 
         bitset_reset(accel->args->valid_contexts_ack, context);
     } else {
         LOW_DEBUG(printf("[VAM] Launch CPU invoke thread for hpthread %s on %s\n", hpthread_get_name(th), physical_accel_get_name(accel));)
-        cpu_invoke_args_t *args = (cpu_invoke_args_t *) malloc (sizeof(cpu_invoke_args_t));
-        args->accel = accel;
-        bitset_reset_all(args->valid_contexts_ack);
+        bitset_reset_all(accel->args->valid_contexts_ack);
         for (int i = 0; i < MAX_CONTEXTS; i++) {
-            args->active_cycles[i] = 0;
+            accel->args->active_cycles[i] = 0;
         }
-        args->kill_pthread = false;
-        accel->args = args;
+        accel->args->kill_pthread = false;
         // Find SW kernel for this thread
         void *(*sw_kernel)(void *);
         switch(th->prim) {
@@ -403,7 +404,7 @@ void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel, unsigned 
         if (pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0) {
             perror("attr_setdetachstate");
         }
-        if (pthread_create(&cpu_thread, &attr, sw_kernel, (void *) args) != 0) {
+        if (pthread_create(&cpu_thread, &attr, sw_kernel, (void *) accel) != 0) {
             perror("Failed to create CPU thread\n");
         }
         pthread_attr_destroy(&attr);
@@ -505,18 +506,20 @@ void vam_check_utilization() {
     physical_accel_t *cur_accel = accel_list;
     while(cur_accel != NULL) {
         struct avu_mon_desc mon;
+        uint64_t *mon_extended = (uint64_t *) mon.util;
         HIGH_DEBUG(
             printf("[VAM] Util of %s: ", physical_accel_get_name(cur_accel));
         )
         if (cur_accel->cpu_invoke) {
+            for (int i = 0; i < MAX_CONTEXTS; i++) {
+                mon_extended[i] = cur_accel->args->active_cycles[i];
+            }
         } else {
             if (ioctl(cur_accel->fd, ESP_IOC_MON, &mon)) {
                 perror("ioctl");
                 exit(EXIT_FAILURE);
             }
         }
-
-        uint64_t *mon_extended = (uint64_t *) mon.util;
         cur_accel->effective_util = 0;
 
         for (int i = 0; i < MAX_CONTEXTS; i++) {

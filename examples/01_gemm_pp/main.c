@@ -194,6 +194,7 @@ int main(int argc, char **argv) {
                         gemm_queue_pop(out_q[thread_id]);
                         __atomic_store_n(flag, 0, __ATOMIC_RELEASE);
                         outputs_remaining[thread_id]--;
+                        LOW_DEBUG( if (outputs_remaining[thread_id] % 1000 == 0) printf("[APP%d] Iter %d done!\n", thread_id, iterations - outputs_remaining[thread_id]); )
                     }
                 }
             }

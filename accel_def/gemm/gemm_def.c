@@ -39,8 +39,8 @@ static inline bool multi_poll(unsigned *flag, unsigned expected_value, unsigned 
 
 void *gemm_invoke(void *a) {
     // Read the arguments struct
-    cpu_invoke_args_t *args = (cpu_invoke_args_t *) a;
-    physical_accel_t *accel = args->accel;
+    physical_accel_t *accel = (physical_accel_t *) a;
+    cpu_invoke_args_t *args = accel->args;
     HIGH_DEBUG(printf("[INVOKE] Started invoke thread on %s\n", accel->devname);)
     bool *kill_pthread = &args->kill_pthread;
     bitset_t *valid_contexts_ack = &args->valid_contexts_ack;

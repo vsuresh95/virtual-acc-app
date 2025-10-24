@@ -6,7 +6,6 @@
 
 // Invoke arguments for CPU-invoked accelerators
 typedef struct {
-    physical_accel_t *accel;
     bitset_t valid_contexts_ack;
     uint64_t active_cycles[MAX_CONTEXTS];
     bool kill_pthread;
