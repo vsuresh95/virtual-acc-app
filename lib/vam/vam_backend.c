@@ -46,6 +46,7 @@ void wakeup_vam() {
     if (pthread_attr_init(&attr) != 0) {
         perror("attr_init");
     }
+    #ifdef DO_CPU_PIN
     // Set CPU affinity
     cpu_set_t set;
     CPU_ZERO(&set);
@@ -53,6 +54,8 @@ void wakeup_vam() {
     if (pthread_attr_setaffinity_np(&attr, sizeof(set), &set) != 0) {
         perror("pthread_attr_setaffinity_np");
     }
+    #endif
+    #ifdef DO_SCHED_RR
     // Set SCHED_RR scheduling policy with priority 1
     if (pthread_attr_setschedpolicy(&attr, SCHED_RR) != 0) {
         perror("pthread_attr_setschedpolicy");
@@ -61,6 +64,7 @@ void wakeup_vam() {
     if (pthread_attr_setschedparam(&attr, &sp) != 0) {
         perror("pthread_attr_setschedparam");
     }
+    #endif
     // Set pthread attributes to be detached; no join required
     if (pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0) {
         perror("attr_setdetachstate");
@@ -385,6 +389,7 @@ void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel, unsigned 
         if (pthread_attr_init(&attr) != 0) {
             perror("attr_init");
         }
+        #ifdef DO_CPU_PIN
         // Set CPU affinity
         cpu_set_t set;
         CPU_ZERO(&set);
@@ -392,6 +397,8 @@ void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel, unsigned 
         if (pthread_attr_setaffinity_np(&attr, sizeof(set), &set) != 0) {
             perror("pthread_attr_setaffinity_np");
         }
+        #endif
+        #ifdef DO_SCHED_RR
         // Set SCHED_RR scheduling policy with priority 1
         if (pthread_attr_setschedpolicy(&attr, SCHED_RR) != 0) {
             perror("pthread_attr_setschedpolicy");
@@ -400,6 +407,7 @@ void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel, unsigned 
         if (pthread_attr_setschedparam(&attr, &sp) != 0) {
             perror("pthread_attr_setschedparam");
         }
+        #endif
         // Set pthread attributes to be detached; no join required
         if (pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0) {
             perror("attr_setdetachstate");

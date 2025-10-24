@@ -18,6 +18,7 @@ int main(int argc, char **argv) {
     uint64_t t_release = 0;
     uint64_t t_start = 0;
 
+    #ifdef DO_CPU_PIN
     // Run main thread on CPU 0 always.
     long online = sysconf(_SC_NPROCESSORS_ONLN);
     if (online > 1) {
@@ -28,11 +29,14 @@ int main(int argc, char **argv) {
             perror("pthread_setaffinity_np");
         }
     }
+    #endif
+    #ifdef DO_SCHED_RR
     // Set scheduling attributes
     struct sched_param sp = { .sched_priority = 1 };
     if (pthread_setschedparam(pthread_self(), SCHED_RR, &sp) != 0) {
         perror("pthread_setschedparam");
     }
+    #endif
 
     for (int i = 0; i < iterations; i++) {
         // Load a model from a text file (and) register with NN frontend
