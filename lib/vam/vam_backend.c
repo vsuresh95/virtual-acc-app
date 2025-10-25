@@ -149,10 +149,9 @@ void *vam_run_backend(void *arg) {
 	HIGH_DEBUG(printf("[VAM] Hello from VAM BACKEND!\n");)
     // populate the list of physical accelerators in the system
     vam_probe_accel();
+    bool kill_vam = false;
 
-    uint64_t start_time = get_counter();
     uint64_t vam_sleep = VAM_SLEEP_MIN;
-
     // const float LB_RETRY_HIGH = 0.5;
     // const float LB_RETRY_LOW = 0.25;
     // const float LB_RETRY_DIFF = 0.25;
@@ -167,11 +166,10 @@ void *vam_run_backend(void *arg) {
 
         switch(state) {
             case VAM_IDLE: {
-                // Examine the util across all accelerators in the system
-                if (get_counter() - start_time > vam_sleep) {
-                    float load_imbalance = vam_check_load_balance();
-                    // Write the current utilization to the log
-                    vam_log_utilization();
+                // Examine the util across all accelerators in the system                
+                float load_imbalance = vam_check_load_balance();
+                // Write the current utilization to the log
+                vam_log_utilization();
                     
                     // // Allow load balances if load is sufficiently low.
                     // if ((load_imbalance <= LB_RETRY_RESET)) {
@@ -201,9 +199,6 @@ void *vam_run_backend(void *arg) {
 
                     // // As a fallback, reset the retry every ~5 seconds of sleep
                     // if (vam_sleep >= VAM_SLEEP_MID) NUM_LB_RETRY = MAX_LB_RETRY;
-
-                    start_time = get_counter();
-                }
                 break;
             }
             case VAM_CREATE: {
@@ -224,6 +219,7 @@ void *vam_run_backend(void *arg) {
             case VAM_REPORT: {
                 HIGH_DEBUG(printf("[VAM] Received a report request\n");)
                 vam_print_report();
+                kill_vam = true;
                 break;
             }
             case VAM_QUERY: {
@@ -239,11 +235,11 @@ void *vam_run_backend(void *arg) {
             // Set the interface state to DONE
             hpthread_intf_set(VAM_DONE);
             HIGH_DEBUG(printf("[VAM] Completed the processing of request.\n");)
-            // Reset trigger delay after servicing a request
-            start_time = get_counter();
+            // Reset sleep delay after servicing a request
             vam_sleep = VAM_SLEEP_MIN;
         }
-        sched_yield();
+        if (kill_vam) break;
+        sleep(vam_sleep);
     }
     return NULL;
 }
@@ -412,10 +408,6 @@ void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel, unsigned 
             perror("pthread_attr_setschedparam");
         }
         #endif
-        // Set pthread attributes to be detached; no join required
-        if (pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0) {
-            perror("attr_setdetachstate");
-        }
         if (pthread_create(&cpu_thread, &attr, sw_kernel, (void *) accel) != 0) {
             perror("Failed to create CPU thread\n");
         }
@@ -722,7 +714,7 @@ bool vam_load_balance() {
 void vam_log_utilization() {
     physical_accel_t *cur_accel = accel_list;
     while (cur_accel != NULL) {
-        HIGH_DEBUG( printf("[VAM] Logging utilization for %s: ", physical_accel_get_name(cur_accel)); )
+        HIGH_DEBUG( printf("[VAM] Logging utilization for %s\n", physical_accel_get_name(cur_accel)); )
         util_entry_t *new_entry = (util_entry_t *) malloc (sizeof(util_entry_t));
         for (int i = 0; i < MAX_CONTEXTS; i++) {
             if (bitset_test(cur_accel->valid_contexts, i)) {
@@ -740,6 +732,15 @@ void vam_log_utilization() {
 }
 
 void vam_print_report() {
+    // Since this is end of test, kill any running pthreads
+    physical_accel_t *cur_accel = accel_list;
+    while (cur_accel != NULL) {
+        if (cur_accel->cpu_invoke && cur_accel->init_done) {
+            cur_accel->args->kill_pthread = true;
+            pthread_join(cur_accel->cpu_thread, NULL);
+        }
+        cur_accel = cur_accel->next;
+    }
     // Print out the total utilization
     printf("-----------------------------------------------------------------------\n");
     printf("  #\tAccel\t\t\tC0\tC1\tC2\tC3\tTotal\n");

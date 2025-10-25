@@ -4,9 +4,9 @@
 // VAM backend is responsible for map virutal hpthreads to physical accelerators
 // (or CPU threads) and tracking utilization of these mappings
 
-#define VAM_SLEEP_MIN       2 * 78125000 // ~2 seconds
-#define VAM_SLEEP_MID       5 * 78125000 // ~5 seconds
-#define VAM_SLEEP_MAX       10 * 78125000 // ~10 seconds
+#define VAM_SLEEP_MIN       1 // 78125000 // ~1 second
+#define VAM_SLEEP_MID       5 // * 78125000 // ~5 seconds
+#define VAM_SLEEP_MAX       10 // * 78125000 // ~10 seconds
 // Default scheduling period of AVU
 #define AVU_SCHED_PERIOD    0x800000
 // Cooldown timer for migration

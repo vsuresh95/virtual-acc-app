@@ -99,7 +99,6 @@ int main(int argc, char **argv) {
         perror("pthread_attr_setschedparam");
     }
     #endif
-    // Create VAM pthread
     if (pthread_create(&rsp_th, &attr, rsp_thread, (void *) args) != 0) {
         perror("pthread_create");
         exit(1);

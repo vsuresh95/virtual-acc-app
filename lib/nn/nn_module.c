@@ -4,11 +4,6 @@
 #include <string.h>
 #include <libesp.h>
 
-static unsigned gemm_node_count = 0;
-
-HIGH_DEBUG(static unsigned req_count = 0;)
-HIGH_DEBUG(static unsigned rsp_count = 0;)
-
 // Load a model using a description in a txt model_def
 void nn_module_load(nn_module *m, const char *n) {
     // Check if the model description file exists
@@ -25,6 +20,8 @@ void nn_module_load(nn_module *m, const char *n) {
     m->mem = esp_alloc(mem_size);
     m->mem_allocated = 0;
     m->pingpong_cnt_in = m->pingpong_cnt_out = 0;
+    m->gemm_node_count = 0;
+    HIGH_DEBUG(m->req_count = 0; m->rsp_count = 0;)
 
 	char in_line_buf[256]; // Max 256 characters in one line
     if (fgets(in_line_buf, 100, model_def) != NULL) {
@@ -35,14 +32,14 @@ void nn_module_load(nn_module *m, const char *n) {
 	    char module_name[50];
         sscanf(in_line_buf, "%s %d", module_name, &m->nprio);
         snprintf(m->graph->name, 100, "%s.%d", module_name, m->id);
-	    HIGH_DEBUG(printf("[NN] MODEL NAME = %s\n", nn_module_get_name(m)));
+	    HIGH_DEBUG(printf("[NN%d] MODEL NAME = %s\n", m->id, nn_module_get_name(m)));
     }
 
     while (fgets(in_line_buf, 256, model_def) != NULL) {
         if ((strlen(in_line_buf) > 0) && (in_line_buf[strlen (in_line_buf) - 1] == '\n')) {
             in_line_buf[strlen(in_line_buf) - 1] = '\0';
         }
-	    HIGH_DEBUG(printf("[NN] IN LINE = %s\n", in_line_buf));
+	    HIGH_DEBUG(printf("[NN%d] IN LINE = %s\n", m->id, in_line_buf));
 
         // Check first letter of trace line
         char type = in_line_buf[0];
@@ -62,7 +59,7 @@ void nn_module_load(nn_module *m, const char *n) {
                         gemm_params_t *params= &(args->params);
                         if (sscanf(in_line_buf + ofs, "%d %d %d %s", &params->dim_m, &params->dim_n, &params->dim_k, args->input_file) == 3) {
                             // If no input file was provided, the pointer is marked invalid.
-                            HIGH_DEBUG(printf("[NN] No input file provided for GEMM node %d, using random data.\n", node_id);)
+                            HIGH_DEBUG(printf("[NN%d] No input file provided for GEMM node %d, using random data.\n", m->id, node_id);)
                             args->input_file[0] = '\n'; args->input_file[1] = '\0';
                         } 
                         gemm_node->args = (void *) args;
@@ -70,10 +67,10 @@ void nn_module_load(nn_module *m, const char *n) {
                         nn_graph_add_nn_node(m->graph, gemm_node);
                         snprintf(gemm_node->name, 120, "%s.gemm.%d", m->graph->name, node_id);
                         HIGH_DEBUG(
-                            printf("\t[NN] Adding node %s...", nn_node_get_name(gemm_node));
+                            printf("\t[NN%d] Adding node %s...", m->id, nn_node_get_name(gemm_node));
                             nn_node_dump(gemm_node);
                         )
-                        gemm_node_count++;
+                        m->gemm_node_count++;
                         break;
                     }
                     case NN_OP_NONE: {
@@ -101,7 +98,7 @@ void nn_module_load(nn_module *m, const char *n) {
                 nn_node_add_out_edge(src, e);
                 nn_node_add_in_edge(dst, e);
                 HIGH_DEBUG(
-                    printf("\t[NN] Adding edge...");
+                    printf("\t[NN%d] Adding edge...", m->id);
                     nn_edge_dump(e);
                 )
                 break;
@@ -110,7 +107,7 @@ void nn_module_load(nn_module *m, const char *n) {
             case '#': // Comment
                 break;
             default:
-                printf("[APP] Bad character read at 0!");
+                printf("[NN%d] Bad character read at 0!", m->id);
                 break;
         }
     }
@@ -125,7 +122,7 @@ void nn_module_register(nn_module *m) {
 
 void nn_module_create_hpthread(nn_module *m) {
     // First, we will create hpthreads for each layer or each accel (whichever smaller)
-    unsigned local_gemm_count = gemm_node_count;
+    unsigned local_gemm_count = m->gemm_node_count;
     hpthread_cand_t *cand_list = hpthread_query();
     m->th_list = NULL;
     m->descr_list = NULL;
@@ -148,11 +145,11 @@ void nn_module_create_hpthread(nn_module *m) {
                     hpthread_init(th, m->id + 1);
                     hpthread_setargs(th, args);
 	                char hpthread_name[50];
-                    snprintf(hpthread_name, 50, "gemm_th.%d", gemm_node_count - local_gemm_count);
+                    snprintf(hpthread_name, 50, "gemm_th.%d", m->gemm_node_count - local_gemm_count);
                     hpthread_setname(th, hpthread_name);
                     hpthread_setprimitive(th, PRIM_GEMM);
                     hpthread_setpriority(th, m->nprio);
-                    HIGH_DEBUG(printf("[NN] Before hpthread create for %s...\n", hpthread_name));
+                    HIGH_DEBUG(printf("[NN%d] Before hpthread create for %s...\n", m->id, hpthread_name));
                     // Create a hpthread
                     hpthread_create(th);
                     // Assign the thread to the model list
@@ -180,13 +177,13 @@ void nn_module_create_descr(nn_module *m) {
     // Add entry to queue and set
     nn_queue_push(q, entry);
     nn_set_add_node(&visited, entry);
-    LOW_DEBUG(printf("[NN] Parsing NN graph for %s\n", nn_module_get_name(m)));
+    LOW_DEBUG(printf("[NN%d] Parsing NN graph for %s\n", m->id, nn_module_get_name(m)));
 
     while (q->head != NULL) { // !empty
         nn_node_t *current = nn_queue_pop(q);
         if (!current) break;
 
-        HIGH_DEBUG(printf("[NN] Found node %s(%d)\n", nn_node_dump_op(current), current->id));
+        HIGH_DEBUG(printf("[NN%d] Found node %s(%d)\n", m->id, nn_node_dump_op(current), current->id));
 
         // Iterate through all out edges of this node and add the destinations to the visitor set and the BFS queue.
         nn_edge_list *cons = current->out_edges;
@@ -302,7 +299,7 @@ void nn_module_setpriority(nn_module *m, unsigned nprio) {
 }
 
 void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len) {
-    HIGH_DEBUG(printf("[NN] Starting nn_module_req for %s\n", nn_module_get_name(m)));
+    HIGH_DEBUG(printf("[NN%d] Starting nn_module_req for %s\n", m->id, nn_module_get_name(m)));
     // Traverse the task descriptor list and assign each descriptor to an hpthread queue
     nn_task_descr *descr_list = m->descr_list;
     nn_hpthread_list *th_list = m->th_list;
@@ -311,7 +308,7 @@ void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len) {
     while (descr_list != NULL) {
         switch(descr_list->prim) {
             case PRIM_GEMM: {
-                HIGH_DEBUG(printf("[NN] Programming PRIM_GEMM descr %d for req %d...\n", descr_cnt, req_count););
+                HIGH_DEBUG(printf("[NN%d] Programming PRIM_GEMM descr %d for req %d...\n", m->id, descr_cnt, m->req_count););
                 gemm_task_descr *descr = (gemm_task_descr *) descr_list;
                 gemm_params_t *params = &(descr->params[pingpong]);
                 // Try to send each param to one of the queues in round robin fashion
@@ -325,7 +322,7 @@ void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len) {
                 if (th_list->th->prim == PRIM_GEMM) {
                     while(!gemm_queue_push(q, &e)) { SCHED_YIELD; }
                 }
-                HIGH_DEBUG(printf("[NN] Enqueued descr %d to hpthread %s.\n", descr_cnt++, hpthread_get_name(th_list->th)));
+                HIGH_DEBUG(printf("[NN%d] Enqueued descr %d to hpthread %s.\n", m->id, descr_cnt++, hpthread_get_name(th_list->th)));
 
                 // For the next descriptor, we should try the next queue
                 th_list = th_list->next;
@@ -342,7 +339,7 @@ void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len) {
         memcpy(input_addr, input_data, data_len);
     )
     __atomic_store_n(m->input_flag[pingpong], 1, __ATOMIC_RELEASE);
-    HIGH_DEBUG(printf("[NN] Input flag set %d...\n", req_count++));
+    HIGH_DEBUG(printf("[NN%d] Input flag set %d...\n", m->id, m->req_count++));
 }
 
 void nn_module_rsp(nn_module *m, nn_token_t *output_data, unsigned data_len) {
@@ -354,7 +351,20 @@ void nn_module_rsp(nn_module *m, nn_token_t *output_data, unsigned data_len) {
         memcpy(output_data, output_addr, data_len);
     )
     __atomic_store_n(m->output_flag[pingpong], 0, __ATOMIC_RELEASE);
-    HIGH_DEBUG(printf("[NN] Output flag test success %d...\n", rsp_count++));
+    HIGH_DEBUG(printf("[NN%d] Output flag test success %d...\n", m->id, m->rsp_count++));
+}
+
+bool nn_module_rsp_check(nn_module *m, nn_token_t *output_data, unsigned data_len) {
+    // Wait for inference to finish
+    unsigned pingpong = (m->pingpong_cnt_out++) % PINGPONG; 
+    if(__atomic_load_n(m->output_flag[pingpong], __ATOMIC_ACQUIRE) != 1) return false;
+    LOW_DEBUG (
+        nn_token_t *output_addr = (nn_token_t *) (m->output_flag[pingpong]) + (PAYLOAD_OFFSET/sizeof(nn_token_t));
+        memcpy(output_data, output_addr, data_len);
+    )
+    __atomic_store_n(m->output_flag[pingpong], 0, __ATOMIC_RELEASE);
+    return true;
+    HIGH_DEBUG(printf("[NN%d] Output flag test success %d...\n", m->id, m->rsp_count++));
 }
 
 void nn_queue_push(nn_queue_t *q, nn_node_t *n) {
@@ -430,7 +440,7 @@ void nn_module_add_task_descr(nn_module *m, nn_task_descr *descr) {
 }
 
 void print_descr_list(nn_module *m) {
-    printf("[NN] Printing task descriptor for model %s...\n", nn_module_get_name(m));
+    printf("[NN%d] Printing task descriptor for model %s...\n", m->id, nn_module_get_name(m));
     nn_task_descr *descr_list = m->descr_list;
     unsigned count = 0;
     while (descr_list != NULL) {
@@ -456,7 +466,7 @@ void print_descr_list(nn_module *m) {
 }
 
 void print_hpthread_list(nn_module *m) {
-    printf("[NN] Printing hpthread list for model %s...\n", nn_module_get_name(m));
+    printf("[NN%d] Printing hpthread list for model %s...\n", m->id, nn_module_get_name(m));
     nn_hpthread_list *th_list = m->th_list;
     unsigned count = 0;
     while (th_list != NULL) {
