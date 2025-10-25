@@ -13,10 +13,12 @@ void *rsp_thread(void *a) {
     nn_module *m = args->m;
     unsigned iterations = args->iterations;
     nn_token_t *output_data = (nn_token_t *) malloc (1);
+    unsigned print_iterations = iterations / 5;
 
     for (int i = 0; i < iterations + 5; i++) {
         nn_module_rsp(m, output_data, 0);
         SCHED_YIELD;
+        if (i % print_iterations == 0) printf("[APP] Iter %d done!\n", i);
     }
     return NULL;
 }
@@ -124,8 +126,11 @@ int main(int argc, char **argv) {
         SCHED_YIELD;
         #ifdef DO_CHAIN
         nn_module_rsp(m, output_data, 0);
+        LOW_DEBUG( 
+            unsigned print_iterations = iterations / 5;
+            if (i % print_iterations == 0) printf("[APP] Iter %d done!\n", i);
+        )
         #endif
-        LOW_DEBUG( if (i % 100 == 0) printf("[APP] Iter %d done!\n", i); )
     }
     uint64_t t_loop = get_counter() - t_start;
     printf("[APP] Average time = %lu\n", t_loop/iterations);
@@ -135,4 +140,5 @@ int main(int argc, char **argv) {
     #endif
     nn_module_release(m);
     free(m);
+    hpthread_report();
 }

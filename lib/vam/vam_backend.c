@@ -35,6 +35,8 @@ static uint8_t core_affinity_ctr = 0;
 long cpu_online;
 // Physical accelerator list
 hpthread_cand_t *hpthread_cand_list = NULL;
+// Number of util epochs tracked
+unsigned util_epoch_count = 0;
 
 // Function to wake up VAM for the first time
 void wakeup_vam() {
@@ -168,6 +170,8 @@ void *vam_run_backend(void *arg) {
                 // Examine the util across all accelerators in the system
                 if (get_counter() - start_time > vam_sleep) {
                     float load_imbalance = vam_check_load_balance();
+                    // Write the current utilization to the log
+                    vam_log_utilization();
                     
                     // // Allow load balances if load is sufficiently low.
                     // if ((load_imbalance <= LB_RETRY_RESET)) {
@@ -219,7 +223,7 @@ void *vam_run_backend(void *arg) {
             }
             case VAM_REPORT: {
                 HIGH_DEBUG(printf("[VAM] Received a report request\n");)
-                // print_report();
+                vam_print_report();
                 break;
             }
             case VAM_QUERY: {
@@ -713,4 +717,59 @@ bool vam_load_balance() {
         vam_configure_accel(move_th_min, max_util_accel, best_context_max);
     }
     return true;
+}
+
+void vam_log_utilization() {
+    physical_accel_t *cur_accel = accel_list;
+    while (cur_accel != NULL) {
+        HIGH_DEBUG( printf("[VAM] Logging utilization for %s: ", physical_accel_get_name(cur_accel)); )
+        util_entry_t *new_entry = (util_entry_t *) malloc (sizeof(util_entry_t));
+        for (int i = 0; i < MAX_CONTEXTS; i++) {
+            if (bitset_test(cur_accel->valid_contexts, i)) {
+                new_entry->util[i] = cur_accel->context_util[i];
+            } else {
+                new_entry->util[i] = 0.0;
+            }
+        }
+        // Add new entry to the front of the util list
+        new_entry->next = cur_accel->util_entry_list;
+        cur_accel->util_entry_list = new_entry;
+        cur_accel = cur_accel->next;
+    }
+    util_epoch_count++;
+}
+
+void vam_print_report() {
+    // Print out the total utilization
+    printf("-----------------------------------------------------------------------\n");
+    printf("  #\tAccel\t\t\tC0\tC1\tC2\tC3\tTotal\n");
+    printf("-----------------------------------------------------------------------\n");
+    for (int i = 0; i < util_epoch_count; i++) {
+        printf("  %d", i);
+        physical_accel_t *cur_accel = accel_list;
+        while (cur_accel != NULL) {
+            printf("\t%s\t\t", physical_accel_get_name(cur_accel));
+            float total_util = 0.0;
+            util_entry_t *entry = cur_accel->util_entry_list;
+            util_entry_t *prev = NULL;
+            // Traverse to the end of the list to get the oldest entry
+            while (entry->next != NULL) {
+                prev = entry;
+                entry = entry->next;
+            }
+            for (int j = 0; j < MAX_CONTEXTS; j++) {
+                total_util += entry->util[j];
+                printf("%0.2f%%\t", entry->util[j]*100);
+            }
+            printf("%0.2f%%\n", total_util*100);
+            // Delete the oldest entry after printing
+            if (prev != NULL) {
+                prev->next = NULL;
+            } else {
+                cur_accel->util_entry_list = NULL;
+            }
+            free(entry);
+            cur_accel = cur_accel->next;
+        }
+    }
 }

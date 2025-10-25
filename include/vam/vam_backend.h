@@ -38,5 +38,9 @@ void vam_check_utilization();
 float vam_check_load_balance();
 // Runs the load balancing algorithm across all accelerators
 bool vam_load_balance();
+// Read the current utilization and add to log
+void vam_log_utilization();
+// Print out the utilization metrics for the previous epochs in a pretty format
+void vam_print_report();
 
 #endif // __VAM_BACKEND_H__
