@@ -46,8 +46,10 @@ void *gemm_invoke(void *a) {
     bitset_t *valid_contexts_ack = &args->valid_contexts_ack;
     uint64_t *context_runtime = args->active_cycles; // for VAM
     uint64_t context_vruntime[MAX_CONTEXTS] = {0}; // for local multiplexing
+    unsigned vruntime_scale[MAX_CONTEXTS] = {1}; // to penalize idle threads
+    struct timespec start_time, stop_time;                     
     uint64_t sched_period_elapsed = get_counter();
-    const uint64_t SCHED_PERIOD = 78125000; // 1s
+    const uint64_t SCHED_PERIOD = 7812500; // 100ms
     unsigned current_context = 0;
     hpthread_t **th = accel->th;
     HIGH_DEBUG(unsigned invoke_count[MAX_CONTEXTS] = {0};)
@@ -88,6 +90,7 @@ void *gemm_invoke(void *a) {
         for (int i = 0; i < MAX_CONTEXTS; i++) {
             if (!bitset_test(accel->valid_contexts, new_context)) {
                 context_vruntime[new_context] = UINT64_MAX;
+                vruntime_scale[new_context] = 1;
             } else {
                 unsigned nprio = th[new_context]->nprio;
                 if (bitset_test(accel->valid_contexts, new_context) && nprio < min_nprio && context_vruntime[new_context] == min_vruntime) {
@@ -142,9 +145,11 @@ void *gemm_invoke(void *a) {
         unsigned *mem = (unsigned *) h_args->mem;
         gemm_queue_t *q = (gemm_queue_t *) &mem[h_args->queue_ptr];
         unsigned nprio = th[current_context]->nprio;
+        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start_time);
 
         gemm_queue_entry_t *e = gemm_queue_can_pop(q);
         if (e != NULL) {
+            vruntime_scale[current_context] = 1; // Reset penalty
             gemm_params_t *params = &(e->gemm_params);
             gemm_access_desc[current_context]->dim_m = params->dim_m;
             gemm_access_desc[current_context]->dim_n = params->dim_n;
@@ -172,9 +177,13 @@ void *gemm_invoke(void *a) {
             __atomic_store_n(output_flag, 1, __ATOMIC_RELEASE);
             uint64_t *mon_extended = (uint64_t *) esp_access_desc->mon_info.util;
             context_runtime[current_context] += mon_extended[0]; // Single context only
-            context_vruntime[current_context] += (mon_extended[0] * nprio);
             HIGH_DEBUG(printf("[INVOKE] Finished GEMM %d for context %d on %s\n", invoke_count[current_context]++, current_context, accel->devname);)
+        } else {
+            vruntime_scale[current_context] += 1; // Penalize for idling
         }
+        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &stop_time);
+        context_vruntime[current_context] += (nprio * vruntime_scale[current_context]) * (uint64_t)(stop_time.tv_sec - start_time.tv_sec) * 1000000000ull;
+        context_vruntime[current_context] += (nprio * vruntime_scale[current_context]) * (uint64_t)(stop_time.tv_nsec - start_time.tv_nsec);
         SCHED_YIELD;
     }
 

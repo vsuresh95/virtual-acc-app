@@ -90,7 +90,7 @@ int main(int argc, char **argv) {
     #ifdef DO_SCHED_RR
     // Set scheduling attributes
     struct sched_param sp = { .sched_priority = 1 };
-    if (pthread_setschedparam(pthread_self(), SCHED_RR, &sp) != 0) {
+    if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) != 0) {
         perror("pthread_setschedparam");
     }
     #endif
@@ -101,7 +101,7 @@ int main(int argc, char **argv) {
     bool *start = (bool *) malloc (sizeof(bool)); *start = false;
     for (int i = 0; i < n_threads; i++) {
         thread_args *args = (thread_args *) malloc (sizeof(thread_args));
-        args->iterations = iterations;
+        args->iterations = (i+1) * iterations;
         args->start = start;
         args->next = NULL;
 
@@ -127,7 +127,7 @@ int main(int argc, char **argv) {
         #endif
         #ifdef DO_SCHED_RR
         // Set SCHED_RR scheduling policy with priority 1
-        if (pthread_attr_setschedpolicy(&attr, SCHED_RR) != 0) {
+        if (pthread_attr_setschedpolicy(&attr, SCHED_FIFO) != 0) {
             perror("pthread_attr_setschedpolicy");
         }
         if (pthread_attr_setschedparam(&attr, &sp) != 0) {
@@ -167,7 +167,7 @@ int main(int argc, char **argv) {
     #endif
     #ifdef DO_SCHED_RR
     // Set SCHED_RR scheduling policy with priority 1
-    if (pthread_attr_setschedpolicy(&attr, SCHED_RR) != 0) {
+    if (pthread_attr_setschedpolicy(&attr, SCHED_FIFO) != 0) {
         perror("pthread_attr_setschedpolicy");
     }
     if (pthread_attr_setschedparam(&attr, &sp) != 0) {
@@ -180,17 +180,23 @@ int main(int argc, char **argv) {
     }
     pthread_attr_destroy(&attr);
 
+    unsigned old_iters_remaining[n_threads];
+    unsigned total_remaining, old_remaining;
+    thread_args *th_args = head;
+    for (unsigned i = 0; i < n_threads; i++) {
+        old_iters_remaining[i] = th_args->iterations;
+        total_remaining += old_iters_remaining[i];
+        old_remaining += old_iters_remaining[i];
+        th_args = th_args->next;
+    }
+
     // Wait for all threads to wake up
     sleep(1);
     // Signal all threads to start
     *start = true;
 
     // Periodically monitor number of iterations executed by workers
-    unsigned old_iters_remaining[n_threads];
-    for (unsigned i = 0; i < n_threads; i++) old_iters_remaining[i] = iterations;
-    unsigned total_remaining = n_threads * iterations;
     const unsigned sleep_seconds = 2;
-    unsigned old_remaining = n_threads * iterations;
     while (total_remaining != 0) {
         thread_args *args = head;
         sleep(sleep_seconds);
@@ -198,7 +204,7 @@ int main(int argc, char **argv) {
         for (unsigned i = 0; i < n_threads; i++) {
             unsigned new_iters_remaining = __atomic_load_n(&args->iterations, __ATOMIC_ACQUIRE);
             unsigned diff = old_iters_remaining[i] - new_iters_remaining;
-            float ips = (diff) / sleep_seconds;
+            float ips = (float) (diff) / sleep_seconds;
             old_iters_remaining[i] = new_iters_remaining;
             total_remaining -= diff;
             printf("T%d:%0.2f(%d), ", i, ips, new_iters_remaining);

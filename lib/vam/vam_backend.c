@@ -59,7 +59,7 @@ void wakeup_vam() {
     #endif
     #ifdef DO_SCHED_RR
     // Set SCHED_RR scheduling policy with priority 1
-    if (pthread_attr_setschedpolicy(&attr, SCHED_RR) != 0) {
+    if (pthread_attr_setschedpolicy(&attr, SCHED_FIFO) != 0) {
         perror("pthread_attr_setschedpolicy");
     }
     struct sched_param sp = { .sched_priority = 1 };
@@ -400,7 +400,7 @@ void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel, unsigned 
         #endif
         #ifdef DO_SCHED_RR
         // Set SCHED_RR scheduling policy with priority 1
-        if (pthread_attr_setschedpolicy(&attr, SCHED_RR) != 0) {
+        if (pthread_attr_setschedpolicy(&attr, SCHED_FIFO) != 0) {
             perror("pthread_attr_setschedpolicy");
         }
         struct sched_param sp = { .sched_priority = 1 };
