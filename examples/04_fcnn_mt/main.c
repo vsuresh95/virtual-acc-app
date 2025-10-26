@@ -201,12 +201,12 @@ int main(int argc, char **argv) {
         thread_args *args = head;
         sleep(sleep_seconds);
         printf("[MAIN] IPS = ");
+        total_remaining = 0;
         for (unsigned i = 0; i < n_threads; i++) {
             unsigned new_iters_remaining = __atomic_load_n(&args->iterations, __ATOMIC_ACQUIRE);
-            unsigned diff = old_iters_remaining[i] - new_iters_remaining;
-            float ips = (float) (diff) / sleep_seconds;
+            float ips = (float) (old_iters_remaining[i] - new_iters_remaining) / sleep_seconds;
             old_iters_remaining[i] = new_iters_remaining;
-            total_remaining -= diff;
+            total_remaining += new_iters_remaining;
             printf("T%d:%0.2f(%d), ", i, ips, new_iters_remaining);
             args = args->next;
         }
