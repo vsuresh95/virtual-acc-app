@@ -35,6 +35,8 @@ static uint8_t core_affinity_ctr = 0;
 long cpu_online;
 // Physical accelerator list
 hpthread_cand_t *hpthread_cand_list = NULL;
+// Number of util epochs tracked
+unsigned util_epoch_count = 0;
 
 // Function to wake up VAM for the first time
 void wakeup_vam() {
@@ -46,6 +48,7 @@ void wakeup_vam() {
     if (pthread_attr_init(&attr) != 0) {
         perror("attr_init");
     }
+    #ifdef DO_CPU_PIN
     // Set CPU affinity
     cpu_set_t set;
     CPU_ZERO(&set);
@@ -53,14 +56,17 @@ void wakeup_vam() {
     if (pthread_attr_setaffinity_np(&attr, sizeof(set), &set) != 0) {
         perror("pthread_attr_setaffinity_np");
     }
+    #endif
+    #ifdef DO_SCHED_RR
     // Set SCHED_RR scheduling policy with priority 1
-    if (pthread_attr_setschedpolicy(&attr, SCHED_RR) != 0) {
+    if (pthread_attr_setschedpolicy(&attr, SCHED_FIFO) != 0) {
         perror("pthread_attr_setschedpolicy");
     }
     struct sched_param sp = { .sched_priority = 1 };
     if (pthread_attr_setschedparam(&attr, &sp) != 0) {
         perror("pthread_attr_setschedparam");
     }
+    #endif
     // Set pthread attributes to be detached; no join required
     if (pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0) {
         perror("attr_setdetachstate");
@@ -126,6 +132,10 @@ void vam_probe_accel() {
                     perror("ioctl");
                     exit(EXIT_FAILURE);
                 }
+            } else {
+                // No reset required for CPU invoke threads
+                cpu_invoke_args_t *args = (cpu_invoke_args_t *) malloc (sizeof(cpu_invoke_args_t));
+                accel_temp->args = args;
             }
             insert_physical_accel(accel_temp);
             insert_hpthread_cand(cand_temp);
@@ -139,10 +149,9 @@ void *vam_run_backend(void *arg) {
 	HIGH_DEBUG(printf("[VAM] Hello from VAM BACKEND!\n");)
     // populate the list of physical accelerators in the system
     vam_probe_accel();
+    bool kill_vam = false;
 
-    uint64_t start_time = get_counter();
     uint64_t vam_sleep = VAM_SLEEP_MIN;
-
     // const float LB_RETRY_HIGH = 0.5;
     // const float LB_RETRY_LOW = 0.25;
     // const float LB_RETRY_DIFF = 0.25;
@@ -157,41 +166,39 @@ void *vam_run_backend(void *arg) {
 
         switch(state) {
             case VAM_IDLE: {
-                // // Examine the util across all accelerators in the system
-                // if (get_counter() - start_time > vam_sleep) {
-                //     float load_imbalance = vam_check_load_balance();
+                // Examine the util across all accelerators in the system                
+                float load_imbalance = vam_check_load_balance();
+                // Write the current utilization to the log
+                vam_log_utilization();
                     
-                //     // Allow load balances if load is sufficiently low.
-                //     if ((load_imbalance <= LB_RETRY_RESET)) {
-                //         NUM_LB_RETRY = MAX_LB_RETRY;
-                //         load_imbalance_reg = load_imbalance; // reset baseline
-                //     }
+                    // // Allow load balances if load is sufficiently low.
+                    // if ((load_imbalance <= LB_RETRY_RESET)) {
+                    //     NUM_LB_RETRY = MAX_LB_RETRY;
+                    //     load_imbalance_reg = load_imbalance; // reset baseline
+                    // }
 
-                //     // If no retries allowed, but diff is large, allow retries
-                //     if ((NUM_LB_RETRY == 0) && fabsf(load_imbalance - load_imbalance_reg) > LB_RETRY_DIFF) NUM_LB_RETRY = MAX_LB_RETRY;
+                    // // If no retries allowed, but diff is large, allow retries
+                    // if ((NUM_LB_RETRY == 0) && fabsf(load_imbalance - load_imbalance_reg) > LB_RETRY_DIFF) NUM_LB_RETRY = MAX_LB_RETRY;
 
-                //     // Can we try a load balance?
-                //     if (NUM_LB_RETRY != 0 && load_imbalance > LB_RETRY_LOW) {
-                //         // Start the load balancing algorithm
-                //         LOW_DEBUG(printf("[VAM] Trigerring load balancer, imbalance=%0.2f\n", load_imbalance);)
-                //         if (!vam_load_balance()) {
-                //             // If the load balancing was not successful, reduce the retry count
-                //             NUM_LB_RETRY--;
-                //         }
-                //     }
+                    // // Can we try a load balance?
+                    // if (NUM_LB_RETRY != 0 && load_imbalance > LB_RETRY_LOW) {
+                    //     // Start the load balancing algorithm
+                    //     LOW_DEBUG(printf("[VAM] Trigerring load balancer, imbalance=%0.2f\n", load_imbalance);)
+                    //     if (!vam_load_balance()) {
+                    //         // If the load balancing was not successful, reduce the retry count
+                    //         NUM_LB_RETRY--;
+                    //     }
+                    // }
 
-                //     if (load_imbalance > LB_RETRY_HIGH) {
-                //         // If load is very imbalanced, sleep less
-                //         vam_sleep = VAM_SLEEP_MIN;
-                //     } else {
-                //         if (vam_sleep < VAM_SLEEP_MAX) vam_sleep += VAM_SLEEP_MIN;
-                //     }
+                    // if (load_imbalance > LB_RETRY_HIGH) {
+                    //     // If load is very imbalanced, sleep less
+                    //     vam_sleep = VAM_SLEEP_MIN;
+                    // } else {
+                    //     if (vam_sleep < VAM_SLEEP_MAX) vam_sleep += VAM_SLEEP_MIN;
+                    // }
 
-                //     // As a fallback, reset the retry every ~5 seconds of sleep
-                //     if (vam_sleep >= VAM_SLEEP_MID) NUM_LB_RETRY = MAX_LB_RETRY;
-
-                //     start_time = get_counter();
-                // }
+                    // // As a fallback, reset the retry every ~5 seconds of sleep
+                    // if (vam_sleep >= VAM_SLEEP_MID) NUM_LB_RETRY = MAX_LB_RETRY;
                 break;
             }
             case VAM_CREATE: {
@@ -211,7 +218,8 @@ void *vam_run_backend(void *arg) {
             }
             case VAM_REPORT: {
                 HIGH_DEBUG(printf("[VAM] Received a report request\n");)
-                // print_report();
+                vam_print_report();
+                kill_vam = true;
                 break;
             }
             case VAM_QUERY: {
@@ -227,19 +235,19 @@ void *vam_run_backend(void *arg) {
             // Set the interface state to DONE
             hpthread_intf_set(VAM_DONE);
             HIGH_DEBUG(printf("[VAM] Completed the processing of request.\n");)
-            // Reset trigger delay after servicing a request
-            start_time = get_counter();
+            // Reset sleep delay after servicing a request
             vam_sleep = VAM_SLEEP_MIN;
         }
-        sched_yield();
+        if (kill_vam) break;
+        sleep(vam_sleep);
     }
     return NULL;
 }
 
 void vam_search_accel(hpthread_t *th) {
     HIGH_DEBUG(printf("[VAM] Searching accelerator for hpthread %s\n", hpthread_get_name(th));)
-    // // First, update the active utilization of each accelerator
-    // vam_check_utilization();
+    // First, update the active utilization of each accelerator
+    vam_check_utilization();
 
     // We will find a candidate accelerator that has the lowest utiilization.
     // If no accelerator candidates are found, we will consider the CPU as the only candidate.
@@ -296,18 +304,18 @@ void vam_search_accel(hpthread_t *th) {
     candidate_accel->th[cur_context] = th;
     th->accel = candidate_accel;
     th->accel_context = cur_context;
-    // Mark the context as allocated.
-    bitset_set(candidate_accel->valid_contexts, cur_context);
     // Configure the device allocated
     if (accel_allocated) {
         if (th->cpu_invoke) {
-            vam_configure_cpu_invoke(th, candidate_accel);
+            vam_configure_cpu_invoke(th, candidate_accel, cur_context);
         } else {
             vam_configure_accel(th, candidate_accel, cur_context);
         }
     } else {
         vam_configure_cpu(th, candidate_accel);
     }
+    // Mark the context as allocated.
+    bitset_set(candidate_accel->valid_contexts, cur_context);
 }
 
 void vam_configure_accel(hpthread_t *th, physical_accel_t *accel, unsigned context) {
@@ -333,7 +341,6 @@ void vam_configure_accel(hpthread_t *th, physical_accel_t *accel, unsigned conte
         esp_access_desc->src_offset = 0;
         esp_access_desc->dst_offset = 0;
         esp_access_desc->context_id = context;
-        // esp_access_desc->context_base_ptr = th->args->base_ptr;
         esp_access_desc->context_nprio = th->nprio;
         esp_access_desc->valid_contexts = accel->valid_contexts;
         esp_access_desc->sched_period = AVU_SCHED_PERIOD;
@@ -358,47 +365,58 @@ void vam_configure_accel(hpthread_t *th, physical_accel_t *accel, unsigned conte
     accel->context_active_cycles[context] = 0;
 }
 
-void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel) {
-    LOW_DEBUG(printf("[VAM] Launch CPU invoke thread for hpthread %s\n", hpthread_get_name(th));)
-    // Find SW kernel for this thread
-    void *(*sw_kernel)(void *);
-    switch(th->prim) {
-        case PRIM_GEMM: sw_kernel = gemm_invoke; break;
-        default: break;
-    }    
-    // Create a new CPU thread for the SW implementation of this node.
-    pthread_t cpu_thread;
-    th->args->kill_pthread = (bool *) malloc (sizeof(bool)); *(th->args->kill_pthread) = false;
-    cpu_invoke_args_t *args = (cpu_invoke_args_t *) malloc (sizeof(cpu_invoke_args_t)); 
-    args->args = th->args;
-    args->accel = accel;
-    // Create pthread attributes
-    pthread_attr_t attr;
-    if (pthread_attr_init(&attr) != 0) {
-        perror("attr_init");
-    }
-    // Set CPU affinity
-    cpu_set_t set;
-    CPU_ZERO(&set);
-    CPU_SET((core_affinity_ctr++) % cpu_online, &set);
-    if (pthread_attr_setaffinity_np(&attr, sizeof(set), &set) != 0) {
-        perror("pthread_attr_setaffinity_np");
-    }
-    // Set SCHED_RR scheduling policy with priority 1
-    if (pthread_attr_setschedpolicy(&attr, SCHED_RR) != 0) {
-        perror("pthread_attr_setschedpolicy");
-    }
-    struct sched_param sp = { .sched_priority = 1 };
-    if (pthread_attr_setschedparam(&attr, &sp) != 0) {
-        perror("pthread_attr_setschedparam");
-    }
-    if (pthread_create(&cpu_thread, &attr, sw_kernel, (void *) args) != 0) {
-        perror("Failed to create CPU thread\n");
-    }
-    pthread_attr_destroy(&attr);
+void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel, unsigned context) {
+    if (accel->init_done) {
+        LOW_DEBUG(printf("[VAM] Added hpthread %s to context %d of invoke thread on %s\n", hpthread_get_name(th), context, physical_accel_get_name(accel));)
+        bitset_reset(accel->args->valid_contexts_ack, context);
+    } else {
+        LOW_DEBUG(printf("[VAM] Launch CPU invoke thread for hpthread %s on %s\n", hpthread_get_name(th), physical_accel_get_name(accel));)
+        bitset_reset_all(accel->args->valid_contexts_ack);
+        for (int i = 0; i < MAX_CONTEXTS; i++) {
+            accel->args->active_cycles[i] = 0;
+        }
+        accel->args->kill_pthread = false;
+        // Find SW kernel for this thread
+        void *(*sw_kernel)(void *);
+        switch(th->prim) {
+            case PRIM_GEMM: sw_kernel = gemm_invoke; break;
+            default: break;
+        }    
+        // Create a new CPU thread for the SW implementation of this node.
+        pthread_t cpu_thread;
+        // Create pthread attributes
+        pthread_attr_t attr;
+        if (pthread_attr_init(&attr) != 0) {
+            perror("attr_init");
+        }
+        #ifdef DO_CPU_PIN
+        // Set CPU affinity
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        CPU_SET((core_affinity_ctr++) % cpu_online, &set);
+        if (pthread_attr_setaffinity_np(&attr, sizeof(set), &set) != 0) {
+            perror("pthread_attr_setaffinity_np");
+        }
+        #endif
+        #ifdef DO_SCHED_RR
+        // Set SCHED_RR scheduling policy with priority 1
+        if (pthread_attr_setschedpolicy(&attr, SCHED_FIFO) != 0) {
+            perror("pthread_attr_setschedpolicy");
+        }
+        struct sched_param sp = { .sched_priority = 1 };
+        if (pthread_attr_setschedparam(&attr, &sp) != 0) {
+            perror("pthread_attr_setschedparam");
+        }
+        #endif
+        if (pthread_create(&cpu_thread, &attr, sw_kernel, (void *) accel) != 0) {
+            perror("Failed to create CPU thread\n");
+        }
+        pthread_attr_destroy(&attr);
 
-    // Add this thread to the physical_accel struct
-    accel->cpu_thread = cpu_thread;
+        // Add this thread to the physical_accel struct
+        accel->cpu_thread = cpu_thread;
+        accel->init_done = true;
+    }
 }
 
 void vam_configure_cpu(hpthread_t *th, physical_accel_t *accel) {
@@ -427,22 +445,28 @@ void vam_release_accel(hpthread_t *th) {
     // Free the allocated context.
     bitset_reset(accel->valid_contexts, context);
 
-    if (accel->prim == PRIM_NONE || accel->cpu_invoke) {
-        *(th->args->kill_pthread) = true;
-        pthread_join(accel->cpu_thread, NULL);
+    if (th->cpu_invoke) {
+        while(bitset_test(accel->args->valid_contexts_ack, context)) {
+            SCHED_YIELD;
+        }
     } else {
-        struct esp_access *esp_access_desc = accel->esp_access_desc;
-        {
-            esp_access_desc->context_id = context;
-            esp_access_desc->valid_contexts = accel->valid_contexts;
-        }
-        if (ioctl(accel->fd, accel->del_ctxt_ioctl, esp_access_desc)) {
-            perror("ioctl");
-            exit(EXIT_FAILURE);
-        }
-        // If there is no context active, we should re-init the accelerator the next time
-        if (bitset_none(accel->valid_contexts)) {
-            accel->init_done = false;
+        if (accel->prim == PRIM_NONE) {
+            *(th->args->kill_pthread) = true;
+            pthread_join(accel->cpu_thread, NULL);
+        } else {
+            struct esp_access *esp_access_desc = accel->esp_access_desc;
+            {
+                esp_access_desc->context_id = context;
+                esp_access_desc->valid_contexts = accel->valid_contexts;
+            }
+            if (ioctl(accel->fd, accel->del_ctxt_ioctl, esp_access_desc)) {
+                perror("ioctl");
+                exit(EXIT_FAILURE);
+            }
+            // If there is no context active, we should re-init the accelerator the next time
+            if (bitset_none(accel->valid_contexts)) {
+                accel->init_done = false;
+            }
         }
     }
 
@@ -486,14 +510,20 @@ void vam_check_utilization() {
     physical_accel_t *cur_accel = accel_list;
     while(cur_accel != NULL) {
         struct avu_mon_desc mon;
+        uint64_t *mon_extended = (uint64_t *) mon.util;
         HIGH_DEBUG(
             printf("[VAM] Util of %s: ", physical_accel_get_name(cur_accel));
         )
-        if (ioctl(cur_accel->fd, ESP_IOC_MON, &mon)) {
-            perror("ioctl");
-            exit(EXIT_FAILURE);
+        if (cur_accel->cpu_invoke) {
+            for (int i = 0; i < MAX_CONTEXTS; i++) {
+                mon_extended[i] = cur_accel->args->active_cycles[i];
+            }
+        } else {
+            if (ioctl(cur_accel->fd, ESP_IOC_MON, &mon)) {
+                perror("ioctl");
+                exit(EXIT_FAILURE);
+            }
         }
-        uint64_t *mon_extended = (uint64_t *) mon.util;
         cur_accel->effective_util = 0;
 
         for (int i = 0; i < MAX_CONTEXTS; i++) {
@@ -679,4 +709,70 @@ bool vam_load_balance() {
         vam_configure_accel(move_th_min, max_util_accel, best_context_max);
     }
     return true;
+}
+
+void vam_log_utilization() {
+    physical_accel_t *cur_accel = accel_list;
+    while (cur_accel != NULL) {
+        HIGH_DEBUG( printf("[VAM] Logging utilization for %s\n", physical_accel_get_name(cur_accel)); )
+        util_entry_t *new_entry = (util_entry_t *) malloc (sizeof(util_entry_t));
+        for (int i = 0; i < MAX_CONTEXTS; i++) {
+            if (bitset_test(cur_accel->valid_contexts, i)) {
+                new_entry->util[i] = cur_accel->context_util[i];
+                new_entry->id[i] = cur_accel->th[i]->user_id;
+            } else {
+                new_entry->util[i] = 0.0;
+                new_entry->id[i] = 0;
+            }
+        }
+        // Add new entry to the front of the util list
+        new_entry->next = cur_accel->util_entry_list;
+        cur_accel->util_entry_list = new_entry;
+        cur_accel = cur_accel->next;
+    }
+    util_epoch_count++;
+}
+
+void vam_print_report() {
+    // Since this is end of test, kill any running pthreads
+    physical_accel_t *cur_accel = accel_list;
+    while (cur_accel != NULL) {
+        if (cur_accel->cpu_invoke && cur_accel->init_done) {
+            cur_accel->args->kill_pthread = true;
+            pthread_join(cur_accel->cpu_thread, NULL);
+        }
+        cur_accel = cur_accel->next;
+    }
+    // Print out the total utilization
+    printf("-----------------------------------------------------------------------\n");
+    printf("  #\tAccel\t\t\tC0\t\t\tC1\t\t\tC2\t\t\tC3\t\t\tTotal\n");
+    printf("-----------------------------------------------------------------------\n");
+    for (int i = 0; i < util_epoch_count; i++) {
+        printf("  %d", i);
+        physical_accel_t *cur_accel = accel_list;
+        while (cur_accel != NULL) {
+            printf("\t%s\t\t", physical_accel_get_name(cur_accel));
+            float total_util = 0.0;
+            util_entry_t *entry = cur_accel->util_entry_list;
+            util_entry_t *prev = NULL;
+            // Traverse to the end of the list to get the oldest entry
+            while (entry->next != NULL) {
+                prev = entry;
+                entry = entry->next;
+            }
+            for (int j = 0; j < MAX_CONTEXTS; j++) {
+                total_util += entry->util[j];
+                printf("%0.2f%%(%d)\t", entry->util[j]*100, entry->id[j]);
+            }
+            printf("%0.2f%%\n", total_util*100);
+            // Delete the oldest entry after printing
+            if (prev != NULL) {
+                prev->next = NULL;
+            } else {
+                cur_accel->util_entry_list = NULL;
+            }
+            free(entry);
+            cur_accel = cur_accel->next;
+        }
+    }
 }

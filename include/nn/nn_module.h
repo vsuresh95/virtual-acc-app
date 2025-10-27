@@ -39,6 +39,9 @@ typedef struct {
     unsigned id; // Module ID
     unsigned nprio; // Priority: 1 (highest) - 10 (lowest)
     bool cpu_invoke; // Should we invoke accelerator through CPU?
+    unsigned gemm_node_count; // Number of GEMM nodes in this model
+    HIGH_DEBUG(unsigned req_count;)
+    HIGH_DEBUG(unsigned rsp_count;)
     nn_hpthread_list *th_list;
     nn_task_descr *descr_list;
 } nn_module;
@@ -57,6 +60,7 @@ void nn_module_setpriority(nn_module *m, unsigned nprio);
 
 void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len);
 void nn_module_rsp(nn_module *m, nn_token_t *output_data, unsigned data_len);
+bool nn_module_rsp_check(nn_module *m, nn_token_t *output_data, unsigned data_len);
 
 // Data structures for BFS traversal of NN graph
 typedef struct {

@@ -111,6 +111,17 @@ hpthread_cand_t *hpthread_query() {
 	return intf.list;
 }
 
+void hpthread_report() {
+	HIGH_DEBUG(printf("[HPTHREAD] Requested report from VAM.\n");)
+	// Check if the interface is IDLE. If yes, swap to BUSY. If not, block until it is
+	while (!hpthread_intf_swap(VAM_IDLE, VAM_BUSY)) sched_yield();
+	// Set the interface state to QUERY
+    hpthread_intf_set(VAM_REPORT);
+	// Block until the request is complete (interface state is DONE), then swap to IDLE
+	while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) sched_yield();
+	HIGH_DEBUG(printf("[HPTHREAD] Report complete.\n");)	
+}
+
 // Helper function for printing hpthread primitive
 const char *hpthread_get_prim_name(hpthread_prim_t p) {
     switch(p) {

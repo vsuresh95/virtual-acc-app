@@ -4,9 +4,9 @@
 // VAM backend is responsible for map virutal hpthreads to physical accelerators
 // (or CPU threads) and tracking utilization of these mappings
 
-#define VAM_SLEEP_MIN       2 * 78125000 // ~2 seconds
-#define VAM_SLEEP_MID       5 * 78125000 // ~5 seconds
-#define VAM_SLEEP_MAX       10 * 78125000 // ~10 seconds
+#define VAM_SLEEP_MIN       1 // 78125000 // ~1 second
+#define VAM_SLEEP_MID       5 // * 78125000 // ~5 seconds
+#define VAM_SLEEP_MAX       10 // * 78125000 // ~10 seconds
 // Default scheduling period of AVU
 #define AVU_SCHED_PERIOD    0x800000
 // Cooldown timer for migration
@@ -21,7 +21,7 @@ void vam_search_accel(hpthread_t *th);
 // Once accelerator candidate is identified, configure the accelerator
 void vam_configure_accel(hpthread_t *th, physical_accel_t *accel, unsigned context);
 // Launch a CPU thread for invoking the accelerator
-void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel);
+void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel, unsigned context);
 // Similar as accelerator counterpart; this function launches a pthread.
 void vam_configure_cpu(hpthread_t *th, physical_accel_t *accel);
 // Release the accelerator allocated to the hpthread
@@ -38,5 +38,9 @@ void vam_check_utilization();
 float vam_check_load_balance();
 // Runs the load balancing algorithm across all accelerators
 bool vam_load_balance();
+// Read the current utilization and add to log
+void vam_log_utilization();
+// Print out the utilization metrics for the previous epochs in a pretty format
+void vam_print_report();
 
 #endif // __VAM_BACKEND_H__
