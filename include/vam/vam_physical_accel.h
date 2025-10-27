@@ -59,13 +59,4 @@ typedef struct {
     physical_accel_t *accel;
 } cpu_invoke_args_t;
 
-// State enumeration for invoke args interface
-#define INVOKE_ARGS_INVALID 0
-#define INVOKE_ARGS_VALID 1
-
-typedef struct {
-    uint8_t state;
-    cpu_invoke_args_t *args;
-} cpu_invoke_intf_t;
-
 #endif // __VAM_PHYSICAL_ACCEL_H__

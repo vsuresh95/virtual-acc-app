@@ -13,7 +13,7 @@ typedef struct hpthread_cand_t hpthread_cand_t;
 typedef struct {
     void *mem; // Memory pool allocated for the hpthread
     unsigned queue_ptr; // Queue base pointer
-    bool *kill_hpthread; // Kill the CPU pthread
+    bool *kill_pthread; // Kill the CPU pthread
 } hpthread_args_t;
 
 // Device-agnostic thread abstraction for accelerators
