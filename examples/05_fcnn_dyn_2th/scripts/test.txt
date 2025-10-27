@@ -1,0 +1,2 @@
+models/model_32_3.txt 5000 300 1
+models/model_64_3.txt 20 1 1

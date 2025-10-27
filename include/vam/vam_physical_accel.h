@@ -14,6 +14,7 @@ typedef struct {
 // Utilization entry for tracking
 typedef struct util_entry {
     float util[MAX_CONTEXTS];
+    unsigned id[MAX_CONTEXTS];
     struct util_entry *next;
 } util_entry_t;
 

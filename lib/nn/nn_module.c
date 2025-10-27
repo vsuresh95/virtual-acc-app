@@ -142,7 +142,7 @@ void nn_module_create_hpthread(nn_module *m) {
                     // Declare hpthread and assign attributes
                     hpthread_t *th = (hpthread_t *) malloc(sizeof(hpthread_t));
                     th->cpu_invoke = m->cpu_invoke;
-                    hpthread_init(th, m->id + 1);
+                    hpthread_init(th, m->id);
                     hpthread_setargs(th, args);
 	                char hpthread_name[50];
                     snprintf(hpthread_name, 50, "gemm_th.%d", m->gemm_node_count - local_gemm_count);

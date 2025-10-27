@@ -719,8 +719,10 @@ void vam_log_utilization() {
         for (int i = 0; i < MAX_CONTEXTS; i++) {
             if (bitset_test(cur_accel->valid_contexts, i)) {
                 new_entry->util[i] = cur_accel->context_util[i];
+                new_entry->id[i] = cur_accel->th[i]->user_id;
             } else {
                 new_entry->util[i] = 0.0;
+                new_entry->id[i] = 0;
             }
         }
         // Add new entry to the front of the util list
@@ -760,7 +762,7 @@ void vam_print_report() {
             }
             for (int j = 0; j < MAX_CONTEXTS; j++) {
                 total_util += entry->util[j];
-                printf("%0.2f%%\t", entry->util[j]*100);
+                printf("%0.2f%%(%d)\t", entry->util[j]*100, entry->id[j]);
             }
             printf("%0.2f%%\n", total_util*100);
             // Delete the oldest entry after printing
