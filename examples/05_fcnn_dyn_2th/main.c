@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <helper.h>
+#include <sys/timerfd.h>
 #include <string.h>
 #include <nn_module.h>
 
@@ -47,6 +48,15 @@ void *rsp_thread(void *a) {
     return NULL;
 }
 
+static inline void th_sleep(unsigned microseconds) {
+    // Number of CPU cycles to sleep
+    uint64_t cycles_to_sleep = (uint64_t) microseconds * (uint64_t) 72; // Assuming 72 MHz CPU clock
+    uint64_t start_cycles = get_counter();
+    while ((get_counter() - start_cycles) < cycles_to_sleep) {
+        SCHED_YIELD;
+    }
+}
+
 void *req_thread(void *a) {
     thread_args *args = (thread_args *) a;
     nn_module *m = args->m;
@@ -58,11 +68,10 @@ void *req_thread(void *a) {
     while(!(*start)) { SCHED_YIELD; } // Wait for signal to start
 
     for (int i = 0; i < iterations; i++) {
-        // Make new request (if not last iteration)
+        // Make new request
         nn_module_req(m, input_data, 0);
+        th_sleep(1000000 / fps);
         HIGH_DEBUG(printf("[APP] Thread %d sending request %d...\n", m->id, i);)
-        // Sleep to maintain fps
-        usleep(1000000 / fps);
     }
     nn_module_release(m);
     free(m);
@@ -158,6 +167,13 @@ int main(int argc, char **argv) {
     }
 
     // Create 1 thread for low frequency high-demand foreground task
+    #ifdef DO_CPU_PIN
+    CPU_ZERO(&set);
+    CPU_SET((core_affinity_ctr++) % cpu_online, &set);
+    if (pthread_attr_setaffinity_np(&attr, sizeof(set), &set) != 0) {
+        perror("pthread_attr_setaffinity_np");
+    }
+    #endif
     pthread_t fg_thread;
     thread_args *fg_args = (thread_args *) malloc (sizeof(thread_args));
     nn_module *fg_model = (nn_module *) malloc (sizeof(nn_module));

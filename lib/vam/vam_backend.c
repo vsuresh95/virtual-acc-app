@@ -745,7 +745,7 @@ void vam_print_report() {
     }
     // Print out the total utilization
     printf("-----------------------------------------------------------------------\n");
-    printf("  #\tAccel\t\t\tC0\tC1\tC2\tC3\tTotal\n");
+    printf("  #\tAccel\t\t\tC0\t\t\tC1\t\t\tC2\t\t\tC3\t\t\tTotal\n");
     printf("-----------------------------------------------------------------------\n");
     for (int i = 0; i < util_epoch_count; i++) {
         printf("  %d", i);
