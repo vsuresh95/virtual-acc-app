@@ -42,6 +42,7 @@ void hpthread_setname(hpthread_t *th, const char *n);
 void hpthread_setprimitive(hpthread_t *th, hpthread_prim_t p);
 void hpthread_setpriority(hpthread_t *th, unsigned p);
 hpthread_cand_t *hpthread_query();
+void hpthread_report();
 static inline hpthread_prim_t hpthread_get_prim(hpthread_t *th) { return th->prim; }
 
 // Debug API

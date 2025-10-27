@@ -75,6 +75,7 @@ int main(int argc, char **argv) {
 
     printf("[APP] Starting app: GEMM single threaded %d %d %d %d!\n", dim_m, dim_n, dim_k, iterations);
 
+    #ifdef DO_CPU_PIN
     // Run main thread on CPU 0 always.
     long online = sysconf(_SC_NPROCESSORS_ONLN);
     if (online > 1) {
@@ -85,11 +86,14 @@ int main(int argc, char **argv) {
             perror("pthread_setaffinity_np");
         }
     }
+    #endif
+    #ifdef DO_SCHED_RR
     // Set scheduling attributes
     struct sched_param sp = { .sched_priority = 1 };
     if (pthread_setschedparam(pthread_self(), SCHED_RR, &sp) != 0) {
         perror("pthread_setschedparam");
     }
+    #endif
 
     // Matrix lengths
     unsigned flag_len = PAYLOAD_OFFSET/sizeof(nn_token_t); // Number of nn_token_t elements reserved for flags
