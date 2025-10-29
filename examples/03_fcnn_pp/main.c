@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
     #ifdef DO_SCHED_RR
     // Set scheduling attributes
     struct sched_param sp = { .sched_priority = 1 };
-    if (pthread_setschedparam(pthread_self(), SCHED_RR, &sp) != 0) {
+    if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) != 0) {
         perror("pthread_setschedparam");
     }
     #endif
@@ -64,7 +64,11 @@ int main(int argc, char **argv) {
     nn_module *m = (nn_module *) malloc (sizeof(nn_module));
     m->id = 0;
     m->nprio = 1;
-    m->cpu_invoke = true;
+    #ifndef ENABLE_SM
+    m->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
+    #else
+    m->cpu_invoke = false;
+    #endif
     nn_module_load_and_register(m, model_file);
 
     rsp_thread_args *args = (rsp_thread_args *) malloc (sizeof(rsp_thread_args));
@@ -92,7 +96,7 @@ int main(int argc, char **argv) {
     #endif
     #ifdef DO_SCHED_RR
     // Set SCHED_RR scheduling policy with priority 1
-    if (pthread_attr_setschedpolicy(&attr, SCHED_RR) != 0) {
+    if (pthread_attr_setschedpolicy(&attr, SCHED_FIFO) != 0) {
         perror("pthread_attr_setschedpolicy");
     }
     if (pthread_attr_setschedparam(&attr, &sp) != 0) {

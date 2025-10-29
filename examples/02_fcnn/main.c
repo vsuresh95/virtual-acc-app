@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
     #ifdef DO_SCHED_RR
     // Set scheduling attributes
     struct sched_param sp = { .sched_priority = 1 };
-    if (pthread_setschedparam(pthread_self(), SCHED_RR, &sp) != 0) {
+    if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) != 0) {
         perror("pthread_setschedparam");
     }
     #endif
@@ -44,7 +44,11 @@ int main(int argc, char **argv) {
         nn_module *m = (nn_module *) malloc (sizeof(nn_module));
         m->id = 0;
         m->nprio = 1;
-        m->cpu_invoke = true;
+        #ifndef ENABLE_SM
+        m->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
+        #else
+        m->cpu_invoke = false;
+        #endif
         nn_module_load(m, "model.txt");
         t_load += get_counter() - t_start;
         t_start = get_counter();

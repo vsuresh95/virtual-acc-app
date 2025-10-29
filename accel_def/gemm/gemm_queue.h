@@ -27,11 +27,11 @@ static inline void print_gemm_entry(gemm_queue_entry_t *e) {
 }
 
 static inline bool gemm_queue_push(gemm_queue_t *q, gemm_queue_entry_t *e) {
-    unsigned head = __atomic_load_n(&(q->info.head), __ATOMIC_ACQUIRE);
-    unsigned tail = __atomic_load_n(&(q->info.tail), __ATOMIC_ACQUIRE);
+    uint64_t head = __atomic_load_n(&(q->info.head), __ATOMIC_ACQUIRE);
+    uint64_t tail = __atomic_load_n(&(q->info.tail), __ATOMIC_ACQUIRE);
 
     // Full when advancing head would equal tail
-    unsigned next = (head + 1) % GEMM_QUEUE_SIZE;
+    uint64_t next = (head + 1) % GEMM_QUEUE_SIZE;
     if (next == tail) {
         return false;
     }
@@ -45,13 +45,13 @@ static inline bool gemm_queue_push(gemm_queue_t *q, gemm_queue_entry_t *e) {
 }
 
 static inline void gemm_queue_pop(gemm_queue_t *q) {
-    unsigned tail = __atomic_load_n(&(q->info.tail), __ATOMIC_ACQUIRE);
+    uint64_t tail = __atomic_load_n(&(q->info.tail), __ATOMIC_ACQUIRE);
     __atomic_store_n(&(q->info.tail), (tail + 1) % GEMM_QUEUE_SIZE, __ATOMIC_RELEASE);
 }
 
 static inline gemm_queue_entry_t *gemm_queue_can_pop(gemm_queue_t *q) {
-    unsigned head = __atomic_load_n(&(q->info.head), __ATOMIC_ACQUIRE);
-    unsigned tail = __atomic_load_n(&(q->info.tail), __ATOMIC_ACQUIRE);
+    uint64_t head = __atomic_load_n(&(q->info.head), __ATOMIC_ACQUIRE);
+    uint64_t tail = __atomic_load_n(&(q->info.tail), __ATOMIC_ACQUIRE);
 
     // Empty when head == tail
     if (head == tail) {
@@ -64,8 +64,8 @@ static inline gemm_queue_entry_t *gemm_queue_can_pop(gemm_queue_t *q) {
 
 static inline bool gemm_queue_empty(gemm_queue_t *q) {
     sm_queue_t *info = &(q->info);
-    unsigned head = info->head;
-    unsigned tail = info->tail;
+    uint64_t head = info->head;
+    uint64_t tail = info->tail;
     __atomic_thread_fence(__ATOMIC_ACQUIRE);
 
     return (head == tail);
@@ -73,11 +73,11 @@ static inline bool gemm_queue_empty(gemm_queue_t *q) {
 
 static inline bool gemm_queue_full(gemm_queue_t *q) {
     sm_queue_t *info = &(q->info);
-    unsigned head = info->head;
-    unsigned tail = info->tail;
+    uint64_t head = info->head;
+    uint64_t tail = info->tail;
     __atomic_thread_fence(__ATOMIC_ACQUIRE);
 
-    unsigned next = (head + 1) % GEMM_QUEUE_SIZE;
+    uint64_t next = (head + 1) % GEMM_QUEUE_SIZE;
     return (next == tail);
 }
     

@@ -73,8 +73,6 @@ void *req_thread(void *a) {
         th_sleep(1000000 / fps);
         HIGH_DEBUG(printf("[APP] Thread %d sending request %d...\n", m->id, i);)
     }
-    nn_module_release(m);
-    free(m);
     return NULL;
 }
 
@@ -155,7 +153,11 @@ int main(int argc, char **argv) {
     nn_module *bg_model = (nn_module *) malloc (sizeof(nn_module));
     bg_model->id = 1;
     bg_model->nprio = bg_prio;
-    bg_model->cpu_invoke = true;
+    #ifndef ENABLE_SM
+    bg_model->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
+    #else
+    bg_model->cpu_invoke = false;
+    #endif
     nn_module_load_and_register(bg_model, bg_model_file);
     bg_args->m = bg_model;    
     bg_args->iterations = bg_iterations;
@@ -179,7 +181,11 @@ int main(int argc, char **argv) {
     nn_module *fg_model = (nn_module *) malloc (sizeof(nn_module));
     fg_model->id = 2;
     fg_model->nprio = fg_prio;
-    fg_model->cpu_invoke = true;
+    #ifndef ENABLE_SM
+    fg_model->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
+    #else
+    fg_model->cpu_invoke = false;
+    #endif
     nn_module_load_and_register(fg_model, fg_model_file);
     fg_args->m = fg_model;    
     fg_args->iterations = fg_iterations;
@@ -241,6 +247,10 @@ int main(int argc, char **argv) {
     pthread_join(fg_thread, NULL);
 
     // Release all modules
+    nn_module_release(bg_model);
+    free(bg_model);
+    nn_module_release(fg_model);
+    free(fg_model);
     free(bg_args);
     free(fg_args);
 exit:

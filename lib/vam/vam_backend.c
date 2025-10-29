@@ -109,14 +109,15 @@ void vam_probe_accel() {
             // Print out debug message
             HIGH_DEBUG(printf("[VAM] Discovered device %d: %s\n", device_id, accel_temp->devname);)
 
-            if (fnmatch("gemm*", entry->d_name, FNM_NOESCAPE) == 0) {
+            if (fnmatch("gemm_sm*", entry->d_name, FNM_NOESCAPE) == 0){
+                gemm_sm_probe(accel_temp);
+            } else if (fnmatch("gemm*", entry->d_name, FNM_NOESCAPE) == 0) {
                 gemm_probe(accel_temp);
-                accel_temp->cpu_invoke = true;
-                cand_temp->prim = accel_temp->prim;
-                cand_temp->cpu_invoke = true;
             } else {
                 printf("[ERROR] Device does not match any supported accelerators.\n");
             }
+            cand_temp->prim = accel_temp->prim;
+            cand_temp->cpu_invoke = accel_temp->cpu_invoke;
 
             char full_path[384];
             snprintf(full_path, 384, "/dev/%s", entry->d_name);
@@ -128,7 +129,8 @@ void vam_probe_accel() {
             // Reset the accelerator to be sure
             if (!accel_temp->cpu_invoke) {
                 struct esp_access *esp_access_desc = (struct esp_access *) accel_temp->esp_access_desc;
-                if (ioctl(accel_temp->fd, accel_temp->reset_ioctl, esp_access_desc)) {
+                accel_temp->esp_access_desc->ioctl_cm = ESP_IOCTL_ACC_RESET;
+                if (ioctl(accel_temp->fd, accel_temp->ioctl_cm, esp_access_desc)) {
                     perror("ioctl");
                     exit(EXIT_FAILURE);
                 }
@@ -263,7 +265,10 @@ void vam_search_accel(hpthread_t *th) {
             physical_accel_dump(cur_accel);
         )
         // If the thread or accel requires CPU invocation, the other must too
-        if (th->cpu_invoke ^ cur_accel->cpu_invoke) continue;
+        if (th->cpu_invoke ^ cur_accel->cpu_invoke) {
+		    cur_accel = cur_accel->next;
+            continue;
+        }
         // Is the accelerator suitable and not fully utilized for this primitive?
         if (cur_accel->prim == th->prim && !bitset_all(cur_accel->valid_contexts)) {
             // Check if this accelerator's total load is less than the previous min or fewer contexts (with similar util)
@@ -304,6 +309,8 @@ void vam_search_accel(hpthread_t *th) {
     candidate_accel->th[cur_context] = th;
     th->accel = candidate_accel;
     th->accel_context = cur_context;
+    // Mark the context as allocated.
+    bitset_set(candidate_accel->valid_contexts, cur_context);
     // Configure the device allocated
     if (accel_allocated) {
         if (th->cpu_invoke) {
@@ -314,8 +321,6 @@ void vam_search_accel(hpthread_t *th) {
     } else {
         vam_configure_cpu(th, candidate_accel);
     }
-    // Mark the context as allocated.
-    bitset_set(candidate_accel->valid_contexts, cur_context);
 }
 
 void vam_configure_accel(hpthread_t *th, physical_accel_t *accel, unsigned context) {
@@ -341,6 +346,7 @@ void vam_configure_accel(hpthread_t *th, physical_accel_t *accel, unsigned conte
         esp_access_desc->src_offset = 0;
         esp_access_desc->dst_offset = 0;
         esp_access_desc->context_id = context;
+        esp_access_desc->context_queue_ptr = th->args->queue_ptr;
         esp_access_desc->context_nprio = th->nprio;
         esp_access_desc->valid_contexts = accel->valid_contexts;
         esp_access_desc->sched_period = AVU_SCHED_PERIOD;
@@ -348,18 +354,16 @@ void vam_configure_accel(hpthread_t *th, physical_accel_t *accel, unsigned conte
 
     if (accel->init_done) {
         LOW_DEBUG(printf("[VAM] Adding to accel %s:%d for hpthread %s\n", physical_accel_get_name(accel), context, hpthread_get_name(th));)
-        if (ioctl(accel->fd, accel->add_ctxt_ioctl, esp_access_desc)) {
-            perror("ioctl");
-            exit(EXIT_FAILURE);
-        }
+        esp_access_desc->ioctl_cm = ESP_IOCTL_ACC_ADD_CONTEXT;
     } else {
-        LOW_DEBUG(printf("[VAM] Initializing accel %s:0 for hpthread %s\n", physical_accel_get_name(accel), hpthread_get_name(th));)
-        if (ioctl(accel->fd, accel->init_ioctl, esp_access_desc)) {
-            perror("ioctl");
-            exit(EXIT_FAILURE);
-        }
-        accel->init_done = true;
+        LOW_DEBUG(printf("[VAM] Initializing accel %s:%d for hpthread %s\n", physical_accel_get_name(accel), context, hpthread_get_name(th));)
+        esp_access_desc->ioctl_cm = ESP_IOCTL_ACC_INIT;
     }
+    if (ioctl(accel->fd, accel->ioctl_cm, esp_access_desc)) {
+        perror("ioctl");
+        exit(EXIT_FAILURE);
+    }    
+    accel->init_done = true;
     // Read the current time for when the accelerator is started.
     accel->context_start_cycles[context] = get_counter();
     accel->context_active_cycles[context] = 0;
@@ -458,8 +462,9 @@ void vam_release_accel(hpthread_t *th) {
             {
                 esp_access_desc->context_id = context;
                 esp_access_desc->valid_contexts = accel->valid_contexts;
+                esp_access_desc->ioctl_cm = ESP_IOCTL_ACC_DEL_CONTEXT;
             }
-            if (ioctl(accel->fd, accel->del_ctxt_ioctl, esp_access_desc)) {
+            if (ioctl(accel->fd, accel->ioctl_cm, esp_access_desc)) {
                 perror("ioctl");
                 exit(EXIT_FAILURE);
             }
@@ -484,8 +489,9 @@ void vam_setprio_accel(hpthread_t *th) {
     {
         esp_access_desc->context_id = context;
         esp_access_desc->context_nprio = th->nprio;
+        esp_access_desc->ioctl_cm = ESP_IOCTL_ACC_SET_PRIO;
     }
-    if (ioctl(accel->fd, accel->setprio_ioctl, esp_access_desc)) {
+    if (ioctl(accel->fd, accel->ioctl_cm, esp_access_desc)) {
         perror("ioctl");
         exit(EXIT_FAILURE);
     }
@@ -745,7 +751,7 @@ void vam_print_report() {
     }
     // Print out the total utilization
     printf("-----------------------------------------------------------------------\n");
-    printf("  #\tAccel\t\t\tC0\t\t\tC1\t\t\tC2\t\t\tC3\t\t\tTotal\n");
+    printf("  #\tAccel\t\tC0\t\tC1\t\tC2\t\tC3\t\tTotal\n");
     printf("-----------------------------------------------------------------------\n");
     for (int i = 0; i < util_epoch_count; i++) {
         printf("  %d", i);

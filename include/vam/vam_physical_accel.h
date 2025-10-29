@@ -40,11 +40,7 @@ typedef struct physical_accel_t {
 
     // ESP-relevant variables
     char devname[384]; // Name of device in file system
-	int reset_ioctl; // IOCTL access code for reset
-	int init_ioctl; // IOCTL access code for initialization
-	int add_ctxt_ioctl; // IOCTL access code for adding context
-	int del_ctxt_ioctl; // IOCTL access code for deleting context
-	int setprio_ioctl; // IOCTL access code for changing priority
+	int ioctl_cm; // IOCTL access code
     int fd; // File descriptor of the device, when open
     struct esp_access *esp_access_desc; // Generic pointer to the access struct.
 } physical_accel_t;

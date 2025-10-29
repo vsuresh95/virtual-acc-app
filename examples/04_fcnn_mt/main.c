@@ -106,9 +106,13 @@ int main(int argc, char **argv) {
         args->next = NULL;
 
         nn_module *m = (nn_module *) malloc (sizeof(nn_module));
-        m->id = i;
+        m->id = i+1;
         m->nprio = 1;
-        m->cpu_invoke = true;
+        #ifndef ENABLE_SM
+        m->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
+        #else
+        m->cpu_invoke = false;
+        #endif
         nn_module_load_and_register(m, model_file);
         args->m = m;
         

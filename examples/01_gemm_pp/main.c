@@ -96,7 +96,11 @@ int main(int argc, char **argv) {
         hpthread_args_t *args = (hpthread_args_t *) malloc(sizeof(hpthread_args_t));
         args->mem = mem;
         args->queue_ptr = i * (thread_offset) + input_queue_offset;
+        #ifndef ENABLE_SM
         th[i]->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
+        #else
+        th[i]->cpu_invoke = false;
+        #endif
         hpthread_setargs(th[i], args);
         char th_name[100];
         snprintf(th_name, 384, "gemm.%d", i);

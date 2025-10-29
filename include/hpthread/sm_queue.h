@@ -3,16 +3,15 @@
 
 #include <hpthread.h>
 
-#define SM_ENTRY_SIZE 4
+#define SM_ENTRY_SIZE 6
 
 typedef struct {
 } sm_queue_entry_t;
 
 typedef struct {
-    unsigned stat;
-    unsigned head;
-    unsigned tail;
-    unsigned padding;
+    uint64_t stat;
+    uint64_t head;
+    uint64_t tail;
 } sm_queue_t;
 
 static inline void sm_queue_init(sm_queue_t *q) {

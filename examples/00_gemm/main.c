@@ -90,7 +90,7 @@ int main(int argc, char **argv) {
     #ifdef DO_SCHED_RR
     // Set scheduling attributes
     struct sched_param sp = { .sched_priority = 1 };
-    if (pthread_setschedparam(pthread_self(), SCHED_RR, &sp) != 0) {
+    if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) != 0) {
         perror("pthread_setschedparam");
     }
     #endif
@@ -138,7 +138,11 @@ int main(int argc, char **argv) {
     hpthread_t *th = (hpthread_t *) malloc(sizeof(hpthread_t));
     hpthread_args_t *args = (hpthread_args_t *) malloc(sizeof(hpthread_args_t));
     args->mem = mem; args->queue_ptr = input_queue_offset;
+    #ifndef ENABLE_SM
     th->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
+    #else
+    th->cpu_invoke = false;
+    #endif
     hpthread_setargs(th, args);
     hpthread_setname(th, "gemm");
     hpthread_setprimitive(th, PRIM_GEMM);
@@ -160,7 +164,7 @@ int main(int argc, char **argv) {
         __atomic_store_n(input_flag, 1, __ATOMIC_RELEASE);
 
         // Wait for the accelerator to send output.
-        while(__atomic_load_n(output_flag, __ATOMIC_ACQUIRE) != 1);
+        while(__atomic_load_n(output_flag, __ATOMIC_ACQUIRE) != 1) { SCHED_YIELD; };
         t_acc += get_counter() - t_start;
 
         // Reset for next iteration.

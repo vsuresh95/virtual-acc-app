@@ -9,6 +9,7 @@
 #include <gemm_params.h>
 #include <gemm_def.h>
 #include <gemm_stratus.h>
+#include <gemm_sm_stratus.h>
 #include <gemm_queue.h>
 #include <libesp.h>
 #include <esp.h>
@@ -18,12 +19,26 @@
 // ESP API for getting contig_alloc handle
 extern contig_handle_t *lookup_handle(void *buf, enum contig_alloc_policy *policy);
 
-// Device-dependent probe function
+// Device-dependent probe function for baseline accelerator
 void gemm_probe(physical_accel_t *accel) {
     accel->prim = PRIM_GEMM;
+    accel->cpu_invoke = true;
+    accel->ioctl_cm = GEMM_STRATUS_IOC_ACCESS;
 
     // Create a new access struct and track within the device struct
     struct gemm_stratus_access *gemm_desc = (struct gemm_stratus_access *) malloc (sizeof(struct gemm_stratus_access));
+    accel->esp_access_desc = (struct esp_access *) gemm_desc;
+    accel->esp_access_desc->ioctl_cm = ESP_IOCTL_ACC_NO_SM;
+}
+
+// Device-dependent probe function for SM accelerator
+void gemm_sm_probe(physical_accel_t *accel) {
+    accel->prim = PRIM_GEMM;
+    accel->cpu_invoke = false;
+    accel->ioctl_cm = GEMM_SM_STRATUS_IOC_ACCESS;
+
+    // Create a new access struct and track within the device struct
+    struct gemm_sm_stratus_access *gemm_desc = (struct gemm_sm_stratus_access *) malloc (sizeof(struct gemm_sm_stratus_access));
     accel->esp_access_desc = (struct esp_access *) gemm_desc;
 }
 
