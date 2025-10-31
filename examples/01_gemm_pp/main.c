@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
     #ifdef DO_SCHED_RR
     // Set scheduling attributes
     struct sched_param sp = { .sched_priority = 1 };
-    if (pthread_setschedparam(pthread_self(), SCHED_RR, &sp) != 0) {
+    if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) != 0) {
         perror("pthread_setschedparam");
     }
     #endif
