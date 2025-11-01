@@ -135,9 +135,6 @@ void *gemm_invoke(void *a) {
             *context_runtime += mon_extended[0]; // Single context only
             HIGH_DEBUG(printf("[INVOKE] Finished GEMM %d on %s:%d\n", invoke_count++, accel->devname, context);)
         }
-            *context_runtime += mon_extended[0]; // Single context only
-            HIGH_DEBUG(printf("[INVOKE] Finished GEMM %d on %s:%d\n", invoke_count++, accel->devname, context);)
-        }
         SCHED_YIELD;
     }
 
