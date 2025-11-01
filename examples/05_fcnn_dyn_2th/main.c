@@ -3,6 +3,8 @@
 #include <sys/timerfd.h>
 #include <string.h>
 #include <nn_module.h>
+#include <sys/resource.h>
+#include <sys/syscall.h>
 
 // Counter for core affinity
 static uint8_t core_affinity_ctr = 0;
@@ -20,6 +22,11 @@ void *rsp_thread(void *a) {
     thread_args *args = (thread_args *) a;
     nn_token_t *output_data = (nn_token_t *) malloc (1);
     bool *start = args->start;
+    #ifndef DO_SCHED_RR
+    // Set niceness based on priority
+    pid_t tid = syscall(SYS_gettid);
+    setpriority(PRIO_PROCESS, tid, nice_table[2]);
+    #endif
     while(!(*start)) { SCHED_YIELD; } // Wait for signal to start
     // Iterate through all thread_args and accumulate iterations
     thread_args *head = args;
@@ -48,13 +55,15 @@ void *rsp_thread(void *a) {
     return NULL;
 }
 
-static inline void th_sleep(unsigned microseconds) {
+static inline uint64_t th_sleep(uint64_t start_cycles, unsigned microseconds) {
     // Number of CPU cycles to sleep
     uint64_t cycles_to_sleep = (uint64_t) microseconds * (uint64_t) 72; // Assuming 72 MHz CPU clock
-    uint64_t start_cycles = get_counter();
-    while ((get_counter() - start_cycles) < cycles_to_sleep) {
+    uint64_t curr_cycles = get_counter();
+    while (curr_cycles - start_cycles < cycles_to_sleep) {
+        curr_cycles = get_counter();
         SCHED_YIELD;
     }
+    return curr_cycles;
 }
 
 void *req_thread(void *a) {
@@ -65,12 +74,18 @@ void *req_thread(void *a) {
     nn_token_t *input_data = (nn_token_t *) malloc (1);
     bool *start = args->start;
     unsigned fps = args->fps;
+    #ifndef DO_SCHED_RR
+    // Set niceness based on priority
+    pid_t tid = syscall(SYS_gettid);
+    setpriority(PRIO_PROCESS, tid, nice_table[2]);
+    #endif
     while(!(*start)) { SCHED_YIELD; } // Wait for signal to start
 
+    uint64_t start_cycles = get_counter();
     for (int i = 0; i < iterations; i++) {
         // Make new request
         nn_module_req(m, input_data, 0);
-        th_sleep(1000000 / fps);
+        start_cycles = th_sleep(start_cycles, 1000000 / fps);
         HIGH_DEBUG(printf("[APP] Thread %d sending request %d...\n", m->id, i);)
     }
     return NULL;
@@ -142,6 +157,10 @@ int main(int argc, char **argv) {
     if (pthread_attr_setschedparam(&attr, &sp) != 0) {
         perror("pthread_attr_setschedparam");
     }
+    #else
+    // Set niceness based on priority
+    pid_t tid = syscall(SYS_gettid);
+    setpriority(PRIO_PROCESS, tid, nice_table[4]);
     #endif
 
     // Test start flag
@@ -235,7 +254,6 @@ int main(int argc, char **argv) {
         printf("FG:%0.2f(%d), ", ips, new_iters_remaining);
         if (total_remaining != 0 && total_remaining == old_remaining) {
             printf("STALL!!!\n");
-            goto exit;
         } else {
             old_remaining = total_remaining;
         }
@@ -253,6 +271,5 @@ int main(int argc, char **argv) {
     free(fg_model);
     free(bg_args);
     free(fg_args);
-exit:
     hpthread_report();
 }

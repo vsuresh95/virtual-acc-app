@@ -4,19 +4,15 @@
 #include <hpthread.h>
 #include <pthread.h>
 
-// Invoke arguments for CPU-invoked accelerators
-typedef struct {
-    bitset_t valid_contexts_ack;
-    uint64_t active_cycles[MAX_CONTEXTS];
-    bool kill_pthread;
-} cpu_invoke_args_t;
-
 // Utilization entry for tracking
 typedef struct util_entry {
     float util[MAX_CONTEXTS];
     unsigned id[MAX_CONTEXTS];
     struct util_entry *next;
 } util_entry_t;
+
+struct cpu_invoke_args_t;
+typedef struct cpu_invoke_args_t cpu_invoke_args_t;
 
 // Definition of the physical accelerator struct
 // -- includes all information and current status of the physical accelerators
@@ -33,9 +29,9 @@ typedef struct physical_accel_t {
     float effective_util; // Total utilization of the accelerator
     bool init_done; // Flag to identify whether the device was initialized in the past
     physical_accel_t *next; // Next node in accel list
-    pthread_t cpu_thread; // If mapped toa CPU, this is the pthread ID
+    pthread_t cpu_thread[MAX_CONTEXTS]; // If mapped toa CPU, this is the pthread ID
     bool cpu_invoke; // Is the accelerator invoked by a CPU thread?
-    cpu_invoke_args_t *args; // If invoked by CPU, these are the arguments
+    cpu_invoke_args_t *args[MAX_CONTEXTS]; // If invoked by CPU, these are the arguments
     util_entry_t *util_entry_list; // Utilization entry list
 
     // ESP-relevant variables
@@ -65,5 +61,13 @@ static inline void physical_accel_dump(physical_accel_t *accel) {
 static inline char *physical_accel_get_name(physical_accel_t *accel) {
     return accel->devname;
 }
+
+// Invoke arguments for CPU-invoked accelerators
+typedef struct cpu_invoke_args_t {
+    unsigned context;
+    uint64_t active_cycles;
+    bool kill_pthread;
+    physical_accel_t *accel;
+} cpu_invoke_args_t;
 
 #endif // __VAM_PHYSICAL_ACCEL_H__

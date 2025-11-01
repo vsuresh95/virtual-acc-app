@@ -30,13 +30,13 @@ void hpthread_create(hpthread_t *th) {
     }
 
 	// Check if the interface is IDLE. If yes, swap to BUSY. If not, block until it is
-	while (!hpthread_intf_swap(VAM_IDLE, VAM_BUSY)) sched_yield();
+	while (!hpthread_intf_swap(VAM_IDLE, VAM_BUSY)) SCHED_YIELD;
 	// Write the hpthread request to the interface
 	intf.th = th;
 	// Set the interface state to CREATE
     hpthread_intf_set(VAM_CREATE);
 	// Block until the request is complete (interface state is DONE), then swap to IDLE
-	while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) sched_yield();
+	while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) SCHED_YIELD;
 	HIGH_DEBUG(printf("[HPTHREAD] Received hpthread %s.\n", th->name);)
 	th->is_active = true;
     th->th_last_move = get_counter();
@@ -49,13 +49,13 @@ int hpthread_join(hpthread_t *th) {
     if (hpthread_intf_test() == VAM_RESET) return 1;
 
 	// Check if the interface is IDLE. If yes, swap to BUSY. If not, block until it is
-	while (!hpthread_intf_swap(VAM_IDLE, VAM_BUSY)) sched_yield();
+	while (!hpthread_intf_swap(VAM_IDLE, VAM_BUSY)) SCHED_YIELD;
 	// Write the hpthread request to the interface
 	intf.th = th;
 	// Set the interface state to JOIN
     hpthread_intf_set(VAM_JOIN);
 	// Block until the request is complete (interface state is DONE), then swap to IDLE
-	while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) sched_yield();
+	while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) SCHED_YIELD;
 	HIGH_DEBUG(printf("[HPTHREAD] Join hpthread complete %s.\n", th->name);)
 	th->is_active = false;
 	return 0;
@@ -79,13 +79,13 @@ void hpthread_setpriority(hpthread_t *th, unsigned p) {
 	if (th->is_active) {
 		HIGH_DEBUG(printf("[HPTHREAD] Requested change of priority to %d for hpthread %s.\n", p, th->name);)
 		// Check if the interface is IDLE. If yes, swap to BUSY. If not, block until it is
-		while (!hpthread_intf_swap(VAM_IDLE, VAM_BUSY)) sched_yield();
+		while (!hpthread_intf_swap(VAM_IDLE, VAM_BUSY)) SCHED_YIELD;
 		// Write the hpthread request to the interface
 		intf.th = th;
 		// Set the interface state to SETPRIO
 		hpthread_intf_set(VAM_SETPRIO);
 		// Block until the request is complete (interface state is DONE), then swap to IDLE
-		while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) sched_yield();
+		while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) SCHED_YIELD;
 		HIGH_DEBUG(printf("[HPTHREAD] Change of priority to %d complete for hpthread %s.\n", p, th->name);)
 	}
 }
@@ -101,11 +101,11 @@ hpthread_cand_t *hpthread_query() {
     }
 
 	// Check if the interface is IDLE. If yes, swap to BUSY. If not, block until it is
-	while (!hpthread_intf_swap(VAM_IDLE, VAM_BUSY)) sched_yield();
+	while (!hpthread_intf_swap(VAM_IDLE, VAM_BUSY)) SCHED_YIELD;
 	// Set the interface state to QUERY
     hpthread_intf_set(VAM_QUERY);
 	// Block until the request is complete (interface state is DONE), then swap to IDLE
-	while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) sched_yield();
+	while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) SCHED_YIELD;
 	HIGH_DEBUG(printf("[HPTHREAD] Received hpthread candidate list.\n");)
 	// Return the empty hpthread candidate list to the caller
 	return intf.list;
@@ -114,11 +114,11 @@ hpthread_cand_t *hpthread_query() {
 void hpthread_report() {
 	HIGH_DEBUG(printf("[HPTHREAD] Requested report from VAM.\n");)
 	// Check if the interface is IDLE. If yes, swap to BUSY. If not, block until it is
-	while (!hpthread_intf_swap(VAM_IDLE, VAM_BUSY)) sched_yield();
+	while (!hpthread_intf_swap(VAM_IDLE, VAM_BUSY)) SCHED_YIELD;
 	// Set the interface state to QUERY
     hpthread_intf_set(VAM_REPORT);
 	// Block until the request is complete (interface state is DONE), then swap to IDLE
-	while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) sched_yield();
+	while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) SCHED_YIELD;
 	HIGH_DEBUG(printf("[HPTHREAD] Report complete.\n");)	
 }
 
