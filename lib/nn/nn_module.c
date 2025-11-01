@@ -356,13 +356,14 @@ void nn_module_rsp(nn_module *m, nn_token_t *output_data, unsigned data_len) {
 
 bool nn_module_rsp_check(nn_module *m, nn_token_t *output_data, unsigned data_len) {
     // Wait for inference to finish
-    unsigned pingpong = (m->pingpong_cnt_out++) % PINGPONG; 
+    unsigned pingpong = m->pingpong_cnt_out % PINGPONG; 
     if(__atomic_load_n(m->output_flag[pingpong], __ATOMIC_ACQUIRE) != 1) return false;
     LOW_DEBUG (
         nn_token_t *output_addr = (nn_token_t *) (m->output_flag[pingpong]) + (PAYLOAD_OFFSET/sizeof(nn_token_t));
         memcpy(output_data, output_addr, data_len);
     )
     __atomic_store_n(m->output_flag[pingpong], 0, __ATOMIC_RELEASE);
+    m->pingpong_cnt_out++;
     return true;
     HIGH_DEBUG(printf("[NN%d] Output flag test success %d...\n", m->id, m->rsp_count++));
 }

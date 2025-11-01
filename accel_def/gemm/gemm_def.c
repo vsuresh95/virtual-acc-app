@@ -166,8 +166,8 @@ void *gemm_invoke(void *a) {
             // Wait for input to be valid/output to be empty
             unsigned *input_flag = (unsigned *) &mem[params->input_base];
             unsigned *output_flag = (unsigned *) &mem[params->output_base];
-            if (!__atomic_load_n(input_flag, __ATOMIC_ACQUIRE) != 1) { SCHED_YIELD; continue; } // Try next context
-            if (!__atomic_load_n(output_flag, __ATOMIC_ACQUIRE) != 0) { SCHED_YIELD; continue; } // Try next context
+            if (__atomic_load_n(input_flag, __ATOMIC_ACQUIRE) != 1) { SCHED_YIELD; continue; } // Try next context
+            if (__atomic_load_n(output_flag, __ATOMIC_ACQUIRE) != 0) { SCHED_YIELD; continue; } // Try next context
             // Then change the queue tail
             gemm_queue_pop(q);
             HIGH_DEBUG(printf("[INVOKE] Starting GEMM %d for context %d on %s\n", invoke_count[current_context], current_context, accel->devname);)
