@@ -107,7 +107,7 @@ int main(int argc, char **argv) {
 
         nn_module *m = (nn_module *) malloc (sizeof(nn_module));
         m->id = i+1;
-        m->nprio = 1;
+        m->nprio = n_threads - (i % n_threads); // Higher priority for lower thread ID
         #ifndef ENABLE_SM
         m->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
         #else
@@ -216,7 +216,6 @@ int main(int argc, char **argv) {
         }
         if (total_remaining != 0 && total_remaining == old_remaining) {
             printf("STALL!!!\n");
-            goto exit;
         } else {
             old_remaining = total_remaining;
         }
@@ -239,6 +238,5 @@ int main(int argc, char **argv) {
         free(args);
         args = next;     
     } while (args != head);
-exit:
     hpthread_report();
 }

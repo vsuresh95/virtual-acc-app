@@ -42,16 +42,6 @@ void gemm_sm_probe(physical_accel_t *accel) {
     accel->esp_access_desc = (struct esp_access *) gemm_desc;
 }
 
-static inline bool multi_poll(unsigned *flag, unsigned expected_value, unsigned max_wait_cycles) {
-    unsigned wait_cycles = 16;
-    while (__atomic_load_n(flag, __ATOMIC_ACQUIRE) != expected_value) {
-        for (unsigned i = 0; i < wait_cycles; i++) { __asm__ volatile ("nop"); }
-        wait_cycles *= 2;
-        if (wait_cycles > 128) return false;
-    }
-    return true;
-}
-
 void *gemm_invoke(void *a) {
     // Read the arguments struct
     physical_accel_t *accel = (physical_accel_t *) a;
@@ -176,8 +166,8 @@ void *gemm_invoke(void *a) {
             // Wait for input to be valid/output to be empty
             unsigned *input_flag = (unsigned *) &mem[params->input_base];
             unsigned *output_flag = (unsigned *) &mem[params->output_base];
-            if (!multi_poll(input_flag, 1, 5)) { SCHED_YIELD; continue; } // Try next context
-            if (!multi_poll(output_flag, 0, 5)) { SCHED_YIELD; continue; } // Try next context
+            if (!__atomic_load_n(input_flag, __ATOMIC_ACQUIRE) != 1) { SCHED_YIELD; continue; } // Try next context
+            if (!__atomic_load_n(output_flag, __ATOMIC_ACQUIRE) != 0) { SCHED_YIELD; continue; } // Try next context
             // Then change the queue tail
             gemm_queue_pop(q);
             HIGH_DEBUG(printf("[INVOKE] Starting GEMM %d for context %d on %s\n", invoke_count[current_context], current_context, accel->devname);)

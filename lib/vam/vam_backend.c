@@ -750,9 +750,9 @@ void vam_print_report() {
         cur_accel = cur_accel->next;
     }
     // Print out the total utilization
-    printf("-----------------------------------------------------------------------\n");
-    printf("  #\tAccel\t\tC0\t\tC1\t\tC2\t\tC3\t\tTotal\n");
-    printf("-----------------------------------------------------------------------\n");
+    printf("-------------------------------------------------------------------------------------------------------\n");
+    printf("  #\tAccel\t\t\tC0\t\tC1\t\tC2\t\tC3\t\tTotal\n");
+    printf("-------------------------------------------------------------------------------------------------------\n");
     for (int i = 0; i < util_epoch_count; i++) {
         printf("  %d", i);
         physical_accel_t *cur_accel = accel_list;
