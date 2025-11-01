@@ -38,6 +38,7 @@ typedef struct physical_accel_t {
     char devname[384]; // Name of device in file system
 	int ioctl_cm; // IOCTL access code
     int fd; // File descriptor of the device, when open
+    pthread_mutex_t ioctl_mutex; // Serialize IOCTL access per accel
     struct esp_access *esp_access_desc; // Generic pointer to the access struct.
 } physical_accel_t;
 

@@ -4,6 +4,8 @@
 #include <pthread.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
+#include <sys/resource.h>
+#include <sys/syscall.h>
 #include <limits.h>
 #include <hpthread.h>
 #include <common_helper.h>
@@ -54,7 +56,6 @@ void *gemm_invoke(void *a) {
     hpthread_args_t *h_args = th->args;
     unsigned *mem = (unsigned *) h_args->mem;
     gemm_queue_t *q = (gemm_queue_t *) &mem[h_args->queue_ptr];
-    unsigned prio = th->nprio;
     LOW_DEBUG(printf("[INVOKE] Started thread for invoking GeMM on %s:%d!\n", accel->devname, context);)
     // Set queue to busy
     if (__atomic_load_n(&(q->info.stat), __ATOMIC_SEQ_CST) == QUEUE_BUSY) { SCHED_YIELD; };
@@ -64,6 +65,7 @@ void *gemm_invoke(void *a) {
     #ifndef DO_SCHED_RR
     // Set niceness based on priority
     pid_t tid = syscall(SYS_gettid);
+    unsigned prio = th->nprio;
     setpriority(PRIO_PROCESS, tid, nice_table[prio - 1]);
     HIGH_DEBUG(printf("[INVOKE] Set niceness to %d for %s:%d!\n", nice_table[prio - 1], accel->devname, context);)
     #endif
@@ -108,16 +110,31 @@ void *gemm_invoke(void *a) {
             // Then change the queue tail
             gemm_queue_pop(q);
             HIGH_DEBUG(printf("[INVOKE] Starting GEMM %d on %s:%d\n", invoke_count, accel->devname, context);)
+            HIGH_DEBUG(printf("[INVOKE] Starting GEMM %d on %s:%d\n", invoke_count, accel->devname, context);)
 
             struct esp_access *esp_access_desc = (struct esp_access *) gemm_access_desc;
+            if (pthread_mutex_lock(&accel->ioctl_mutex) != 0) {
+                perror("mutex_lock");
+                exit(EXIT_FAILURE);
+            }
             if (ioctl(accel->fd, GEMM_STRATUS_IOC_ACCESS, esp_access_desc)) {
+                if (pthread_mutex_unlock(&accel->ioctl_mutex) != 0) {
+                    perror("mutex_unlock");
+                }
                 perror("ioctl");
+                exit(EXIT_FAILURE);
+            }
+            if (pthread_mutex_unlock(&accel->ioctl_mutex) != 0) {
+                perror("mutex_unlock");
                 exit(EXIT_FAILURE);
             }
             // Set output valid
             __atomic_store_n(input_flag, 0, __ATOMIC_RELEASE);
             __atomic_store_n(output_flag, 1, __ATOMIC_RELEASE);
             uint64_t *mon_extended = (uint64_t *) esp_access_desc->mon_info.util;
+            *context_runtime += mon_extended[0]; // Single context only
+            HIGH_DEBUG(printf("[INVOKE] Finished GEMM %d on %s:%d\n", invoke_count++, accel->devname, context);)
+        }
             *context_runtime += mon_extended[0]; // Single context only
             HIGH_DEBUG(printf("[INVOKE] Finished GEMM %d on %s:%d\n", invoke_count++, accel->devname, context);)
         }

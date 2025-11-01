@@ -108,6 +108,10 @@ void vam_probe_accel() {
             strcpy(accel_temp->devname, entry->d_name);
             accel_temp->init_done = false;
             accel_temp->effective_util = 0.0;
+            if (pthread_mutex_init(&accel_temp->ioctl_mutex, NULL) != 0) {
+                fprintf(stderr, "Error: failed to initialize IOCTL mutex for %s\n", accel_temp->devname);
+                exit(EXIT_FAILURE);
+            }
             // Print out debug message
             HIGH_DEBUG(printf("[VAM] Discovered device %d: %s\n", device_id, accel_temp->devname);)
 
@@ -310,6 +314,10 @@ void vam_search_accel(hpthread_t *th) {
         physical_accel_t *cpu_thread = (physical_accel_t *) malloc(sizeof(physical_accel_t));
         cpu_thread->prim = PRIM_NONE;
         LOW_DEBUG(strcpy(cpu_thread->devname, "CPU");)
+        if (pthread_mutex_init(&cpu_thread->ioctl_mutex, NULL) != 0) {
+            fprintf(stderr, "Error: failed to initialize IOCTL mutex for CPU thread accel\n");
+            exit(EXIT_FAILURE);
+        }
         candidate_accel = cpu_thread;
         insert_cpu_thread(cpu_thread);
         candidate_util = 0.0;
