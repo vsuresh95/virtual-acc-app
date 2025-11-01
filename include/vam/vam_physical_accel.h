@@ -33,12 +33,12 @@ typedef struct physical_accel_t {
     bool cpu_invoke; // Is the accelerator invoked by a CPU thread?
     cpu_invoke_args_t *args[MAX_CONTEXTS]; // If invoked by CPU, these are the arguments
     util_entry_t *util_entry_list; // Utilization entry list
+    unsigned accel_lock; // Lock for the accelerator struct
 
     // ESP-relevant variables
     char devname[384]; // Name of device in file system
 	int ioctl_cm; // IOCTL access code
     int fd; // File descriptor of the device, when open
-    pthread_mutex_t ioctl_mutex; // Serialize IOCTL access per accel
     struct esp_access *esp_access_desc; // Generic pointer to the access struct.
 } physical_accel_t;
 

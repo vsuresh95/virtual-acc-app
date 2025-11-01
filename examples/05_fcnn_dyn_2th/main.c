@@ -236,6 +236,7 @@ int main(int argc, char **argv) {
     unsigned old_iters_remaining[2] = {bg_iterations, fg_iterations};
     unsigned total_remaining, old_remaining;
     total_remaining = old_remaining = old_iters_remaining[0] + old_iters_remaining[1];
+    unsigned stall_counter = 0;
     while (total_remaining != 0) {
         sleep(sleep_seconds);
         printf("[MAIN] IPS = ");
@@ -253,7 +254,12 @@ int main(int argc, char **argv) {
         total_remaining += new_iters_remaining;
         printf("FG:%0.2f(%d), ", ips, new_iters_remaining);
         if (total_remaining != 0 && total_remaining == old_remaining) {
-            printf("STALL!!!\n");
+            printf("STALL!!!");
+            stall_counter++;
+            if (stall_counter >= 3) {
+                printf("\n[MAIN] Detected stall for 3 consecutive periods, exiting...\n");
+                goto exit;
+            }
         } else {
             old_remaining = total_remaining;
         }
@@ -271,5 +277,6 @@ int main(int argc, char **argv) {
     free(fg_model);
     free(bg_args);
     free(fg_args);
+exit:
     hpthread_report();
 }

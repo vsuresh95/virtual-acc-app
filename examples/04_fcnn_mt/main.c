@@ -217,6 +217,7 @@ int main(int argc, char **argv) {
 
     // Periodically monitor number of iterations executed by workers
     const unsigned sleep_seconds = 2;
+    unsigned stall_counter = 0;
     while (total_remaining != 0) {
         thread_args *args = head;
         sleep(sleep_seconds);
@@ -231,7 +232,12 @@ int main(int argc, char **argv) {
             args = args->next;
         }
         if (total_remaining != 0 && total_remaining == old_remaining) {
-            printf("STALL!!!\n");
+            printf("STALL!!!");
+            stall_counter++;
+            if (stall_counter >= 3) {
+                printf("\n[MAIN] Detected stall for 3 consecutive periods, exiting...\n");
+                goto exit;
+            }
         } else {
             old_remaining = total_remaining;
         }
@@ -254,5 +260,6 @@ int main(int argc, char **argv) {
         free(args);
         args = next;     
     } while (args != head);
+exit:
     hpthread_report();
 }

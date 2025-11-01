@@ -107,25 +107,18 @@ void *gemm_invoke(void *a) {
             unsigned *output_flag = (unsigned *) &mem[gemm_access_desc->output_base];
             while(__atomic_load_n(input_flag, __ATOMIC_ACQUIRE) != 1) { SCHED_YIELD; }
             while(__atomic_load_n(output_flag, __ATOMIC_ACQUIRE) != 0) { SCHED_YIELD; }
+            unsigned expected_value = 0;
+            while(!__atomic_compare_exchange_n(&accel->accel_lock, &expected_value, 1, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) { 
+                expected_value = 0;
+                SCHED_YIELD;
+            }
             // Then change the queue tail
             gemm_queue_pop(q);
             HIGH_DEBUG(printf("[INVOKE] Starting GEMM %d on %s:%d\n", invoke_count, accel->devname, context);)
-            HIGH_DEBUG(printf("[INVOKE] Starting GEMM %d on %s:%d\n", invoke_count, accel->devname, context);)
 
             struct esp_access *esp_access_desc = (struct esp_access *) gemm_access_desc;
-            if (pthread_mutex_lock(&accel->ioctl_mutex) != 0) {
-                perror("mutex_lock");
-                exit(EXIT_FAILURE);
-            }
             if (ioctl(accel->fd, GEMM_STRATUS_IOC_ACCESS, esp_access_desc)) {
-                if (pthread_mutex_unlock(&accel->ioctl_mutex) != 0) {
-                    perror("mutex_unlock");
-                }
                 perror("ioctl");
-                exit(EXIT_FAILURE);
-            }
-            if (pthread_mutex_unlock(&accel->ioctl_mutex) != 0) {
-                perror("mutex_unlock");
                 exit(EXIT_FAILURE);
             }
             // Set output valid
@@ -133,6 +126,7 @@ void *gemm_invoke(void *a) {
             __atomic_store_n(output_flag, 1, __ATOMIC_RELEASE);
             uint64_t *mon_extended = (uint64_t *) esp_access_desc->mon_info.util;
             *context_runtime += mon_extended[0]; // Single context only
+            __atomic_store_n(&accel->accel_lock, 0, __ATOMIC_RELEASE);
             HIGH_DEBUG(printf("[INVOKE] Finished GEMM %d on %s:%d\n", invoke_count++, accel->devname, context);)
         }
         SCHED_YIELD;
