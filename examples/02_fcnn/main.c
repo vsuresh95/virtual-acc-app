@@ -66,11 +66,11 @@ int main(int argc, char **argv) {
             initialize_data("input.txt", input_data, input_len);
             output_data = (nn_token_t *) malloc (output_len * sizeof(nn_token_t));
         )
-        nn_module_req(m, input_data, input_len * sizeof(nn_token_t));
+        nn_module_req(m, input_data, input_len * sizeof(nn_token_t), true);
         t_req += get_counter() - t_start;
         // Wait for the output to be ready
         t_start = get_counter();
-        nn_module_rsp(m, output_data, output_len * sizeof(nn_token_t));
+        nn_module_rsp(m, output_data, output_len * sizeof(nn_token_t), true);
         t_rsp += get_counter() - t_start;
 
         LOW_DEBUG(

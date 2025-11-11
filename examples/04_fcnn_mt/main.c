@@ -67,7 +67,7 @@ void *req_thread(void *a) {
     while(!(*start)) { SCHED_YIELD; } // Wait for signal to start
 
     for (int i = 0; i < iterations; i++) {
-        nn_module_req(m, input_data, 0);
+        nn_module_req(m, input_data, 0, false);
         SCHED_YIELD;
     }
     return NULL;
@@ -162,8 +162,14 @@ int main(int argc, char **argv) {
         pthread_attr_destroy(&attr);
 
         // Insert into thread_args list
-        args->next = head;
-        head = args;
+        args->next = NULL;
+        if (!head) {
+            head = args;
+            continue;
+        }
+        thread_args *tmp = head;
+        while (tmp->next) tmp = tmp->next;
+        tmp->next = args;
     }
     // Create a circular list for thread_args
     thread_args *tail = head;

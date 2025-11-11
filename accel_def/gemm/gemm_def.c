@@ -55,11 +55,11 @@ void *gemm_invoke(void *a) {
     hpthread_t *th = accel->th[context];
     hpthread_args_t *h_args = th->args;
     unsigned *mem = (unsigned *) h_args->mem;
-    gemm_queue_t *q = (gemm_queue_t *) &mem[h_args->queue_ptr];
+    sm_queue_t *q = (sm_queue_t *) &mem[h_args->queue_ptr];
     LOW_DEBUG(printf("[INVOKE] Started thread for invoking GeMM on %s:%d!\n", accel->devname, context);)
     // Set queue to busy
-    if (__atomic_load_n(&(q->info.stat), __ATOMIC_SEQ_CST) == QUEUE_BUSY) { SCHED_YIELD; };
-    __atomic_store_n(&(q->info.stat), QUEUE_BUSY, __ATOMIC_SEQ_CST);
+    if (__atomic_load_n(&(q->stat), __ATOMIC_SEQ_CST) == QUEUE_BUSY) { SCHED_YIELD; };
+    __atomic_store_n(&(q->stat), QUEUE_BUSY, __ATOMIC_SEQ_CST);
     HIGH_DEBUG(printf("[INVOKE] Queue set to busy on %s:%d!\n", accel->devname, context);)
 
     #ifndef DO_SCHED_RR
@@ -88,12 +88,14 @@ void *gemm_invoke(void *a) {
 
     while (1) {
         if (*kill_pthread) { 
-            __atomic_store_n(&(q->info.stat), QUEUE_AVAIL, __ATOMIC_SEQ_CST);
+            __atomic_store_n(&(q->stat), QUEUE_AVAIL, __ATOMIC_SEQ_CST);
             pthread_exit(NULL);
         }
-
-        gemm_queue_entry_t *e = gemm_queue_can_pop(q);
-        if (e != NULL) {
+        // Is task queue empty?
+        if (!sm_queue_empty(q)) {
+            // Read descriptor from head
+            unsigned descr_offset = sm_queue_pop(q);
+            gemm_queue_entry_t *e = (gemm_queue_entry_t *) &mem[descr_offset];
             gemm_params_t *params = &(e->gemm_params);
             gemm_access_desc->dim_m = params->dim_m;
             gemm_access_desc->dim_n = params->dim_n;
@@ -102,18 +104,18 @@ void *gemm_invoke(void *a) {
             gemm_access_desc->input_base = params->input_base;
             gemm_access_desc->output_base = params->output_base;
 
-            // Wait for input to be valid/output to be empty
-            unsigned *input_flag = (unsigned *) &mem[gemm_access_desc->input_base];
-            unsigned *output_flag = (unsigned *) &mem[gemm_access_desc->output_base];
-            while(__atomic_load_n(input_flag, __ATOMIC_ACQUIRE) != 1) { SCHED_YIELD; }
-            while(__atomic_load_n(output_flag, __ATOMIC_ACQUIRE) != 0) { SCHED_YIELD; }
+            // Wait for output queue to be not full
+            sm_queue_t *output_queue = (sm_queue_t *) &(mem[e->common.output_queue]);
+            uint64_t output_entry = mem[e->common.output_entry];
+            while(sm_queue_full(output_queue)) { SCHED_YIELD; }
+            // Acquire ioctl lock
             unsigned expected_value = 0;
             while(!__atomic_compare_exchange_n(&accel->accel_lock, &expected_value, 1, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) { 
                 expected_value = 0;
                 SCHED_YIELD;
             }
             // Then change the queue tail
-            gemm_queue_pop(q);
+            sm_queue_pop(q);
             HIGH_DEBUG(printf("[INVOKE] Starting GEMM %d on %s:%d\n", invoke_count, accel->devname, context);)
 
             struct esp_access *esp_access_desc = (struct esp_access *) gemm_access_desc;
@@ -121,9 +123,8 @@ void *gemm_invoke(void *a) {
                 perror("ioctl");
                 exit(EXIT_FAILURE);
             }
-            // Set output valid
-            __atomic_store_n(input_flag, 0, __ATOMIC_RELEASE);
-            __atomic_store_n(output_flag, 1, __ATOMIC_RELEASE);
+            // Push to output queue
+            sm_queue_push(output_queue, output_entry);
             uint64_t *mon_extended = (uint64_t *) esp_access_desc->mon_info.util;
             *context_runtime += mon_extended[0]; // Single context only
             __atomic_store_n(&accel->accel_lock, 0, __ATOMIC_RELEASE);

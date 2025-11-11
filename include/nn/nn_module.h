@@ -6,12 +6,6 @@
 #include <gemm_queue.h>
 #include <nn_token.h>
 
-#ifdef PINGPONG_EN
-#define PINGPONG 2
-#else
-#define PINGPONG 1
-#endif
-
 // NN hpthread list 
 typedef struct nn_hpthread_list {
     hpthread_t *th;
@@ -26,20 +20,21 @@ typedef struct nn_task_descr {
 
 typedef struct gemm_task_descr {
     nn_task_descr common;
-    gemm_params_t params[PINGPONG];
+    uint64_t descr_offset[SM_QUEUE_SIZE];
 } gemm_task_descr;
+
+#define GEMM_TASK_DESCR_WORDS 12 // aligned as 4+8
 
 // NN handle provides an API endpoint for registering and interacting with a model
 typedef struct {
     nn_graph_t *graph; // computational graph
     void *mem; // Memory handle for the module
     unsigned mem_allocated; // how much memory already allocated in this module
-    unsigned *input_flag[PINGPONG], *output_flag[PINGPONG]; // Offsets for sync flags
-    unsigned pingpong_cnt_in, pingpong_cnt_out;
+    sm_queue_t *input_queue, *output_queue; // Pointers to queues
+    unsigned req_cnt;
     unsigned id; // Module ID
     unsigned nprio; // Priority: 1 (highest) - 10 (lowest)
     bool cpu_invoke; // Should we invoke accelerator through CPU?
-    unsigned gemm_node_count; // Number of GEMM nodes in this model
     HIGH_DEBUG(unsigned req_count;)
     HIGH_DEBUG(unsigned rsp_count;)
     nn_hpthread_list *th_list;
@@ -55,11 +50,17 @@ void nn_module_create_hpthread(nn_module *m);
 void nn_module_create_descr(nn_module *m);
 static inline const char *nn_module_get_name(nn_module *m) { return m->graph->name; }
 
+static inline unsigned nn_module_malloc(nn_module *m, unsigned words) {
+    unsigned current_alloc = m->mem_allocated;
+    m->mem_allocated += words;
+    return current_alloc;
+}
+
 void nn_module_add_hpthread(nn_module *m, hpthread_t *th);
 void nn_module_setpriority(nn_module *m, unsigned nprio);
 
-void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len);
-void nn_module_rsp(nn_module *m, nn_token_t *output_data, unsigned data_len);
+void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len, bool real_data);
+void nn_module_rsp(nn_module *m, nn_token_t *output_data, unsigned data_len, bool real_data);
 bool nn_module_rsp_check(nn_module *m, nn_token_t *output_data, unsigned data_len);
 
 // Data structures for BFS traversal of NN graph

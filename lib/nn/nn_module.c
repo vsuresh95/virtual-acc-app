@@ -19,8 +19,9 @@ void nn_module_load(nn_module *m, const char *n) {
     const unsigned mem_size = 8 * 1024 * 1024; // 8MB
     m->mem = esp_alloc(mem_size);
     m->mem_allocated = 0;
-    m->pingpong_cnt_in = m->pingpong_cnt_out = 0;
-    m->gemm_node_count = 0;
+    m->req_cnt = 0;
+    m->th_list = NULL;
+    m->descr_list = NULL;
     HIGH_DEBUG(m->req_count = 0; m->rsp_count = 0;)
 
 	char in_line_buf[256]; // Max 256 characters in one line
@@ -70,7 +71,6 @@ void nn_module_load(nn_module *m, const char *n) {
                             printf("\t[NN%d] Adding node %s...", m->id, nn_node_get_name(gemm_node));
                             nn_node_dump(gemm_node);
                         )
-                        m->gemm_node_count++;
                         break;
                     }
                     case NN_OP_NONE: {
@@ -116,62 +116,10 @@ void nn_module_load(nn_module *m, const char *n) {
 
 // Register the model with NN frontend
 void nn_module_register(nn_module *m) {
-    nn_module_create_hpthread(m);
-    nn_module_create_descr(m);
-}
-
-void nn_module_create_hpthread(nn_module *m) {
-    // First, we will create hpthreads for each layer or each accel (whichever smaller)
-    unsigned local_gemm_count = m->gemm_node_count;
-    hpthread_cand_t *cand_list = hpthread_query();
-    m->th_list = NULL;
-    m->descr_list = NULL;
-    while (cand_list != NULL) {
-        switch(cand_list->prim) {
-            case PRIM_GEMM: {
-                if (local_gemm_count != 0) {
-                    // Create the hpthread general arguments
-                    hpthread_args_t *args = (hpthread_args_t *) malloc(sizeof(hpthread_args_t));
-                    args->mem = m->mem;
-                    size_t queue_len = SM_ENTRY_SIZE + (GEMM_QUEUE_SIZE * GEMM_ENTRY_SIZE);
-                    args->queue_ptr = m->mem_allocated; m->mem_allocated += queue_len;
-                    // Init the queue
-                    sm_queue_t *q = (sm_queue_t *) ((unsigned *) (m->mem) + args->queue_ptr);
-                    sm_queue_init(q);
-
-                    // Declare hpthread and assign attributes
-                    hpthread_t *th = (hpthread_t *) malloc(sizeof(hpthread_t));
-                    th->cpu_invoke = m->cpu_invoke;
-                    hpthread_init(th, m->id);
-                    hpthread_setargs(th, args);
-	                char hpthread_name[50];
-                    snprintf(hpthread_name, 50, "gemm_th.%d", m->gemm_node_count - local_gemm_count);
-                    hpthread_setname(th, hpthread_name);
-                    hpthread_setprimitive(th, PRIM_GEMM);
-                    hpthread_setpriority(th, m->nprio);
-                    HIGH_DEBUG(printf("[NN%d] Before hpthread create for %s...\n", m->id, hpthread_name));
-                    // Create a hpthread
-                    hpthread_create(th);
-                    // Assign the thread to the model list
-                    nn_module_add_hpthread(m, th);
-                    local_gemm_count--;
-                }                
-                break;
-            }
-            default: break;
-        }
-        cand_list = cand_list->next;
-    }
-    HIGH_DEBUG(print_hpthread_list(m);)
-}
-
-void nn_module_create_descr(nn_module *m) {
     // We will maintain a queue of nodes to-be-visited in BFS order and a list of visited nodes
     nn_queue_t *q = (nn_queue_t *) malloc (sizeof(nn_queue_t));
     q->head = q->tail = NULL;
     nn_node_list *visited = NULL;
-    bool init_done = false; // For capturing input flag address
-    unsigned output_base[PINGPONG]; // For capturing output flag address
     // Do BFS traversal of the routine DFG by starting at the entry node
     nn_node_t *entry = nn_graph_get_entry(m->graph);
     // Add entry to queue and set
@@ -193,19 +141,31 @@ void nn_module_create_descr(nn_module *m) {
             nn_node_t *dst = nn_edge_get_destination(out);
             if (nn_set_add_node(&visited, dst)) {
                 nn_queue_push(q, dst);
+
+                // Allocate memory for the edge and store the offset in the args (for QUEUE_SIZE)
+                nn_edge_args *edge_args = out->args;
+                edge_args->data_offset = nn_module_malloc(m, SM_QUEUE_SIZE * edge_args->len);
+                HIGH_DEBUG(printf("[NN%d] Data offset for edge to %s = %d\n", m->id, nn_node_get_name(dst), edge_args->data_offset);)
+                // TODO assumes all destination tasks are GEMM and have same task parameters
+                // Allocate descriptor pointers + descriptors
+                edge_args->descr_offset = nn_module_malloc(m, GEMM_TASK_DESCR_WORDS + (SM_QUEUE_SIZE * GEMM_ENTRY_SIZE));
+                gemm_task_descr *descr = (gemm_task_descr *) ((unsigned *) (m->mem) + edge_args->descr_offset);
+                descr->common.prim = PRIM_GEMM;
+                // Descriptors are arranged contiguously
+                HIGH_DEBUG(printf("[NN%d] Descr offset for edge to %s = %d\n", m->id, nn_node_get_name(dst), edge_args->descr_offset);)
+                HIGH_DEBUG(printf("[NN%d] Printing task descriptor for edge to %s...\n", m->id, nn_node_get_name(dst));)
+                for (int i = 0; i < SM_QUEUE_SIZE; i++) {
+                    descr->descr_offset[i] = edge_args->descr_offset + GEMM_TASK_DESCR_WORDS + (i * GEMM_ENTRY_SIZE);
+                    HIGH_DEBUG(printf("\tdescr->descr_offset[%d] = %lu\n", i, descr->descr_offset[i]);)
+                }
+                // Allocate queue descriptors for the output edge
+                edge_args->queue_offset = nn_module_malloc(m, SM_COMMON_SIZE + (SM_QUEUE_SIZE * 2)); // uint64_t entries
+                // Init the queue
+                sm_queue_t *q = (sm_queue_t *) ((unsigned *) (m->mem) + edge_args->queue_offset);
+                sm_queue_init(q);
+                HIGH_DEBUG(printf("[NN%d] Queue offset for edge to %s = %d\n", m->id, nn_node_get_name(dst), edge_args->queue_offset);)
+                cons = cons->next;
             }
-            
-            // Allocate memory for the edge and store the offset in the args (for pingpong)
-            nn_edge_args *args = out->args;
-            size_t buf_len = args->len + PAYLOAD_OFFSET/sizeof(nn_token_t);
-            args->offset = m->mem_allocated; m->mem_allocated += 
-            PINGPONG * buf_len;
-            // Zero out the sync flag (for pingpong)
-            for (int i = 0; i < PINGPONG; i++) {
-                unsigned *sync = ((unsigned *) (m->mem)) + args->offset + (i * buf_len);
-                sync[0] = 0; sync[1] = 0;
-            }
-            cons = cons->next;
         }
 
         // Ensure that the current node is an entry or exit
@@ -213,34 +173,53 @@ void nn_module_create_descr(nn_module *m) {
         if (nn_op != NN_OP_NONE) {
             switch(nn_op) {
                 case NN_OP_GEMM: {
+                    // Get node params for allocating weights (input/output done above)
                     gemm_node_args *gemm_args = (gemm_node_args *) current->args;
                     gemm_params_t *params = &(gemm_args->params);
                     // Allocate memory for weights
-                    params->weight_base = m->mem_allocated; m->mem_allocated += params->dim_n * params->dim_k; 
-                    // Retrieve input and output offsets from its first edges
-                    // TODO: assumes single producer, single consumer
+                    params->weight_base = nn_module_malloc(m, params->dim_n * params->dim_k); 
+                    // Retrieve input and output offsets from its first edges; assumes single producer, single consumer
                     nn_edge_args *in_args = current->in_edges->e->args; nn_edge_args *out_args = current->out_edges->e->args;
-                    // Allocate a task descriptor
-                    gemm_task_descr *descr = (gemm_task_descr *) malloc (sizeof(gemm_task_descr));
-                    gemm_params_t *descr_params[PINGPONG];
-                    for (int i = 0; i < PINGPONG; i++) {
-                        descr_params[i] = &(descr->params[i]);
-                        *(descr_params[i]) = *params;
-                        descr_params[i]->input_base = in_args->offset + i * (in_args->len + PAYLOAD_OFFSET/sizeof(nn_token_t));
-                        descr_params[i]->output_base = out_args->offset + i * (out_args->len + PAYLOAD_OFFSET/sizeof(nn_token_t));
-                        output_base[i] = descr_params[i]->output_base;
+                    // Get the descriptors of incoming edge
+                    gemm_task_descr *descr = (gemm_task_descr *) ((unsigned *) (m->mem) + in_args->descr_offset);
+                    for (int i = 0; i < SM_QUEUE_SIZE; i++) {
+                        gemm_queue_entry_t *descr_entry = (gemm_queue_entry_t *) ((unsigned *) (m->mem) + descr->descr_offset[i]);
+                        sm_queue_entry_t *descr_common = &(descr_entry->common);
+                        gemm_params_t *descr_params = &(descr_entry->gemm_params);
+                        *descr_params = *params;
+                        descr_params->input_base = in_args->data_offset + i * (in_args->len);
+                        descr_params->output_base = out_args->data_offset + i * (out_args->len);
+                        descr_common->output_queue = out_args->queue_offset;
+                        descr_common->output_entry = out_args->descr_offset + GEMM_TASK_DESCR_WORDS + i * (GEMM_ENTRY_SIZE);
+                        HIGH_DEBUG(print_gemm_entry(descr_entry);)
                     }
+
+                    // Create a hpthread for this node
+                    hpthread_args_t *h_args = (hpthread_args_t *) malloc(sizeof(hpthread_args_t));
+                    // Set hpthread mem to model mem
+                    h_args->mem = m->mem;
+                    // Set queue pointer from edge arguments
+                    h_args->queue_ptr = in_args->queue_offset;
+                    // Declare hpthread and assign attributes
+                    hpthread_t *th = (hpthread_t *) malloc(sizeof(hpthread_t));
+                    th->cpu_invoke = m->cpu_invoke;
+                    hpthread_init(th, m->id);
+                    hpthread_setargs(th, h_args);
+                    char hpthread_name[50];
+                    snprintf(hpthread_name, 50, nn_node_get_name(current));
+                    hpthread_setname(th, hpthread_name);
+                    hpthread_setprimitive(th, PRIM_GEMM);
+                    hpthread_setpriority(th, m->nprio);
+                    HIGH_DEBUG(printf("[NN%d] queue ptr for %s = %d...\n", m->id, hpthread_name, h_args->queue_ptr););
+                    HIGH_DEBUG(printf("[NN%d] Before hpthread create for %s...\n", m->id, hpthread_name));
+                    // Create a hpthread
+                    hpthread_create(th);
+                    // Assign the thread to the model list
+                    nn_module_add_hpthread(m, th);
+
                     // Initialize the weights if present
-                    LOW_DEBUG(nn_token_t *wgt_address = ((nn_token_t *) m->mem) + params->weight_base;
+                    LOW_DEBUG(nn_token_t *wgt_address = ((nn_token_t *) (m->mem) + params->weight_base);
                     initialize_data(gemm_args->input_file, wgt_address, params->dim_n * params->dim_k);)
-                    // For this function: at the first descriptor, we also load the input file
-                    if (!init_done) {
-                        for (int i = 0; i < PINGPONG; i++)
-                            m->input_flag[i] = ((unsigned *) m->mem) + descr_params[i]->input_base;
-                        init_done = true;
-                    }
-                    // Add descr to the list in the model
-                    descr->common.prim = PRIM_GEMM;
                     nn_module_add_task_descr(m, (nn_task_descr *) descr);
                     break;
                 }
@@ -249,6 +228,34 @@ void nn_module_create_descr(nn_module *m) {
         }
     }
     HIGH_DEBUG(print_descr_list(m);)
+
+    // Populate the descriptor for the exit stage
+    // TODO assuming exit node is a GEMM -- need to fix input/output fields in queue entry
+    nn_node_t *exit = nn_graph_get_exit(m->graph);
+    // Retrieve input offsets from its first edges; assumes single producer, single consumer
+    nn_edge_args *in_args = exit->in_edges->e->args;
+    // Get the descriptors of incoming edge
+    gemm_task_descr *descr = (gemm_task_descr *) ((unsigned *) (m->mem) + in_args->descr_offset);
+    for (int i = 0; i < SM_QUEUE_SIZE; i++) {
+        gemm_queue_entry_t *descr_entry = (gemm_queue_entry_t *) ((unsigned *) (m->mem) + descr->descr_offset[i]);
+        gemm_params_t *descr_params = &(descr_entry->gemm_params);
+        descr_params->input_base = in_args->data_offset + i * (in_args->len);
+        HIGH_DEBUG(print_gemm_entry(descr_entry);)
+    }
+
+    // Calculate the input and output flag addresses for this module
+    nn_edge_list *cur; nn_edge_t *edge = NULL;
+    for (cur = exit->in_edges; cur; cur = cur->next) {
+        edge = cur->e;
+    } m->output_queue = (sm_queue_t *) ((unsigned *) (m->mem) + edge->args->queue_offset);
+    HIGH_DEBUG(printf("[NN] output_queue_offset for model %s = %d\n", nn_module_get_name(m), edge->args->queue_offset);)
+    for (cur = entry->out_edges; cur; cur = cur->next) {
+        edge = cur->e;
+    } m->input_queue = (sm_queue_t *) ((unsigned *) (m->mem) + edge->args->queue_offset);
+    HIGH_DEBUG(printf("[NN] input_queue_offset for model %s = %d\n", nn_module_get_name(m), edge->args->queue_offset);)
+
+    HIGH_DEBUG(print_hpthread_list(m);)
+
     // Clean up temporary data structures
     nn_queue_delete(q);
     while(visited != NULL) {
@@ -256,9 +263,6 @@ void nn_module_create_descr(nn_module *m) {
         free(visited);
         visited = next;
     }
-    // Register the output flag location
-    for (int i = 0; i < PINGPONG; i++)
-        m->output_flag[i] = ((unsigned *) m->mem) + output_base[i];
 }
 
 // Helper: Load and register a model in one call
@@ -284,9 +288,15 @@ void nn_module_release(nn_module *m) {
 
 void nn_module_add_hpthread(nn_module *m, hpthread_t *th) {
     nn_hpthread_list *item = (nn_hpthread_list *) malloc (sizeof(nn_hpthread_list));
+    item->next = NULL;
     item->th = th;
-    item->next = m->th_list;
-    m->th_list = item;
+    if (!m->th_list) {
+        m->th_list = item;
+        return;
+    }
+    nn_hpthread_list *list = m->th_list;
+    while (list->next) list = list->next;
+    list->next = item;
 }
 
 void nn_module_setpriority(nn_module *m, unsigned nprio) {
@@ -298,73 +308,58 @@ void nn_module_setpriority(nn_module *m, unsigned nprio) {
     }
 }
 
-void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len) {
+void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len, bool real_data) {
     HIGH_DEBUG(printf("[NN%d] Starting nn_module_req for %s\n", m->id, nn_module_get_name(m)));
-    // Traverse the task descriptor list and assign each descriptor to an hpthread queue
+    // Try to enqueue the first descriptor (for req_cnt_in) to the input_queue
     nn_task_descr *descr_list = m->descr_list;
-    nn_hpthread_list *th_list = m->th_list;
-    unsigned pingpong = (m->pingpong_cnt_in++) % PINGPONG;
-    HIGH_DEBUG(unsigned descr_cnt = 0;)
-    while (descr_list != NULL) {
-        switch(descr_list->prim) {
-            case PRIM_GEMM: {
-                HIGH_DEBUG(printf("[NN%d] Programming PRIM_GEMM descr %d for req %d...\n", m->id, descr_cnt, m->req_count););
-                gemm_task_descr *descr = (gemm_task_descr *) descr_list;
-                gemm_params_t *params = &(descr->params[pingpong]);
-                // Try to send each param to one of the queues in round robin fashion
-                gemm_queue_entry_t e;
-                e.gemm_params = *params;
-                hpthread_args_t *args = th_list->th->args;
-                unsigned *mem = (unsigned *) args->mem;
-                unsigned queue_offset = args->queue_ptr;
-                gemm_queue_t *q = (gemm_queue_t *) &mem[queue_offset];
-                // If the current queue is full, keep trying
-                if (th_list->th->prim == PRIM_GEMM) {
-                    while(!gemm_queue_push(q, &e)) { SCHED_YIELD; }
-                }
-                HIGH_DEBUG(printf("[NN%d] Enqueued descr %d to hpthread %s.\n", m->id, descr_cnt++, hpthread_get_name(th_list->th)));
-
-                // For the next descriptor, we should try the next queue
-                th_list = th_list->next;
-                if (th_list == NULL) th_list = m->th_list;
-            }
-            default: break;
-        }
-        descr_list = descr_list->next;
+    uint64_t descr_offset;
+    sm_queue_t *in_q = m->input_queue;
+    unsigned req = (m->req_cnt++) % SM_QUEUE_SIZE;
+    switch(descr_list->prim) {
+        case PRIM_GEMM: {
+            gemm_task_descr *descr = (gemm_task_descr *) descr_list;
+            descr_offset = descr->descr_offset[req];
+        }    
+        default: break;
     }
-    // Once all the descrtiptors are queued, set the input flag for the first descriptor here (ensure it's not already set)
-    while(__atomic_load_n(m->input_flag[pingpong], __ATOMIC_ACQUIRE) != 0) { SCHED_YIELD; }
-    LOW_DEBUG (
-        nn_token_t *input_addr = (nn_token_t *) (m->input_flag[pingpong]) + (PAYLOAD_OFFSET/sizeof(nn_token_t));
+    HIGH_DEBUG(printf("[NN%d] Programming PRIM_GEMM descr at %lu for req %d...\n", m->id, descr_offset, req););
+    while(sm_queue_full(in_q)) { SCHED_YIELD; }
+    if (real_data) {
+        nn_token_t *input_addr;
+        // TODO: assumes it is a GEMM task
+        gemm_queue_entry_t *descr = (gemm_queue_entry_t *) ((unsigned *) (m->mem) + descr_offset);
+        input_addr = (nn_token_t *) ((unsigned *) (m->mem) + descr->gemm_params.input_base);
         memcpy(input_addr, input_data, data_len);
-    )
-    __atomic_store_n(m->input_flag[pingpong], 1, __ATOMIC_RELEASE);
-    HIGH_DEBUG(printf("[NN%d] Input flag set %d...\n", m->id, m->req_count++));
+    }
+    sm_queue_push(in_q, descr_offset);
+    HIGH_DEBUG(printf("[NN%d] Enqueued descr to module %s.\n", m->id, nn_module_get_name(m)));
 }
 
-void nn_module_rsp(nn_module *m, nn_token_t *output_data, unsigned data_len) {
-    // Wait for inference to finish
-    unsigned pingpong = (m->pingpong_cnt_out++) % PINGPONG; 
-    while(__atomic_load_n(m->output_flag[pingpong], __ATOMIC_ACQUIRE) != 1) { SCHED_YIELD; }
-    LOW_DEBUG (
-        nn_token_t *output_addr = (nn_token_t *) (m->output_flag[pingpong]) + (PAYLOAD_OFFSET/sizeof(nn_token_t));
+void nn_module_rsp(nn_module *m, nn_token_t *output_data, unsigned data_len, bool real_data) {
+    sm_queue_t *out_q = m->output_queue;
+    uint64_t descr_offset;
+    HIGH_DEBUG(printf("[NN%d] Dequeueing descr for module %s.\n", m->id, nn_module_get_name(m)));
+    while(sm_queue_empty(out_q)) { SCHED_YIELD; }
+    if (real_data) {
+        nn_token_t *output_addr;
+        uint64_t tail = out_q->tail;
+        descr_offset = out_q->entry[tail % SM_QUEUE_SIZE];
+        // TODO: assumes it is a GEMM task
+        gemm_queue_entry_t *descr = (gemm_queue_entry_t *) ((unsigned *) (m->mem) + descr_offset);
+        output_addr = (nn_token_t *) ((unsigned *) (m->mem) + descr->gemm_params.input_base);
+        HIGH_DEBUG(printf("[NN%d] Output data to be read at %d for descr at %lu.\n", m->id, descr->gemm_params.input_base, descr_offset));
         memcpy(output_data, output_addr, data_len);
-    )
-    __atomic_store_n(m->output_flag[pingpong], 0, __ATOMIC_RELEASE);
-    HIGH_DEBUG(printf("[NN%d] Output flag test success %d...\n", m->id, m->rsp_count++));
+    }
+    sm_queue_pop(out_q);
+    HIGH_DEBUG(printf("[NN%d] Dequeued descr at %lu for module %s.\n", m->id, descr_offset, nn_module_get_name(m)));
 }
 
 bool nn_module_rsp_check(nn_module *m, nn_token_t *output_data, unsigned data_len) {
-    // Wait for inference to finish
-    unsigned pingpong = m->pingpong_cnt_out % PINGPONG; 
-    if(__atomic_load_n(m->output_flag[pingpong], __ATOMIC_ACQUIRE) != 1) return false;
-    LOW_DEBUG (
-        nn_token_t *output_addr = (nn_token_t *) (m->output_flag[pingpong]) + (PAYLOAD_OFFSET/sizeof(nn_token_t));
-        memcpy(output_data, output_addr, data_len);
-    )
-    __atomic_store_n(m->output_flag[pingpong], 0, __ATOMIC_RELEASE);
-    m->pingpong_cnt_out++;
-    HIGH_DEBUG(printf("[NN%d] Output flag test success %d...\n", m->id, m->rsp_count++));
+    sm_queue_t *out_q = m->output_queue;
+    HIGH_DEBUG(printf("[NN%d] Dequeueing descr for module %s.\n", m->id, nn_module_get_name(m)));
+    if (sm_queue_empty(out_q)) return false;
+    sm_queue_pop(out_q);
+    HIGH_DEBUG(printf("[NN%d] Dequeued descr for module %s.\n", m->id, nn_module_get_name(m)));
     return true;
 }
 
@@ -449,13 +444,16 @@ void print_descr_list(nn_module *m) {
         switch(descr_list->prim) {
             case PRIM_GEMM: {
                 gemm_task_descr *descr = (gemm_task_descr *) descr_list;
-                for (int i = 0; i < PINGPONG; i++) {
-                    printf("\t[D%d] dim_m=%d\n", count, descr->params[i].dim_m);
-                    printf("\t[D%d] dim_n=%d\n", count, descr->params[i].dim_n);
-                    printf("\t[D%d] dim_k=%d\n", count, descr->params[i].dim_k);
-                    printf("\t[D%d] weight_base=%d\n", count, descr->params[i].weight_base);
-                    printf("\t[D%d] input_base=%d\n", count, descr->params[i].input_base);
-                    printf("\t[D%d] output_base=%d\n", count, descr->params[i].output_base);
+                for (int i = 0; i < SM_QUEUE_SIZE; i++) {
+                    gemm_queue_entry_t *descr_entry = (gemm_queue_entry_t *) ((unsigned *) (m->mem) + descr->descr_offset[i]);
+                    printf("\t[D%d] dim_m=%d\n", count, descr_entry->gemm_params.dim_m);
+                    printf("\t[D%d] dim_n=%d\n", count, descr_entry->gemm_params.dim_n);
+                    printf("\t[D%d] dim_k=%d\n", count, descr_entry->gemm_params.dim_k);
+                    printf("\t[D%d] weight_base=%d\n", count, descr_entry->gemm_params.weight_base);
+                    printf("\t[D%d] input_base=%d\n", count, descr_entry->gemm_params.input_base);
+                    printf("\t[D%d] output_base=%d\n", count, descr_entry->gemm_params.output_base);
+                    printf("\t[D%d] output_queue=%d\n", count, descr_entry->common.output_queue);
+                    printf("\t[D%d] output_entry=%d\n", count, descr_entry->common.output_entry);
                 }
             }
             default: break;

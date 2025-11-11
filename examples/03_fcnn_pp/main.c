@@ -16,7 +16,7 @@ void *rsp_thread(void *a) {
     unsigned print_iterations = iterations / 5;
 
     for (int i = 0; i < iterations + 5; i++) {
-        nn_module_rsp(m, output_data, 0);
+        nn_module_rsp(m, output_data, 0, false);
         SCHED_YIELD;
         if (i % print_iterations == 0) printf("[APP] Iter %d done!\n", i);
     }
@@ -116,19 +116,19 @@ int main(int argc, char **argv) {
     nn_token_t *output_data = (nn_token_t *) malloc (1);
     #endif
     for (int i = 0; i < 5; i++) {
-        nn_module_req(m, input_data, 0);
+        nn_module_req(m, input_data, 0, false);
         SCHED_YIELD;
         #ifdef DO_CHAIN
-        nn_module_rsp(m, output_data, 0);
+        nn_module_rsp(m, output_data, 0, false);
         #endif
     }
 
     uint64_t t_start = get_counter();
     for (int i = 0; i < iterations; i++) {
-        nn_module_req(m, input_data, 0);
+        nn_module_req(m, input_data, 0, false);
         SCHED_YIELD;
         #ifdef DO_CHAIN
-        nn_module_rsp(m, output_data, 0);
+        nn_module_rsp(m, output_data, 0, false);
         LOW_DEBUG( 
             unsigned print_iterations = iterations / 5;
             if (i % print_iterations == 0) printf("[APP] Iter %d done!\n", i);
@@ -136,7 +136,6 @@ int main(int argc, char **argv) {
         #endif
     }
     uint64_t t_loop = get_counter() - t_start;
-    printf("[APP] Average time = %lu\n", t_loop/iterations);
 
     #ifndef DO_CHAIN
     pthread_join(rsp_th, NULL);
@@ -144,4 +143,5 @@ int main(int argc, char **argv) {
     nn_module_release(m);
     free(m);
     hpthread_report();
+    printf("[APP] Average time = %lu\n", t_loop/iterations);
 }
