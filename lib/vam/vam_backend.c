@@ -164,12 +164,12 @@ void *vam_run_backend(void *arg) {
     bool kill_vam = false;
 
     uint64_t vam_sleep = VAM_SLEEP_MIN;
-    // const float LB_RETRY_HIGH = 0.5;
-    // const float LB_RETRY_LOW = 0.25;
-    // const float LB_RETRY_DIFF = 0.25;
-    // const float LB_RETRY_RESET = 0.1;
-    // const unsigned MAX_LB_RETRY = 3;
-    // unsigned NUM_LB_RETRY = MAX_LB_RETRY;
+    const float LB_RETRY_HIGH = 0.7;
+    const float LB_RETRY_LOW = 0.3;
+    const float LB_RETRY_DIFF = 0.5;
+    const float LB_RETRY_RESET = 0.2;
+    const unsigned MAX_LB_RETRY = 3;
+    unsigned NUM_LB_RETRY = MAX_LB_RETRY;
 
     // Run loop will run forever
     while (1) {
@@ -182,35 +182,42 @@ void *vam_run_backend(void *arg) {
                 float load_imbalance = vam_check_load_balance();
                 // Write the current utilization to the log
                 vam_log_utilization();
+
+                bool increment_vam_sleep = true;
+                bool need_load_balance = false;
                     
-                    // // Allow load balances if load is sufficiently low.
-                    // if ((load_imbalance <= LB_RETRY_RESET)) {
-                    //     NUM_LB_RETRY = MAX_LB_RETRY;
-                    //     load_imbalance_reg = load_imbalance; // reset baseline
-                    // }
+                if ((load_imbalance <= LB_RETRY_RESET)) {
+                    NUM_LB_RETRY = MAX_LB_RETRY;
+                    load_imbalance_reg = load_imbalance; // reset baseline
+                } else if (load_imbalance > LB_RETRY_LOW && NUM_LB_RETRY > 0) {
+                    need_load_balance = true;
+                } else if (fabsf(load_imbalance - load_imbalance_reg) > LB_RETRY_DIFF) {
+                    increment_vam_sleep = false;
+                    NUM_LB_RETRY = MAX_LB_RETRY;
+                    need_load_balance = true;
+                } else if (load_imbalance > LB_RETRY_HIGH) {
+                    increment_vam_sleep = false;
+                    need_load_balance = true;
+                }
 
-                    // // If no retries allowed, but diff is large, allow retries
-                    // if ((NUM_LB_RETRY == 0) && fabsf(load_imbalance - load_imbalance_reg) > LB_RETRY_DIFF) NUM_LB_RETRY = MAX_LB_RETRY;
+                if (need_load_balance) {
+                    LOW_DEBUG(printf("[VAM] Trigerring load balancer, imbalance=%0.2f\n", load_imbalance);)
+                    if (!vam_load_balance()) {
+                        // If load balance was not successful, reduce retry count
+                        NUM_LB_RETRY--;
+                        load_imbalance_reg = load_imbalance;
+                    }
+                }
 
-                    // // Can we try a load balance?
-                    // if (NUM_LB_RETRY != 0 && load_imbalance > LB_RETRY_LOW) {
-                    //     // Start the load balancing algorithm
-                    //     LOW_DEBUG(printf("[VAM] Trigerring load balancer, imbalance=%0.2f\n", load_imbalance);)
-                    //     if (!vam_load_balance()) {
-                    //         // If the load balancing was not successful, reduce the retry count
-                    //         NUM_LB_RETRY--;
-                    //     }
-                    // }
+                if (increment_vam_sleep) {
+                    if (vam_sleep < VAM_SLEEP_MAX) vam_sleep += VAM_SLEEP_MIN;
+                } else {
+                    if (vam_sleep > VAM_SLEEP_MID) vam_sleep = VAM_SLEEP_MIN;
+                    else if (vam_sleep > VAM_SLEEP_MIN) vam_sleep -= VAM_SLEEP_MIN;
+                }
 
-                    // if (load_imbalance > LB_RETRY_HIGH) {
-                    //     // If load is very imbalanced, sleep less
-                    //     vam_sleep = VAM_SLEEP_MIN;
-                    // } else {
-                    //     if (vam_sleep < VAM_SLEEP_MAX) vam_sleep += VAM_SLEEP_MIN;
-                    // }
-
-                    // // As a fallback, reset the retry every ~5 seconds of sleep
-                    // if (vam_sleep >= VAM_SLEEP_MID) NUM_LB_RETRY = MAX_LB_RETRY;
+                // As a fallback, reset the retry every ~5 seconds of sleep
+                if (vam_sleep >= VAM_SLEEP_MAX && NUM_LB_RETRY != MAX_LB_RETRY) NUM_LB_RETRY++;
                 break;
             }
             case VAM_CREATE: {

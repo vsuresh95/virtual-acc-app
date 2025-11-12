@@ -4,7 +4,7 @@ APP_NAME?=$(notdir $(PWD))
 CFLAGS+=-I./
 CFLAGS+=-DENABLE_SM
 # CFLAGS+=-DDO_CPU_PIN
-CFLAGS+=-DDO_SCHED_RR
+# CFLAGS+=-DDO_SCHED_RR
 APPSRCFILES+=$(PWD)/main.c
 
 OPT_APP_OBJ=$(patsubst $(PWD)/%.c,$(BUILD_DIR)/%.app.opt.o,$(APPSRCFILES))
