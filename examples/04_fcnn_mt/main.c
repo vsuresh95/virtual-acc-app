@@ -5,7 +5,9 @@
 #include <sys/syscall.h>
 
 // Counter for core affinity
+#ifdef DO_CPU_PIN
 static uint8_t core_affinity_ctr = 0;
+#endif
 
 typedef struct thread_args {
     nn_module *m;

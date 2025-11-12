@@ -7,6 +7,9 @@
 // Utilization entry for tracking
 typedef struct util_entry {
     float util[MAX_CONTEXTS];
+#ifdef LITE_REPORT
+    float total_util;
+#endif
     unsigned id[MAX_CONTEXTS];
     struct util_entry *next;
 } util_entry_t;

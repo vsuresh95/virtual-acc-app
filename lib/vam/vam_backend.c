@@ -32,7 +32,9 @@ float avg_util, max_util, min_util;
 // Safeguard for not performing load balance repeatedly
 float load_imbalance_reg;
 // Counter for core affinity
+#ifdef DO_CPU_PIN
 static uint8_t core_affinity_ctr = 0;
+#endif
 // Number of CPUs online
 long cpu_online;
 // Physical accelerator list
@@ -750,6 +752,46 @@ void vam_log_utilization() {
 }
 
 void vam_print_report() {
+#ifdef LITE_REPORT
+    printf("-------------------------------------------------------------------------------------------------------\n");
+    printf("  Accel\t\t\tC0\tC1\tC2\tC3\tTotal\n");
+    printf("-------------------------------------------------------------------------------------------------------\n");
+    physical_accel_t *cur_accel = accel_list;
+    while (cur_accel != NULL) {
+        printf("  %s\t", physical_accel_get_name(cur_accel));
+        util_entry_t avg_entry;
+        for (int j = 0; j < MAX_CONTEXTS; j++) {
+            avg_entry.util[j] = 0;
+        }
+        avg_entry.total_util = 0;
+        // Calculate average utilization for each accelerator
+        for (int i = 0; i < util_epoch_count; i++) {
+            util_entry_t *entry = cur_accel->util_entry_list;
+            util_entry_t *prev = NULL;
+            // Traverse to the end of the list to get the oldest entry
+            while (entry->next != NULL) {
+                prev = entry;
+                entry = entry->next;
+            }
+            for (int j = 0; j < MAX_CONTEXTS; j++) {
+                avg_entry.util[j] += entry->util[j];
+                avg_entry.total_util += entry->util[j];
+            }
+            // Delete the oldest entry after reading
+            if (prev != NULL) {
+                prev->next = NULL;
+            } else {
+                cur_accel->util_entry_list = NULL;
+            }
+            free(entry);
+        }
+        for (int j = 0; j < MAX_CONTEXTS; j++) {
+            printf("%0.2f%%\t", (avg_entry.util[j]*100)/util_epoch_count);
+        }
+        printf("%0.2f%%\n", (avg_entry.total_util*100)/util_epoch_count);
+        cur_accel = cur_accel->next;
+    }
+#else    
     // Print out the total utilization
     printf("-------------------------------------------------------------------------------------------------------\n");
     printf("  #\tAccel\t\t\tC0\t\tC1\t\tC2\t\tC3\t\tTotal\n");
@@ -782,4 +824,5 @@ void vam_print_report() {
             cur_accel = cur_accel->next;
         }
     }
+#endif    
 }
