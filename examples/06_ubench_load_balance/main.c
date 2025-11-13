@@ -112,6 +112,7 @@ int main(int argc, char **argv) {
     unsigned inputs_remaining = iterations;
 
     uint64_t t_start = get_counter();
+    bool need_yield = false;
     while (inputs_remaining != 0 || outputs_remaining != 0) {
         if (inputs_remaining != 0) {
             // Check if input queue is full
@@ -119,6 +120,8 @@ int main(int argc, char **argv) {
                 HIGH_DEBUG(printf("[APP] Enqueueing new input %d\n", iterations - inputs_remaining));
                 sm_queue_push(in_q, descriptor_offset);
                 inputs_remaining--;
+            } else {
+                need_yield = true;
             }
         }
         if (outputs_remaining != 0) {
@@ -127,16 +130,22 @@ int main(int argc, char **argv) {
                 sm_queue_pop(out_q);
                 outputs_remaining--;
                 LOW_DEBUG( if (outputs_remaining % 1000 == 0) printf("[APP] Iter %d done!\n", iterations - outputs_remaining); )
+            } else {
+                need_yield = true;
             }
+        }
+        if (need_yield) {
+            SCHED_YIELD;
+            need_yield = false;
         }
     }
     uint64_t t_loop = get_counter() - t_start;
+	printf("[APP] Avg time = %lu\n", t_loop/iterations);
     hpthread_join(th);
     hpthread_report();
 
     free(gold);
     esp_free(mem);
-	printf("[APP] Avg time = %lu\n", t_loop/iterations);
 
     return 0;
 }

@@ -730,6 +730,27 @@ bool vam_load_balance() {
 }
 
 void vam_log_utilization() {
+#ifdef LITE_REPORT    
+    physical_accel_t *cur_accel = accel_list;
+    while (cur_accel != NULL) {
+        HIGH_DEBUG( printf("[VAM] Logging utilization for %s\n", physical_accel_get_name(cur_accel)); )
+        if (cur_accel->util_entry_list == NULL) {
+            cur_accel->util_entry_list = (util_entry_t *) malloc (sizeof(util_entry_t));
+            for (int i = 0; i < MAX_CONTEXTS; i++) {
+                cur_accel->util_entry_list->util[i] = 0.0;
+                cur_accel->util_entry_list->id[i] = 0;
+            }
+        }
+        util_entry_t *entry = cur_accel->util_entry_list;
+        for (int i = 0; i < MAX_CONTEXTS; i++) {
+            if (bitset_test(cur_accel->valid_contexts, i)) {
+                entry->util[i] += cur_accel->context_util[i];
+            }
+        }
+        cur_accel = cur_accel->next;
+    }
+    util_epoch_count++;
+#else    
     physical_accel_t *cur_accel = accel_list;
     while (cur_accel != NULL) {
         HIGH_DEBUG( printf("[VAM] Logging utilization for %s\n", physical_accel_get_name(cur_accel)); )
@@ -749,6 +770,7 @@ void vam_log_utilization() {
         cur_accel = cur_accel->next;
     }
     util_epoch_count++;
+#endif
 }
 
 void vam_print_report() {
@@ -759,36 +781,14 @@ void vam_print_report() {
     physical_accel_t *cur_accel = accel_list;
     while (cur_accel != NULL) {
         printf("  %s\t", physical_accel_get_name(cur_accel));
-        util_entry_t avg_entry;
-        for (int j = 0; j < MAX_CONTEXTS; j++) {
-            avg_entry.util[j] = 0;
-        }
-        avg_entry.total_util = 0;
+        util_entry_t *entry = cur_accel->util_entry_list;
         // Calculate average utilization for each accelerator
-        for (int i = 0; i < util_epoch_count; i++) {
-            util_entry_t *entry = cur_accel->util_entry_list;
-            util_entry_t *prev = NULL;
-            // Traverse to the end of the list to get the oldest entry
-            while (entry->next != NULL) {
-                prev = entry;
-                entry = entry->next;
-            }
-            for (int j = 0; j < MAX_CONTEXTS; j++) {
-                avg_entry.util[j] += entry->util[j];
-                avg_entry.total_util += entry->util[j];
-            }
-            // Delete the oldest entry after reading
-            if (prev != NULL) {
-                prev->next = NULL;
-            } else {
-                cur_accel->util_entry_list = NULL;
-            }
-            free(entry);
-        }
+        float total_util = 0.0;
         for (int j = 0; j < MAX_CONTEXTS; j++) {
-            printf("%0.2f%%\t", (avg_entry.util[j]*100)/util_epoch_count);
+            printf("%0.2f%%\t", (entry->util[j]*100)/util_epoch_count);
+            total_util += entry->util[j];
         }
-        printf("%0.2f%%\n", (avg_entry.total_util*100)/util_epoch_count);
+        printf("%0.2f%%\n", (total_util*100)/util_epoch_count);
         cur_accel = cur_accel->next;
     }
 #else    
