@@ -9,6 +9,9 @@ typedef struct util_entry {
     float util[MAX_CONTEXTS];
     unsigned id[MAX_CONTEXTS];
     struct util_entry *next;
+    #ifdef LITE_REPORT
+    unsigned util_epoch_count;
+    #endif
 } util_entry_t;
 
 struct cpu_invoke_args_t;

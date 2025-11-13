@@ -39,8 +39,10 @@ static uint8_t core_affinity_ctr = 0;
 long cpu_online;
 // Physical accelerator list
 hpthread_cand_t *hpthread_cand_list = NULL;
+#ifndef LITE_REPORT
 // Number of util epochs tracked
 unsigned util_epoch_count = 0;
+#endif
 
 // Function to wake up VAM for the first time
 void wakeup_vam() {
@@ -740,6 +742,7 @@ void vam_log_utilization() {
                 cur_accel->util_entry_list->util[i] = 0.0;
                 cur_accel->util_entry_list->id[i] = 0;
             }
+            cur_accel->util_entry_list->util_epoch_count = 0;
         }
         util_entry_t *entry = cur_accel->util_entry_list;
         for (int i = 0; i < MAX_CONTEXTS; i++) {
@@ -747,9 +750,9 @@ void vam_log_utilization() {
                 entry->util[i] += cur_accel->context_util[i];
             }
         }
+        if (bitset_any(cur_accel->valid_contexts)) entry->util_epoch_count++;
         cur_accel = cur_accel->next;
     }
-    util_epoch_count++;
 #else    
     physical_accel_t *cur_accel = accel_list;
     while (cur_accel != NULL) {
@@ -785,10 +788,10 @@ void vam_print_report() {
         // Calculate average utilization for each accelerator
         float total_util = 0.0;
         for (int j = 0; j < MAX_CONTEXTS; j++) {
-            printf("%0.2f%%\t", (entry->util[j]*100)/util_epoch_count);
+            printf("%0.2f%%\t", (entry->util[j]*100)/entry->util_epoch_count);
             total_util += entry->util[j];
         }
-        printf("%0.2f%%\n", (total_util*100)/util_epoch_count);
+        printf("%0.2f%%\n", (total_util*100)/entry->util_epoch_count);
         cur_accel = cur_accel->next;
     }
 #else    
