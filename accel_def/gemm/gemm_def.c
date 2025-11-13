@@ -93,8 +93,8 @@ void *gemm_invoke(void *a) {
         }
         // Is task queue empty?
         if (!sm_queue_empty(q)) {
-            // Read descriptor from head
-            unsigned descr_offset = sm_queue_pop(q);
+            // Read descriptor from tail
+            unsigned descr_offset = sm_queue_can_pop(q);
             gemm_queue_entry_t *e = (gemm_queue_entry_t *) &mem[descr_offset];
             gemm_params_t *params = &(e->gemm_params);
             gemm_access_desc->dim_m = params->dim_m;
@@ -106,7 +106,8 @@ void *gemm_invoke(void *a) {
 
             // Wait for output queue to be not full
             sm_queue_t *output_queue = (sm_queue_t *) &(mem[e->common.output_queue]);
-            uint64_t output_entry = mem[e->common.output_entry];
+            uint64_t output_entry = e->common.output_entry;
+            sm_queue_pop(q);
             while(sm_queue_full(output_queue)) { SCHED_YIELD; }
             // Acquire ioctl lock
             unsigned expected_value = 0;
@@ -114,8 +115,6 @@ void *gemm_invoke(void *a) {
                 expected_value = 0;
                 SCHED_YIELD;
             }
-            // Then change the queue tail
-            sm_queue_pop(q);
             HIGH_DEBUG(printf("[INVOKE] Starting GEMM %d on %s:%d\n", invoke_count, accel->devname, context);)
 
             struct esp_access *esp_access_desc = (struct esp_access *) gemm_access_desc;

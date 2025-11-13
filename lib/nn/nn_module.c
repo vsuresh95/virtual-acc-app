@@ -227,7 +227,6 @@ void nn_module_register(nn_module *m) {
             }
         }
     }
-    HIGH_DEBUG(print_descr_list(m);)
 
     // Populate the descriptor for the exit stage
     // TODO assuming exit node is a GEMM -- need to fix input/output fields in queue entry
@@ -242,6 +241,8 @@ void nn_module_register(nn_module *m) {
         descr_params->input_base = in_args->data_offset + i * (in_args->len);
         HIGH_DEBUG(print_gemm_entry(descr_entry);)
     }
+    nn_module_add_task_descr(m, (nn_task_descr *) descr);
+    HIGH_DEBUG(print_descr_list(m);)
 
     // Calculate the input and output flag addresses for this module
     nn_edge_list *cur; nn_edge_t *edge = NULL;

@@ -30,14 +30,17 @@ static inline void sm_queue_init(sm_queue_t *q) {
 
 static inline void sm_queue_push(sm_queue_t *q, uint64_t value) {
     uint64_t head = __atomic_load_n(&(q->head), __ATOMIC_ACQUIRE);
-
     q->entry[head % SM_QUEUE_SIZE] = value;
     __atomic_store_n(&(q->head), head + 1, __ATOMIC_RELEASE);
 }
 
+static inline uint64_t sm_queue_can_pop(sm_queue_t *q) {
+    uint64_t tail = __atomic_load_n(&(q->tail), __ATOMIC_ACQUIRE);
+    return q->entry[tail % SM_QUEUE_SIZE];
+}
+
 static inline uint64_t sm_queue_pop(sm_queue_t *q) {
     uint64_t tail = __atomic_load_n(&(q->tail), __ATOMIC_ACQUIRE);
-
     uint64_t value = q->entry[tail % SM_QUEUE_SIZE];
     __atomic_store_n(&(q->tail), tail + 1, __ATOMIC_RELEASE);
     return value;
