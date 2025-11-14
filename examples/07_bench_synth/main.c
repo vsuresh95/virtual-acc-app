@@ -3,25 +3,14 @@
 #include <nn_module.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
+#include <string.h>
 
 // Counter for core affinity
 #ifdef DO_CPU_PIN
 static uint8_t core_affinity_ctr = 0;
 #endif
 
-#define MAX_THREADS 4
-const unsigned n_threads = 4;
-
-const char *model_list[MAX_THREADS] = {
-    "models/model_16_6.txt",
-    "models/model_32_6.txt",
-    "models/model_48_6.txt",
-    "models/model_64_6.txt",
-};
-
-const unsigned model_delay[MAX_THREADS] = {
-    15000, 55000, 170000, 370000,
-};
+#define MAX_THREADS 6
 
 typedef struct thread_args {
     unsigned t_id;
@@ -98,7 +87,30 @@ void *req_thread(void *a) {
 
 // Example application for fully connected neural network (FCNN)
 int main(int argc, char **argv) {
-    printf("[APP] Starting app: Multi phase FCNN benchmark!\n");
+    char model_list[MAX_THREADS][256];
+    unsigned model_delay[MAX_THREADS];
+    unsigned n_threads = 4;
+    char *test_file = "test.txt";
+    if (argc > 2) n_threads = atoi(argv[2]);
+    if (argc > 1) test_file = argv[1];
+    FILE *test = fopen(test_file, "r");
+	if (!test) {
+		perror("Failed to read test description file");
+		exit(1);
+	}
+	char in_line_buf[256];
+    for (int i = 0; i < n_threads; i++) {
+        // Read model info
+        if (fgets(in_line_buf, 100, test) != NULL) {
+            if ((strlen(in_line_buf) > 0) && (in_line_buf[strlen (in_line_buf) - 1] == '\n')) {
+                in_line_buf[strlen(in_line_buf) - 1] = '\0';
+            }
+
+            sscanf(in_line_buf, "%s %d", model_list[i], &model_delay[i]);
+        }
+    }
+    fclose(test);
+    printf("[APP] Starting app: Multi phase FCNN benchmark for %d threads from %s!\n", n_threads, test_file);
 
     #ifdef DO_CPU_PIN
     // Run main thread on CPU 0 always.

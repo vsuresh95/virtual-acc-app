@@ -1,0 +1,4 @@
+models/model_16_6.txt 15000
+models/model_32_6.txt 55000
+models/model_48_6.txt 170000
+models/model_64_6.txt 370000
