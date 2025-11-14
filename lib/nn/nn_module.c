@@ -336,6 +336,27 @@ void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len, bool
     HIGH_DEBUG(printf("[NN%d] Enqueued descr to module %s.\n", m->id, nn_module_get_name(m)));
 }
 
+bool nn_module_req_check(nn_module *m, nn_token_t *input_data, unsigned data_len) {
+    HIGH_DEBUG(printf("[NN%d] Starting nn_module_req for %s\n", m->id, nn_module_get_name(m)));
+    sm_queue_t *in_q = m->input_queue;
+    if (sm_queue_full(in_q)) return false;
+    // Try to enqueue the first descriptor (for req_cnt_in) to the input_queue
+    nn_task_descr *descr_list = m->descr_list;
+    uint64_t descr_offset;
+    unsigned req = (m->req_cnt++) % SM_QUEUE_SIZE;
+    switch(descr_list->prim) {
+        case PRIM_GEMM: {
+            gemm_task_descr *descr = (gemm_task_descr *) descr_list;
+            descr_offset = descr->descr_offset[req];
+        }    
+        default: break;
+    }
+    HIGH_DEBUG(printf("[NN%d] Programming PRIM_GEMM descr at %lu for req %d...\n", m->id, descr_offset, req););
+    sm_queue_push(in_q, descr_offset);
+    HIGH_DEBUG(printf("[NN%d] Enqueued descr to module %s.\n", m->id, nn_module_get_name(m)));
+    return true;
+}
+
 void nn_module_rsp(nn_module *m, nn_token_t *output_data, unsigned data_len, bool real_data) {
     sm_queue_t *out_q = m->output_queue;
     uint64_t descr_offset;

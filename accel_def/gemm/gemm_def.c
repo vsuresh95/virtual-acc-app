@@ -27,12 +27,6 @@ extern contig_handle_t *lookup_handle(void *buf, enum contig_alloc_policy *polic
 void gemm_probe(physical_accel_t *accel) {
     accel->prim = PRIM_GEMM;
     accel->cpu_invoke = true;
-    accel->ioctl_cm = GEMM_STRATUS_IOC_ACCESS;
-
-    // Create a new access struct and track within the device struct
-    struct gemm_stratus_access *gemm_desc = (struct gemm_stratus_access *) malloc (sizeof(struct gemm_stratus_access));
-    accel->esp_access_desc = (struct esp_access *) gemm_desc;
-    accel->esp_access_desc->ioctl_cm = ESP_IOCTL_ACC_NO_SM;
 }
 
 // Device-dependent probe function for SM accelerator
@@ -84,6 +78,10 @@ void *gemm_invoke(void *a) {
     gemm_access_desc->esp.src_offset = 0;
     gemm_access_desc->esp.dst_offset = 0;
     gemm_access_desc->esp.coherence = ACC_COH_RECALL;
+    gemm_access_desc->esp.start_stop = 0;
+    gemm_access_desc->esp.p2p_store = 0;
+    gemm_access_desc->esp.p2p_nsrcs = 0;
+    gemm_access_desc->esp.ioctl_cm = ESP_IOCTL_ACC_NO_SM;
 
     HIGH_DEBUG(unsigned invoke_count = 0;)
 

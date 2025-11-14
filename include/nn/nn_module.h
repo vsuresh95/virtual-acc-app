@@ -35,6 +35,7 @@ typedef struct {
     unsigned id; // Module ID
     unsigned nprio; // Priority: 1 (highest) - 10 (lowest)
     bool cpu_invoke; // Should we invoke accelerator through CPU?
+    bool module_lock; // Ensure two tenants do not use the module APIs at the same time.
     HIGH_DEBUG(unsigned req_count;)
     HIGH_DEBUG(unsigned rsp_count;)
     nn_hpthread_list *th_list;
@@ -60,6 +61,7 @@ void nn_module_add_hpthread(nn_module *m, hpthread_t *th);
 void nn_module_setpriority(nn_module *m, unsigned nprio);
 
 void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len, bool real_data);
+bool nn_module_req_check(nn_module *m, nn_token_t *input_data, unsigned data_len);
 void nn_module_rsp(nn_module *m, nn_token_t *output_data, unsigned data_len, bool real_data);
 bool nn_module_rsp_check(nn_module *m, nn_token_t *output_data, unsigned data_len);
 
