@@ -280,6 +280,5 @@ int main(int argc, char **argv) {
         free(args);
         args = next;     
     } while (args != head);
-exit:
     hpthread_report();
 }

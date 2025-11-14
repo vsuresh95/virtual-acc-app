@@ -279,6 +279,5 @@ int main(int argc, char **argv) {
     free(fg_model);
     free(bg_args);
     free(fg_args);
-exit:
     hpthread_report();
 }
