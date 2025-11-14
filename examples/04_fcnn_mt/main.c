@@ -13,6 +13,7 @@ typedef struct thread_args {
     nn_module *m;
     unsigned iterations;
     bool *start;
+    uint64_t average_time;
     struct thread_args *next;
 } thread_args;
 
@@ -68,10 +69,13 @@ void *req_thread(void *a) {
     #endif
     while(!(*start)) { SCHED_YIELD; } // Wait for signal to start
 
+    uint64_t t_start = get_counter();
     for (int i = 0; i < iterations; i++) {
         nn_module_req(m, input_data, 0, false);
         SCHED_YIELD;
     }
+    uint64_t t_end = get_counter();
+    args->average_time = (t_end - t_start) / iterations;
     return NULL;
 }
 
@@ -119,13 +123,13 @@ int main(int argc, char **argv) {
     bool *start = (bool *) malloc (sizeof(bool)); *start = false;
     for (int i = 0; i < n_threads; i++) {
         thread_args *args = (thread_args *) malloc (sizeof(thread_args));
-        args->iterations = (i+1) * iterations;
+        args->iterations = iterations;
         args->start = start;
         args->next = NULL;
 
         nn_module *m = (nn_module *) malloc (sizeof(nn_module));
         m->id = i+1;
-        m->nprio = n_threads - (i % n_threads); // Higher priority for lower thread ID
+        m->nprio = 1; // Higher priority for lower thread ID
         #ifndef ENABLE_SM
         m->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
         #else
@@ -224,7 +228,7 @@ int main(int argc, char **argv) {
     *start = true;
 
     // Periodically monitor number of iterations executed by workers
-    const unsigned sleep_seconds = 2;
+    unsigned sleep_seconds = 2;
     unsigned stall_counter = 0;
     while (total_remaining != 0) {
         thread_args *args = head;
@@ -250,12 +254,20 @@ int main(int argc, char **argv) {
             old_remaining = total_remaining;
         }
         printf("\n");
+        while(sleep_seconds <= 5) sleep_seconds++;
     }
 
     // Wait for all request threads to finish
+    printf("[MAIN] Average time for ");
+    uint64_t total_average = 0;
+    th_args = head;
     for (int i = 0; i < n_threads; i++) {
         pthread_join(req_threads[i], NULL);
+        printf("thread %d: %lu, ", i, th_args->average_time);
+        total_average += th_args->average_time;
+        th_args = th_args->next;
     }
+    printf("overall: %lu\n", total_average/n_threads);
     pthread_join(rsp_th, NULL);
 
     // Release all modules

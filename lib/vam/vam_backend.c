@@ -143,10 +143,15 @@ void vam_probe_accel() {
                 }
             } else {
                 // No reset required for CPU invoke threads
+                #ifdef DO_PER_INVOKE
                 for (int i = 0; i < MAX_CONTEXTS; i++) {
                     cpu_invoke_args_t *args = (cpu_invoke_args_t *) malloc (sizeof(cpu_invoke_args_t));
                     accel_temp->args[i] = args;                    
                 }
+                #else
+                cpu_invoke_args_t *args = (cpu_invoke_args_t *) malloc (sizeof(cpu_invoke_args_t));
+                accel_temp->args = args;
+                #endif
             }
             insert_physical_accel(accel_temp);
             insert_hpthread_cand(cand_temp);
@@ -390,6 +395,7 @@ void vam_configure_accel(hpthread_t *th, physical_accel_t *accel, unsigned conte
     accel->context_active_cycles[context] = 0;
 }
 
+#ifdef DO_PER_INVOKE
 void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel, unsigned context) {
     LOW_DEBUG(printf("[VAM] Launch CPU invoke thread for hpthread %s on %s:%d\n", hpthread_get_name(th), physical_accel_get_name(accel), context);)
     cpu_invoke_args_t *args = accel->args[context];
@@ -437,6 +443,61 @@ void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel, unsigned 
     // Add this thread to the physical_accel struct
     accel->cpu_thread[context] = cpu_thread;
 }
+#else
+void vam_configure_cpu_invoke(hpthread_t *th, physical_accel_t *accel, unsigned context) {
+    if (accel->init_done) {
+        LOW_DEBUG(printf("[VAM] Added hpthread %s to context %d of invoke thread on %s\n", hpthread_get_name(th), context, physical_accel_get_name(accel));)
+        bitset_reset(accel->args->valid_contexts_ack, context);
+    } else {
+        LOW_DEBUG(printf("[VAM] Launch CPU invoke thread for hpthread %s on %s\n", hpthread_get_name(th), physical_accel_get_name(accel));)
+        bitset_reset_all(accel->args->valid_contexts_ack);
+        for (int i = 0; i < MAX_CONTEXTS; i++) {
+            accel->args->active_cycles[i] = 0;
+        }
+        accel->args->kill_pthread = false;
+        // Find SW kernel for this thread
+        void *(*sw_kernel)(void *);
+        switch(th->prim) {
+            case PRIM_GEMM: sw_kernel = gemm_invoke; break;
+            default: break;
+        }    
+        // Create a new CPU thread for the SW implementation of this node.
+        pthread_t cpu_thread;
+        // Create pthread attributes
+        pthread_attr_t attr;
+        if (pthread_attr_init(&attr) != 0) {
+            perror("attr_init");
+        }
+        #ifdef DO_CPU_PIN
+        // Set CPU affinity
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        CPU_SET((core_affinity_ctr++) % cpu_online, &set);
+        if (pthread_attr_setaffinity_np(&attr, sizeof(set), &set) != 0) {
+            perror("pthread_attr_setaffinity_np");
+        }
+        #endif
+        #ifdef DO_SCHED_RR
+        // Set SCHED_RR scheduling policy with priority 1
+        if (pthread_attr_setschedpolicy(&attr, SCHED_FIFO) != 0) {
+            perror("pthread_attr_setschedpolicy");
+        }
+        struct sched_param sp = { .sched_priority = 1 };
+        if (pthread_attr_setschedparam(&attr, &sp) != 0) {
+            perror("pthread_attr_setschedparam");
+        }
+        #endif
+        if (pthread_create(&cpu_thread, &attr, sw_kernel, (void *) accel) != 0) {
+            perror("Failed to create CPU thread\n");
+        }
+        pthread_attr_destroy(&attr);
+
+        // Add this thread to the physical_accel struct
+        accel->cpu_thread = cpu_thread;
+        accel->init_done = true;
+    }
+}
+#endif
 
 void vam_configure_cpu(hpthread_t *th, physical_accel_t *accel) {
     LOW_DEBUG(printf("[VAM] Configuring CPU for hpthread %s\n", hpthread_get_name(th));)
@@ -454,7 +515,11 @@ void vam_configure_cpu(hpthread_t *th, physical_accel_t *accel) {
     }
 
     // Add this thread to the physical_accel struct
+#ifdef DO_PER_INVOKE
     accel->cpu_thread[0] = cpu_thread;
+#else
+    accel->cpu_thread = cpu_thread;
+#endif
 }
 
 void vam_release_accel(hpthread_t *th) {
@@ -465,12 +530,22 @@ void vam_release_accel(hpthread_t *th) {
     bitset_reset(accel->valid_contexts, context);
 
     if (th->cpu_invoke) {
+#ifdef DO_PER_INVOKE
         accel->args[context]->kill_pthread = true;
-        pthread_join(accel->cpu_thread[context], NULL);        
+        pthread_join(accel->cpu_thread[context], NULL);
+#else
+        while(bitset_test(accel->args->valid_contexts_ack, context)) {
+            SCHED_YIELD;
+        }
+#endif
     } else {
         if (accel->prim == PRIM_NONE) {
             *(th->args->kill_pthread) = true;
+#ifdef DO_PER_INVOKE
             pthread_join(accel->cpu_thread[0], NULL);
+#else
+            pthread_join(accel->cpu_thread, NULL);
+#endif
         } else {
             struct esp_access *esp_access_desc = accel->esp_access_desc;
             {
@@ -536,7 +611,11 @@ void vam_check_utilization() {
         )
         if (cur_accel->cpu_invoke) {
             for (int i = 0; i < MAX_CONTEXTS; i++) {
+                #ifdef DO_PER_INVOKE
                 mon_extended[i] = cur_accel->args[i]->active_cycles;
+                #else
+                mon_extended[i] = cur_accel->args->active_cycles[i];
+                #endif
             }
         } else {
             if (ioctl(cur_accel->fd, ESP_IOC_MON, &mon)) {
