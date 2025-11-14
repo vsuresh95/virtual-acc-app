@@ -4,19 +4,18 @@
 #include <hpthread.h>
 #include <pthread.h>
 
-// Invoke arguments for CPU-invoked accelerators
-typedef struct {
-    bitset_t valid_contexts_ack;
-    uint64_t active_cycles[MAX_CONTEXTS];
-    bool kill_pthread;
-} cpu_invoke_args_t;
-
 // Utilization entry for tracking
 typedef struct util_entry {
     float util[MAX_CONTEXTS];
     unsigned id[MAX_CONTEXTS];
     struct util_entry *next;
+    #ifdef LITE_REPORT
+    unsigned util_epoch_count;
+    #endif
 } util_entry_t;
+
+struct cpu_invoke_args_t;
+typedef struct cpu_invoke_args_t cpu_invoke_args_t;
 
 // Definition of the physical accelerator struct
 // -- includes all information and current status of the physical accelerators
@@ -33,10 +32,16 @@ typedef struct physical_accel_t {
     float effective_util; // Total utilization of the accelerator
     bool init_done; // Flag to identify whether the device was initialized in the past
     physical_accel_t *next; // Next node in accel list
+#ifdef DO_PER_INVOKE
+    pthread_t cpu_thread[MAX_CONTEXTS]; // If mapped toa CPU, this is the pthread ID
+    cpu_invoke_args_t *args[MAX_CONTEXTS]; // If invoked by CPU, these are the arguments
+#else
     pthread_t cpu_thread; // If mapped toa CPU, this is the pthread ID
-    bool cpu_invoke; // Is the accelerator invoked by a CPU thread?
     cpu_invoke_args_t *args; // If invoked by CPU, these are the arguments
+#endif
+    bool cpu_invoke; // Is the accelerator invoked by a CPU thread?
     util_entry_t *util_entry_list; // Utilization entry list
+    unsigned accel_lock; // Lock for the accelerator struct
 
     // ESP-relevant variables
     char devname[384]; // Name of device in file system
@@ -66,4 +71,16 @@ static inline char *physical_accel_get_name(physical_accel_t *accel) {
     return accel->devname;
 }
 
+// Invoke arguments for CPU-invoked accelerators
+typedef struct cpu_invoke_args_t {
+#ifdef DO_PER_INVOKE
+    unsigned context;
+    uint64_t active_cycles;
+#else
+    bitset_t valid_contexts_ack;
+    uint64_t active_cycles[MAX_CONTEXTS];
+#endif
+    bool kill_pthread;
+    physical_accel_t *accel;
+} cpu_invoke_args_t;
 #endif // __VAM_PHYSICAL_ACCEL_H__

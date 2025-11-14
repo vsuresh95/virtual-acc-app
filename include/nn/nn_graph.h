@@ -62,7 +62,9 @@ struct nn_node_list {
 // NN edge args
 typedef struct {
     unsigned len; // Number of elements transmitted over this edge
-    size_t offset; // offset in memory
+    unsigned data_offset; // offset in memory for data
+    unsigned descr_offset; // offset in memory for descriptor
+    unsigned queue_offset; // offset in memory for queue
 } nn_edge_args;
 
 // NN edge

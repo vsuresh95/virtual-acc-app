@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <time.h>
 
 // AVU synchronization variable size and offsets (in bytes)
 #define VALID_OFFSET 0
@@ -31,5 +32,10 @@
 #else
 #define SCHED_YIELD
 #endif
+
+// Look up table for nice values based on priority (0-4)
+static const int nice_table[5] = {
+    -8, -4, -2, -1, 0
+};
 
 #endif // __COMMON_DEFS_H__

@@ -1,14 +1,19 @@
 #define _GNU_SOURCE
 #include <helper.h>
 #include <nn_module.h>
+#include <sys/resource.h>
+#include <sys/syscall.h>
 
 // Counter for core affinity
+#ifdef DO_CPU_PIN
 static uint8_t core_affinity_ctr = 0;
+#endif
 
 typedef struct thread_args {
     nn_module *m;
     unsigned iterations;
     bool *start;
+    uint64_t average_time;
     struct thread_args *next;
 } thread_args;
 
@@ -17,6 +22,11 @@ void *rsp_thread(void *a) {
     thread_args *args = (thread_args *) a;
     nn_token_t *output_data = (nn_token_t *) malloc (1);
     bool *start = args->start;
+    #ifndef DO_SCHED_RR
+    // Set niceness based on priority
+    pid_t tid = syscall(SYS_gettid);
+    setpriority(PRIO_PROCESS, tid, nice_table[2]);
+    #endif
     while(!(*start)) { SCHED_YIELD; } // Wait for signal to start
     // Iterate through all thread_args and accumulate iterations
     thread_args *head = args;
@@ -52,12 +62,20 @@ void *req_thread(void *a) {
     unsigned iterations = args->iterations;
     nn_token_t *input_data = (nn_token_t *) malloc (1);
     bool *start = args->start;
+    #ifndef DO_SCHED_RR
+    // Set niceness based on priority
+    pid_t tid = syscall(SYS_gettid);
+    setpriority(PRIO_PROCESS, tid, nice_table[2]);
+    #endif
     while(!(*start)) { SCHED_YIELD; } // Wait for signal to start
 
+    uint64_t t_start = get_counter();
     for (int i = 0; i < iterations; i++) {
-        nn_module_req(m, input_data, 0);
+        nn_module_req(m, input_data, 0, false);
         SCHED_YIELD;
     }
+    uint64_t t_end = get_counter();
+    args->average_time = (t_end - t_start) / iterations;
     return NULL;
 }
 
@@ -93,6 +111,10 @@ int main(int argc, char **argv) {
     if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) != 0) {
         perror("pthread_setschedparam");
     }
+    #else
+    // Set niceness based on priority
+    pid_t tid = syscall(SYS_gettid);
+    setpriority(PRIO_PROCESS, tid, nice_table[4]);
     #endif
 
     // Create n_threads of models in a thread_args list
@@ -101,13 +123,13 @@ int main(int argc, char **argv) {
     bool *start = (bool *) malloc (sizeof(bool)); *start = false;
     for (int i = 0; i < n_threads; i++) {
         thread_args *args = (thread_args *) malloc (sizeof(thread_args));
-        args->iterations = (i+1) * iterations;
+        args->iterations = iterations;
         args->start = start;
         args->next = NULL;
 
         nn_module *m = (nn_module *) malloc (sizeof(nn_module));
         m->id = i+1;
-        m->nprio = n_threads - (i % n_threads); // Higher priority for lower thread ID
+        m->nprio = 1; // Higher priority for lower thread ID
         #ifndef ENABLE_SM
         m->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
         #else
@@ -146,8 +168,14 @@ int main(int argc, char **argv) {
         pthread_attr_destroy(&attr);
 
         // Insert into thread_args list
-        args->next = head;
-        head = args;
+        args->next = NULL;
+        if (!head) {
+            head = args;
+            continue;
+        }
+        thread_args *tmp = head;
+        while (tmp->next) tmp = tmp->next;
+        tmp->next = args;
     }
     // Create a circular list for thread_args
     thread_args *tail = head;
@@ -200,7 +228,8 @@ int main(int argc, char **argv) {
     *start = true;
 
     // Periodically monitor number of iterations executed by workers
-    const unsigned sleep_seconds = 2;
+    unsigned sleep_seconds = 2;
+    unsigned stall_counter = 0;
     while (total_remaining != 0) {
         thread_args *args = head;
         sleep(sleep_seconds);
@@ -215,17 +244,30 @@ int main(int argc, char **argv) {
             args = args->next;
         }
         if (total_remaining != 0 && total_remaining == old_remaining) {
-            printf("STALL!!!\n");
+            printf("STALL!!!");
+            stall_counter++;
+            if (stall_counter >= 3) {
+                printf("\n[MAIN] Detected stall for 3 consecutive periods, exiting...\n");
+                goto exit;
+            }
         } else {
             old_remaining = total_remaining;
         }
         printf("\n");
+        while(sleep_seconds <= 5) sleep_seconds++;
     }
 
     // Wait for all request threads to finish
+    printf("[MAIN] Average time for ");
+    uint64_t total_average = 0;
+    th_args = head;
     for (int i = 0; i < n_threads; i++) {
         pthread_join(req_threads[i], NULL);
+        printf("thread %d: %lu, ", i, th_args->average_time);
+        total_average += th_args->average_time;
+        th_args = th_args->next;
     }
+    printf("overall: %lu\n", total_average/n_threads);
     pthread_join(rsp_th, NULL);
 
     // Release all modules
