@@ -33,6 +33,11 @@ void *req_thread(void *a) {
     unsigned output_iters_done = 0;
     bool drain_output = false;
     uint64_t start_cycles = 0;
+    #ifndef DO_SCHED_RR
+    // Set niceness based on priority
+    pid_t tid = syscall(SYS_gettid);
+    setpriority(PRIO_PROCESS, tid, nice_table[2]);
+    #endif
 
     while (1) {
         // Is there a new command?
