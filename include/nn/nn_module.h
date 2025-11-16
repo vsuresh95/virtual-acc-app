@@ -36,8 +36,10 @@ typedef struct {
     unsigned nprio; // Priority: 1 (highest) - 10 (lowest)
     bool cpu_invoke; // Should we invoke accelerator through CPU?
     bool module_lock; // Ensure two tenants do not use the module APIs at the same time.
-    HIGH_DEBUG(unsigned req_count;)
-    HIGH_DEBUG(unsigned rsp_count;)
+    #ifndef VAM_ENABLE
+    physical_accel_t *accel_list;
+    uint64_t active_cycles;
+    #endif
     nn_hpthread_list *th_list;
     nn_task_descr *descr_list;
 } nn_module;
@@ -79,5 +81,9 @@ void initialize_data(const char *input_file, nn_token_t *mem, unsigned len);
 void nn_module_add_task_descr(nn_module *m, nn_task_descr *descr);
 void print_descr_list(nn_module *m);
 void print_hpthread_list(nn_module *m);
+#ifndef ENABLE_VAM
+void nn_module_run(nn_module *m, nn_token_t *input_data, nn_token_t *output_data, unsigned input_len, unsigned output_len, bool real_data);
+bool nn_module_search_accel(nn_module *m, hpthread_prim_t prim);
+#endif
 
 #endif // __NN_MODULE_H__

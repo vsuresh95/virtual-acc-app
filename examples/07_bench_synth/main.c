@@ -12,6 +12,8 @@ static uint8_t core_affinity_ctr = 0;
 
 #define MAX_THREADS 6
 
+extern void vam_log_utilization();
+
 typedef struct thread_args {
     unsigned t_id;
     bool cmd_valid;
@@ -19,6 +21,9 @@ typedef struct thread_args {
     nn_module *cmd_module;
     unsigned cmd_delay;
     unsigned iters_done;
+#ifndef ENABLE_VAM
+    uint64_t active_cycles;
+#endif
     struct thread_args *next;
 } thread_args;
 
@@ -72,6 +77,7 @@ void *req_thread(void *a) {
 
         if (cmd_valid) {
             // Drain not pending and timer elapsed
+            #ifdef ENABLE_VAM
             if (!drain_output && (get_counter() - start_cycles >= cmd_delay)) {
                 // Input queue not full
                 if (nn_module_req_check(cmd_module, data , 0)) {
@@ -85,6 +91,16 @@ void *req_thread(void *a) {
                 LOW_DEBUG(printf("[APP%d] Received rsp %d...\n", args->t_id, output_iters_done);)
                 __atomic_fetch_add(&(args->iters_done), 1, __ATOMIC_RELEASE);
             }
+            #else
+            if (!drain_output && (get_counter() - start_cycles >= cmd_delay)) {
+                nn_module_run(cmd_module, data, data, 0, 0, false);
+                input_iters_done++;
+                output_iters_done++;
+                __atomic_fetch_add(&(args->iters_done), 1, __ATOMIC_RELEASE);
+                LOW_DEBUG(printf("[APP%d] Ran request %d...\n", args->t_id, input_iters_done);)
+                start_cycles = get_counter();
+            }
+            #endif
         }
         SCHED_YIELD;
     }
@@ -150,8 +166,11 @@ int main(int argc, char **argv) {
         args->cmd_valid = false;
         args->kill_thread = false;
         args->next = NULL;
-        args->cmd_delay = model_delay[i] * n_threads;
+        args->cmd_delay = 0; // model_delay[i] * n_threads;
         args->iters_done = 0;
+        #ifndef ENABLE_VAM
+        args->active_cycles = 0;
+        #endif
 
         nn_module *cmd_module = (nn_module *) malloc (sizeof(nn_module));
         cmd_module->id = i+1;
@@ -237,7 +256,14 @@ int main(int argc, char **argv) {
             float ips = (float) (new_iters_done - old_iters_done[i]) / sleep_seconds;
             old_iters_done[i] = new_iters_done;
             total_done += new_iters_done;
-            printf("T%d:%0.2f(%d), ", i, ips, new_iters_done);
+            #ifndef ENABLE_VAM
+            uint64_t util_cycles = args->cmd_module->active_cycles - args->active_cycles;
+            args->active_cycles = args->cmd_module->active_cycles;
+            float util = (float) (util_cycles)/(sleep_seconds * 78125000);   
+            printf("T%d:%0.2f(%0.2f%%), ", i, ips, util * 100);
+            #else
+            printf("T%d:%0.2f, ", i, ips);
+            #endif
             args = args->next;
         }
         if (total_done != 0 && total_done == old_done) {
@@ -252,6 +278,10 @@ int main(int argc, char **argv) {
             stall_counter = 0;
         }
         printf("\n");
+        #ifdef ENABLE_VAM
+        // Write the current utilization to the log
+        vam_log_utilization();
+        #endif
         num_epochs_done--;
     }
     printf("[MAIN] Completed all epochs, exiting...\n");
@@ -275,6 +305,10 @@ int main(int argc, char **argv) {
         free(args);
         args = next;     
     } while (args != head);
-exit:    
+exit:
+#ifdef ENABLE_VAM
     hpthread_report();
+#else
+    return 0;
+#endif
 }

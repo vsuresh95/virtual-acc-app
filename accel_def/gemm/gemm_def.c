@@ -14,7 +14,6 @@
 #include <gemm_def.h>
 #include <gemm_stratus.h>
 #include <gemm_sm_stratus.h>
-#include <gemm_queue.h>
 #include <libesp.h>
 #include <esp.h>
 #include <esp_accelerator.h>
@@ -22,6 +21,24 @@
 
 // ESP API for getting contig_alloc handle
 extern contig_handle_t *lookup_handle(void *buf, enum contig_alloc_policy *policy);
+
+#ifndef ENABLE_VAM
+static bool gemm_allocated[10] = {false}; // Arbitrary number of accel
+static bool gemm_array_lock = false;
+
+bool allocate_gemm_accel(unsigned accel_idx) {
+    bool expected_value = false;
+    bool allocated = false;
+    HIGH_DEBUG(printf("[INVOKE] Attempting to allocate gemm_stratus.%d\n", accel_idx);)
+    while(!__atomic_compare_exchange_n(&gemm_array_lock, &expected_value, true, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) { 
+        expected_value = false;
+        SCHED_YIELD;
+    }
+    allocated = gemm_allocated[accel_idx];
+    __atomic_store_n(&gemm_array_lock, false, __ATOMIC_RELEASE);
+    return allocated;
+}
+#endif
 
 // Device-dependent probe function for baseline accelerator
 void gemm_probe(physical_accel_t *accel) {
@@ -288,3 +305,46 @@ void *gemm_invoke(void *a) {
 
     return NULL;
 }
+
+#ifndef VAM_ENABLE
+void gemm_init(physical_accel_t *accel, void *mem) {
+    struct gemm_stratus_access *gemm_access_desc;
+    gemm_access_desc = (struct gemm_stratus_access *) malloc (sizeof(struct gemm_stratus_access));
+    enum contig_alloc_policy policy;
+    contig_handle_t *handle = lookup_handle(mem, &policy);
+    gemm_access_desc->esp.contig = contig_to_khandle(*handle);
+    gemm_access_desc->esp.ddr_node = contig_to_most_allocated(*handle);
+    gemm_access_desc->esp.alloc_policy = policy;
+    gemm_access_desc->esp.run = true;
+    gemm_access_desc->esp.src_offset = 0;
+    gemm_access_desc->esp.dst_offset = 0;
+    gemm_access_desc->esp.coherence = ACC_COH_RECALL;
+    gemm_access_desc->esp.start_stop = 0;
+    gemm_access_desc->esp.p2p_store = 0;
+    gemm_access_desc->esp.p2p_nsrcs = 0;
+    gemm_access_desc->esp.ioctl_cm = ESP_IOCTL_ACC_NO_SM;
+    accel->esp_access_desc = (struct esp_access *) gemm_access_desc;
+    HIGH_DEBUG(printf("[INVOKE] Created gemm access descriptor for %s\n", accel->devname);)
+}
+
+void gemm_run(physical_accel_t *accel, gemm_queue_entry_t *e) {
+    gemm_params_t *params = &(e->gemm_params);
+    struct gemm_stratus_access *gemm_access_desc = (struct gemm_stratus_access *) accel->esp_access_desc;
+    gemm_access_desc->dim_m = params->dim_m;
+    gemm_access_desc->dim_n = params->dim_n;
+    gemm_access_desc->dim_k = params->dim_k;
+    gemm_access_desc->weight_base = params->weight_base;
+    gemm_access_desc->input_base = params->input_base;
+    gemm_access_desc->output_base = params->output_base;
+
+    HIGH_DEBUG(printf("[INVOKE] Starting GEMM on %s\n", accel->devname);)
+    struct esp_access *esp_access_desc = (struct esp_access *) gemm_access_desc;
+    if (ioctl(accel->fd, GEMM_STRATUS_IOC_ACCESS, esp_access_desc)) {
+        perror("ioctl");
+        exit(EXIT_FAILURE);
+    }
+    uint64_t *mon_extended = (uint64_t *) esp_access_desc->mon_info.util;
+    accel->context_active_cycles[0] = mon_extended[0]; // Single context only
+    HIGH_DEBUG(printf("[INVOKE] Finished GEMM on %s\n", accel->devname);)
+}
+#endif

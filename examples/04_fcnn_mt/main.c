@@ -9,6 +9,8 @@
 static uint8_t core_affinity_ctr = 0;
 #endif
 
+extern void vam_log_utilization();
+
 typedef struct thread_args {
     nn_module *m;
     unsigned iterations;
@@ -233,6 +235,8 @@ int main(int argc, char **argv) {
     while (total_remaining != 0) {
         thread_args *args = head;
         sleep(sleep_seconds);
+        // Write the current utilization to the log
+        vam_log_utilization();
         printf("[MAIN] IPS = ");
         total_remaining = 0;
         for (unsigned i = 0; i < n_threads; i++) {

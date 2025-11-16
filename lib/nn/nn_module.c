@@ -3,6 +3,12 @@
 #include <gemm_node_args.h>
 #include <string.h>
 #include <libesp.h>
+#ifndef VAM_ENABLE
+#include <dirent.h>
+#include <fnmatch.h>
+#include <vam_physical_accel.h>
+#include <gemm_def.h>
+#endif
 
 // Load a model using a description in a txt model_def
 void nn_module_load(nn_module *m, const char *n) {
@@ -22,7 +28,10 @@ void nn_module_load(nn_module *m, const char *n) {
     m->req_cnt = 0;
     m->th_list = NULL;
     m->descr_list = NULL;
-    HIGH_DEBUG(m->req_count = 0; m->rsp_count = 0;)
+    #ifndef ENABLE_VAM
+    m->accel_list = NULL;
+    m->active_cycles = 0;
+    #endif
 
 	char in_line_buf[256]; // Max 256 characters in one line
     if (fgets(in_line_buf, 100, model_def) != NULL) {
@@ -194,6 +203,8 @@ void nn_module_register(nn_module *m) {
                         HIGH_DEBUG(print_gemm_entry(descr_entry);)
                     }
 
+                    // if we are using VAM, request for hpthread
+                    #ifdef ENABLE_VAM
                     // Create a hpthread for this node
                     hpthread_args_t *h_args = (hpthread_args_t *) malloc(sizeof(hpthread_args_t));
                     // Set hpthread mem to model mem
@@ -216,6 +227,22 @@ void nn_module_register(nn_module *m) {
                     hpthread_create(th);
                     // Assign the thread to the model list
                     nn_module_add_hpthread(m, th);
+                    #else
+                    // Check if an accelerator for GEMM has already been assigned
+                    physical_accel_t *accel_list = m->accel_list;
+                    bool accel_found = false;
+                    while (accel_list != NULL) {
+                        if (accel_list->prim == PRIM_GEMM) accel_found = true;
+                        accel_list = accel_list->next;
+                    }
+                    if (accel_found == false) {
+                        // Probe the system for an accelerator
+                        if (!nn_module_search_accel(m, PRIM_GEMM)) {
+                            printf("[NN%d] No GEMM accelerator found during search!\n", m->id);
+                            exit(1);
+                        }
+                    }
+                    #endif
 
                     // Initialize the weights if present
                     LOW_DEBUG(nn_token_t *wgt_address = ((nn_token_t *) (m->mem) + params->weight_base);
@@ -235,6 +262,7 @@ void nn_module_register(nn_module *m) {
     nn_edge_args *in_args = exit->in_edges->e->args;
     // Get the descriptors of incoming edge
     gemm_task_descr *descr = (gemm_task_descr *) ((unsigned *) (m->mem) + in_args->descr_offset);
+    descr->common.prim = PRIM_NONE;
     for (int i = 0; i < SM_QUEUE_SIZE; i++) {
         gemm_queue_entry_t *descr_entry = (gemm_queue_entry_t *) ((unsigned *) (m->mem) + descr->descr_offset[i]);
         gemm_params_t *descr_params = &(descr_entry->gemm_params);
@@ -274,6 +302,7 @@ void nn_module_load_and_register(nn_module *m, const char *n) {
 
 // Release the resources for this model
 void nn_module_release(nn_module *m) {
+    #ifdef ENABLE_VAM
     nn_hpthread_list *cur = m->th_list;
     while(cur != NULL) {
         nn_hpthread_list *next = cur->next;
@@ -283,6 +312,15 @@ void nn_module_release(nn_module *m) {
         free(cur);
         cur = next;
     }
+    #else
+    physical_accel_t *cur = m->accel_list;
+    while (cur != NULL) {
+        physical_accel_t *next = cur->next;
+        free(cur->esp_access_desc);
+        free(cur);
+        cur = next;
+    }
+    #endif
     esp_free(m->mem);
     nn_graph_delete(m->graph);
 }
@@ -308,6 +346,60 @@ void nn_module_setpriority(nn_module *m, unsigned nprio) {
         cur = next;
     }
 }
+
+#ifndef ENABLE_VAM
+void nn_module_run(nn_module *m, nn_token_t *input_data, nn_token_t *output_data, unsigned input_len, unsigned output_len, bool real_data) {
+    HIGH_DEBUG(printf("[NN%d] Starting nn_module_req for %s\n", m->id, nn_module_get_name(m)));
+    nn_task_descr *descr_list = m->descr_list;
+    bool init_done = false;
+    while (descr_list != NULL) {
+        switch(descr_list->prim) {
+            case PRIM_GEMM: {
+                // Find the appropriate GEMM accelerator
+                bool accel_found = false;
+                physical_accel_t *accel = m->accel_list;
+                while (accel != NULL) {
+                    if (accel->prim == PRIM_GEMM) {
+                        accel_found = true;
+                        break;
+                    }
+                    accel = accel->next;
+                } 
+                if (!accel_found) {
+                    printf("[NN%d] No GEMM accelerator found during run!\n", m->id);
+                    exit(1);
+                }
+                gemm_task_descr *descr = (gemm_task_descr *) descr_list;
+                uint64_t descr_offset = descr->descr_offset[0];
+                gemm_queue_entry_t *descr_entry = (gemm_queue_entry_t *) ((unsigned *) (m->mem) + descr_offset);
+                HIGH_DEBUG(printf("[NN%d] Printing descr at %lu for req %d...\n", m->id, descr_offset, m->req_cnt);)
+                HIGH_DEBUG(print_gemm_entry(descr_entry);)
+                if (real_data && !init_done) {
+                    nn_token_t *input_addr = (nn_token_t *) ((unsigned *) (m->mem) + descr_entry->gemm_params.input_base);
+                    memcpy(input_addr, input_data, input_len);
+                    init_done = true;
+                }
+                HIGH_DEBUG(printf("[NN%d] Programming PRIM_GEMM descr at %lu for req %d...\n", m->id, descr_offset, m->req_cnt););
+                gemm_run(accel, descr_entry);
+                m->active_cycles += accel->context_active_cycles[0];
+            }
+            default: break;
+        }
+        if (descr_list->next == NULL) {
+            if (real_data) {
+                gemm_task_descr *descr = (gemm_task_descr *) descr_list;
+                uint64_t descr_offset = descr->descr_offset[0];
+                gemm_queue_entry_t *descr_entry = (gemm_queue_entry_t *) ((unsigned *) (m->mem) + descr_offset);
+                nn_token_t *output_addr = (nn_token_t *) ((unsigned *) (m->mem) + descr_entry->gemm_params.input_base);
+                memcpy(output_data, output_addr, output_len);
+            }
+        }
+        descr_list = descr_list->next;
+        SCHED_YIELD;
+    }
+    m->req_cnt++;
+}
+#endif
 
 void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len, bool real_data) {
     HIGH_DEBUG(printf("[NN%d] Starting nn_module_req for %s\n", m->id, nn_module_get_name(m)));
@@ -502,3 +594,66 @@ void print_hpthread_list(nn_module *m) {
         th_list = th_list->next;
     }
 }
+
+#ifndef ENABLE_VAM
+bool nn_module_search_accel(nn_module *m, hpthread_prim_t prim) {
+    // Search for all stratus accelerators and fill into accel_list
+    HIGH_DEBUG(printf("[NN%d] Performing device probe for %s.\n", m->id, hpthread_get_prim_name(prim));)
+    struct dirent *entry;
+    bool accel_found = false;
+    switch (prim) {
+        case PRIM_GEMM: {
+            // Open the devices directory to search for accels
+            DIR *dir = opendir("/dev/");
+            if (!dir) {
+                perror("Failed to open directory");
+                exit(1);
+            }
+            while ((entry = readdir(dir)) != NULL) {
+                if (fnmatch("gemm_stratus.*", entry->d_name, FNM_NOESCAPE) == 0) {
+                    HIGH_DEBUG(printf("[NN%d] Discovered device %s for %s\n", m->id, entry->d_name, nn_module_get_name(m));)
+                    // Check if the accelerator is not already allocated to another thread
+                    unsigned accel_idx;
+                    sscanf(entry->d_name, "gemm_stratus.%u", &accel_idx);
+                    // If the current accelerator is allocated, check next
+                    if (allocate_gemm_accel(accel_idx)) continue;
+                    accel_found = true;
+                    HIGH_DEBUG(printf("[NN%d] Allocated device %s for %s\n", m->id, entry->d_name, nn_module_get_name(m));)
+                    // Else initialize this accelerator entry
+                    physical_accel_t *accel_temp = (physical_accel_t *) malloc(sizeof(physical_accel_t));
+                    accel_temp->accel_id = 0;
+                    bitset_reset_all(accel_temp->valid_contexts);
+                    for (int i = 0; i < MAX_CONTEXTS; i++) {
+                        accel_temp->th[i] = NULL;
+                        accel_temp->context_start_cycles[i] = 0;
+                        accel_temp->context_active_cycles[i] = 0;
+                        accel_temp->context_util[i] = 0.0;
+                    }
+                    strcpy(accel_temp->devname, entry->d_name);
+                    accel_temp->init_done = false;
+                    accel_temp->effective_util = 0.0;
+                    accel_temp->prim = PRIM_GEMM;
+                    __atomic_store_n(&accel_temp->accel_lock, 0, __ATOMIC_RELEASE);
+
+                    char full_path[384];
+                    snprintf(full_path, 384, "/dev/%s", entry->d_name);
+                    accel_temp->fd = open(full_path, O_RDWR, 0);
+                    if (accel_temp->fd < 0) {
+                        fprintf(stderr, "Error: cannot open %s", full_path);
+                        exit(EXIT_FAILURE);
+                    }
+                    gemm_init(accel_temp, m->mem);
+                    // Add the accelerator the module's accel list
+                    accel_temp->next = m->accel_list;
+	                m->accel_list = accel_temp;
+                    break; // Found the accel; can break
+                }
+            }
+            closedir(dir);
+        }
+        break;
+        default: break;
+    }
+    return accel_found;
+}
+#endif

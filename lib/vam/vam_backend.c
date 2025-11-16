@@ -189,8 +189,6 @@ void *vam_run_backend(void *arg) {
             case VAM_IDLE: {
                 // Examine the util across all accelerators in the system                
                 float load_imbalance = vam_check_load_balance();
-                // Write the current utilization to the log
-                vam_log_utilization();
 
                 bool increment_vam_sleep = true;
                 bool need_load_balance = false;
@@ -872,6 +870,35 @@ void vam_print_report() {
         }
         printf("%0.2f%%\n", (total_util*100)/entry->util_epoch_count);
         cur_accel = cur_accel->next;
+    }
+#elif MED_REPORT  
+    for (int i = 0; i < util_epoch_count; i++) {
+        printf("[MAIN] ");
+        physical_accel_t *cur_accel = accel_list;
+        while (cur_accel != NULL) {
+            printf("%s.%d: ", hpthread_get_prim_name(cur_accel->prim), cur_accel->accel_id);
+            float total_util = 0.0;
+            util_entry_t *entry = cur_accel->util_entry_list;
+            util_entry_t *prev = NULL;
+            // Traverse to the end of the list to get the oldest entry
+            while (entry->next != NULL) {
+                prev = entry;
+                entry = entry->next;
+            }
+            for (int j = 0; j < MAX_CONTEXTS; j++) {
+                total_util += entry->util[j];
+            }
+            printf("%0.2f%%, ", total_util*100);
+            // Delete the oldest entry after printing
+            if (prev != NULL) {
+                prev->next = NULL;
+            } else {
+                cur_accel->util_entry_list = NULL;
+            }
+            free(entry);
+            cur_accel = cur_accel->next;
+        }
+        printf("\n");
     }
 #else    
     // Print out the total utilization
