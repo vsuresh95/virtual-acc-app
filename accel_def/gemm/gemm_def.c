@@ -170,6 +170,14 @@ void *gemm_invoke(void *a) {
         gemm_access_desc[i] = (struct gemm_stratus_access *) malloc (sizeof(struct gemm_stratus_access));
     }
 
+    #ifndef DO_SCHED_RR
+    // Set niceness based on priority
+    pid_t tid = syscall(SYS_gettid);
+    unsigned prio = th->nprio;
+    setpriority(PRIO_PROCESS, tid, nice_table[0]);
+    HIGH_DEBUG(printf("[INVOKE] Set niceness to %d for %s:%d!\n", nice_table[0], accel->devname, context);)
+    #endif
+
     while (1) {
         // Check if we need to exit
         if (*kill_pthread) {

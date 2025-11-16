@@ -865,10 +865,10 @@ void vam_print_report() {
         // Calculate average utilization for each accelerator
         float total_util = 0.0;
         for (int j = 0; j < MAX_CONTEXTS; j++) {
-            printf("%0.2f%%\t", (entry->util[j]*100)/entry->util_epoch_count);
+            printf("%05.2f%%\t", (entry->util[j]*100)/entry->util_epoch_count);
             total_util += entry->util[j];
         }
-        printf("%0.2f%%\n", (total_util*100)/entry->util_epoch_count);
+        printf("%05.2f%%\n", (total_util*100)/entry->util_epoch_count);
         cur_accel = cur_accel->next;
     }
 #elif MED_REPORT  
@@ -888,7 +888,7 @@ void vam_print_report() {
             for (int j = 0; j < MAX_CONTEXTS; j++) {
                 total_util += entry->util[j];
             }
-            printf("%0.2f%%, ", total_util*100);
+            printf("%05.2f%%, ", total_util*100);
             // Delete the oldest entry after printing
             if (prev != NULL) {
                 prev->next = NULL;
@@ -920,9 +920,9 @@ void vam_print_report() {
             }
             for (int j = 0; j < MAX_CONTEXTS; j++) {
                 total_util += entry->util[j];
-                printf("%0.2f%%(%d)\t", entry->util[j]*100, entry->id[j]);
+                printf("%05.2f%%(%d)\t", entry->util[j]*100, entry->id[j]);
             }
-            printf("%0.2f%%\n", total_util*100);
+            printf("%05.2f%%\n", total_util*100);
             // Delete the oldest entry after printing
             if (prev != NULL) {
                 prev->next = NULL;

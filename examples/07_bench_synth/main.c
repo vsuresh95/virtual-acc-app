@@ -41,7 +41,7 @@ void *req_thread(void *a) {
     #ifndef DO_SCHED_RR
     // Set niceness based on priority
     pid_t tid = syscall(SYS_gettid);
-    setpriority(PRIO_PROCESS, tid, nice_table[2]);
+    setpriority(PRIO_PROCESS, tid, nice_table[1]);
     #endif
 
     while (1) {
@@ -82,13 +82,13 @@ void *req_thread(void *a) {
                 // Input queue not full
                 if (nn_module_req_check(cmd_module, data , 0)) {
                     input_iters_done++;
-                    LOW_DEBUG(printf("[APP%d] Sent req %d...\n", args->t_id, input_iters_done);)
+                    HIGH_DEBUG(printf("[APP%d] Sent req %d...\n", args->t_id, input_iters_done);)
                     start_cycles = get_counter();
                 }
             }
             if (nn_module_rsp_check(cmd_module, data, 0)) {
                 output_iters_done++;
-                LOW_DEBUG(printf("[APP%d] Received rsp %d...\n", args->t_id, output_iters_done);)
+                HIGH_DEBUG(printf("[APP%d] Received rsp %d...\n", args->t_id, output_iters_done);)
                 __atomic_fetch_add(&(args->iters_done), 1, __ATOMIC_RELEASE);
             }
             #else
@@ -97,7 +97,7 @@ void *req_thread(void *a) {
                 input_iters_done++;
                 output_iters_done++;
                 __atomic_fetch_add(&(args->iters_done), 1, __ATOMIC_RELEASE);
-                LOW_DEBUG(printf("[APP%d] Ran request %d...\n", args->t_id, input_iters_done);)
+                HIGH_DEBUG(printf("[APP%d] Ran request %d...\n", args->t_id, input_iters_done);)
                 start_cycles = get_counter();
             }
             #endif
@@ -166,7 +166,7 @@ int main(int argc, char **argv) {
         args->cmd_valid = false;
         args->kill_thread = false;
         args->next = NULL;
-        args->cmd_delay = 0; // model_delay[i] * n_threads;
+        args->cmd_delay = model_delay[i] * n_threads;
         args->iters_done = 0;
         #ifndef ENABLE_VAM
         args->active_cycles = 0;
