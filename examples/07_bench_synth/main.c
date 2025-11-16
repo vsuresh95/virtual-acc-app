@@ -131,7 +131,7 @@ int main(int argc, char **argv) {
         }
     }
     fclose(test);
-    printf("[APP] Starting app: Multi phase FCNN benchmark for %d threads from %s!\n", n_threads, test_file);
+    printf("[FILTER] Starting app %s, %s for %d threads from %s!\n", sm_print, vam_print, n_threads, test_file);
 
     #ifdef DO_CPU_PIN
     // Run main thread on CPU 0 always.
@@ -250,7 +250,7 @@ int main(int argc, char **argv) {
         sleep(sleep_seconds);
         // Monitor progress of threads
         total_done = 0;
-        printf("[MAIN] IPS = ");
+        printf("[FILTER] ");
         for (unsigned i = 0; i < n_threads; i++) {
             unsigned new_iters_done = __atomic_load_n(&args->iters_done, __ATOMIC_ACQUIRE);
             float ips = (float) (new_iters_done - old_iters_done[i]) / sleep_seconds;
@@ -260,9 +260,9 @@ int main(int argc, char **argv) {
             uint64_t util_cycles = args->cmd_module->active_cycles - args->active_cycles;
             args->active_cycles = args->cmd_module->active_cycles;
             float util = (float) (util_cycles)/(sleep_seconds * 78125000);   
-            printf("T%d:%0.2f(%0.2f%%), ", i, ips, util * 100);
+            printf("%0.2f, %0.2f%%, ", ips, util * 100);
             #else
-            printf("T%d:%0.2f, ", i, ips);
+            printf("%0.2f, ", ips);
             #endif
             args = args->next;
         }

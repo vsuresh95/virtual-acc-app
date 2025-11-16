@@ -1,0 +1,4 @@
+models/model_16_3.txt 15000
+models/model_32_3.txt 55000
+models/model_16_3.txt 15000
+models/model_32_3.txt 55000

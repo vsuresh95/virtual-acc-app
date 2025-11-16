@@ -72,9 +72,13 @@ void *req_thread(void *a) {
     while(!(*start)) { SCHED_YIELD; } // Wait for signal to start
 
     uint64_t t_start = get_counter();
-    for (int i = 0; i < iterations; i++) {
-        nn_module_req(m, input_data, 0, false);
-        SCHED_YIELD;
+    unsigned iters_done = 0;
+    while (iters_done < iterations) {
+        if (nn_module_req_check(m, input_data, 0)) {
+            iters_done++;
+        } else {
+            SCHED_YIELD;
+        }
     }
     uint64_t t_end = get_counter();
     args->average_time = (t_end - t_start) / iterations;

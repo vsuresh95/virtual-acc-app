@@ -31,6 +31,7 @@ void nn_module_load(nn_module *m, const char *n) {
     #ifndef ENABLE_VAM
     m->accel_list = NULL;
     m->active_cycles = 0;
+    m->module_lock = false;
     #endif
 
 	char in_line_buf[256]; // Max 256 characters in one line
@@ -283,7 +284,9 @@ void nn_module_register(nn_module *m) {
     } m->input_queue = (sm_queue_t *) ((unsigned *) (m->mem) + edge->args->queue_offset);
     HIGH_DEBUG(printf("[NN] input_queue_offset for model %s = %d\n", nn_module_get_name(m), edge->args->queue_offset);)
 
+    #ifdef ENABLE_VAM
     HIGH_DEBUG(print_hpthread_list(m);)
+    #endif
 
     // Clean up temporary data structures
     nn_queue_delete(q);
@@ -616,7 +619,7 @@ bool nn_module_search_accel(nn_module *m, hpthread_prim_t prim) {
                     unsigned accel_idx;
                     sscanf(entry->d_name, "gemm_stratus.%u", &accel_idx);
                     // If the current accelerator is allocated, check next
-                    if (allocate_gemm_accel(accel_idx)) continue;
+                    if (!allocate_gemm_accel(accel_idx)) continue;
                     accel_found = true;
                     HIGH_DEBUG(printf("[NN%d] Allocated device %s for %s\n", m->id, entry->d_name, nn_module_get_name(m));)
                     // Else initialize this accelerator entry

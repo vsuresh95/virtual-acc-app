@@ -793,7 +793,11 @@ bool vam_load_balance() {
     // Mark the context as allocated.
     bitset_set(min_util_accel->valid_contexts, best_context_min);
     // Configure the device allocated
-    vam_configure_accel(move_th_max, min_util_accel, best_context_min);
+    if (move_th_max->cpu_invoke) {
+        vam_configure_cpu_invoke(move_th_max, min_util_accel, best_context_min);
+    } else {
+        vam_configure_accel(move_th_max, min_util_accel, best_context_min);
+    }
 
     if (no_min_contexts) {
         // Update the phy<->virt mapping for the chosen context with the hpthread
@@ -803,7 +807,11 @@ bool vam_load_balance() {
         // Mark the context as allocated.
         bitset_set(max_util_accel->valid_contexts, best_context_max);
         // Configure the device allocated
-        vam_configure_accel(move_th_min, max_util_accel, best_context_max);
+        if (move_th_min->cpu_invoke) {
+            vam_configure_cpu_invoke(move_th_min, max_util_accel, best_context_max);
+        } else {
+            vam_configure_accel(move_th_min, max_util_accel, best_context_max);
+        }
     }
     return true;
 }
@@ -873,10 +881,10 @@ void vam_print_report() {
     }
 #elif MED_REPORT  
     for (int i = 0; i < util_epoch_count; i++) {
-        printf("[MAIN] ");
+        printf("[FILTER] ");
         physical_accel_t *cur_accel = accel_list;
         while (cur_accel != NULL) {
-            printf("%s.%d: ", hpthread_get_prim_name(cur_accel->prim), cur_accel->accel_id);
+            // printf("%s.%d: ", hpthread_get_prim_name(cur_accel->prim), cur_accel->accel_id);
             float total_util = 0.0;
             util_entry_t *entry = cur_accel->util_entry_list;
             util_entry_t *prev = NULL;

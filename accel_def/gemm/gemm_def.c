@@ -24,19 +24,11 @@ extern contig_handle_t *lookup_handle(void *buf, enum contig_alloc_policy *polic
 
 #ifndef ENABLE_VAM
 static bool gemm_allocated[10] = {false}; // Arbitrary number of accel
-static bool gemm_array_lock = false;
 
 bool allocate_gemm_accel(unsigned accel_idx) {
     bool expected_value = false;
-    bool allocated = false;
     HIGH_DEBUG(printf("[INVOKE] Attempting to allocate gemm_stratus.%d\n", accel_idx);)
-    while(!__atomic_compare_exchange_n(&gemm_array_lock, &expected_value, true, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) { 
-        expected_value = false;
-        SCHED_YIELD;
-    }
-    allocated = gemm_allocated[accel_idx];
-    __atomic_store_n(&gemm_array_lock, false, __ATOMIC_RELEASE);
-    return allocated;
+    return __atomic_compare_exchange_n(&gemm_allocated[accel_idx], &expected_value, true, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
 }
 #endif
 
@@ -173,9 +165,8 @@ void *gemm_invoke(void *a) {
     #ifndef DO_SCHED_RR
     // Set niceness based on priority
     pid_t tid = syscall(SYS_gettid);
-    unsigned prio = th->nprio;
     setpriority(PRIO_PROCESS, tid, nice_table[0]);
-    HIGH_DEBUG(printf("[INVOKE] Set niceness to %d for %s:%d!\n", nice_table[0], accel->devname, context);)
+    HIGH_DEBUG(printf("[INVOKE] Set niceness to %d for %s!\n", nice_table[0], accel->devname);)
     #endif
 
     while (1) {

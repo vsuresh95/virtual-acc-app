@@ -10,6 +10,15 @@
 #include <nn_token.h>
 #include <pthread.h>
 
-const float ERR_TH = 0.05;
+#ifdef ENABLE_SM
+const char *sm_print = "with SM";
+#else
+const char *sm_print = "without SM";
+#endif
+#ifdef ENABLE_VAM
+const char *vam_print = "with VAM";
+#else
+const char *vam_print = "without VAM";
+#endif
 
 #endif // __HELPER_H__
