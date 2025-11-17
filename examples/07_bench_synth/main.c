@@ -18,9 +18,12 @@ typedef struct thread_args {
     unsigned t_id;
     bool cmd_valid;
     bool kill_thread;
+    bool cpu_thread;
     nn_module *cmd_module;
     unsigned cmd_delay;
     unsigned iters_done;
+    unsigned start_epoch;
+    unsigned end_epoch;
 #ifndef ENABLE_VAM
     uint64_t active_cycles;
 #endif
@@ -32,12 +35,19 @@ void *req_thread(void *a) {
     HIGH_DEBUG(printf("[APP] Starting request thread %d...\n", args->t_id);)
     nn_token_t *data = (nn_token_t *) malloc (1);
     bool cmd_valid = false;
+    bool cpu_thread = args->cpu_thread;
     nn_module *cmd_module = NULL;
     unsigned cmd_delay;
     unsigned input_iters_done = 0;
     unsigned output_iters_done = 0;
     bool drain_output = false;
     uint64_t start_cycles = 0;
+    #ifndef DO_SCHED_RR
+    if (cpu_thread) {
+        pid_t tid = syscall(SYS_gettid);
+        setpriority(PRIO_PROCESS, tid, nice_table[2]);
+    }
+    #endif
     while (1) {
         // Is there a new command?
         bool valid_check = __atomic_load_n(&(args->cmd_valid), __ATOMIC_ACQUIRE);
@@ -58,9 +68,11 @@ void *req_thread(void *a) {
                 drain_output = false;
                 #ifndef DO_SCHED_RR
                 // Set niceness based on priority
-                pid_t tid = syscall(SYS_gettid);
-                unsigned nprio = cmd_module->nprio;
-                setpriority(PRIO_PROCESS, tid, nice_table[nprio - 1]);
+                if (!cpu_thread) {
+                    pid_t tid = syscall(SYS_gettid);
+                    unsigned nprio = cmd_module->nprio;
+                    setpriority(PRIO_PROCESS, tid, nice_table[nprio - 1]);
+                }
                 #endif
             } else {
                 // Pending outputs exist, so drain the outputs first.
@@ -69,29 +81,53 @@ void *req_thread(void *a) {
         }
 
         if (cmd_valid) {
-            // Drain not pending and timer elapsed
-            #ifdef ENABLE_VAM
-            if (!drain_output && (get_counter() - start_cycles >= cmd_delay)) {
-                // Input queue not full
-                if (nn_module_req_check(cmd_module, data , 0)) {
-                    input_iters_done++;
-                    HIGH_DEBUG(printf("[APP%d] Sent req %d...\n", args->t_id, input_iters_done);)
-                    start_cycles = get_counter();
+            #ifdef ADD_CPU_THREAD            
+            if (cpu_thread) {
+                const unsigned inner_iters = 16;
+                float a0=1.1, a1=1.2, a2=1.3, a3=1.4;
+                float b0=0.9, b1=0.8, b2=0.7, b3=0.6;
+                float c0=0.0, c1=0.0, c2=0.0, c3=0.0;
+                for (unsigned k = 0; k < inner_iters; k++) {
+                    c0 = c0 * 1.000001 + a0 * b0;
+                    c1 = c1 * 0.999999 + a1 * b1;
+                    c2 = c2 * 1.000003 + a2 * b2;
+                    c3 = c3 * 0.999997 + a3 * b3;
+                    a0 += 0.00001; a1 -= 0.00002;
+                    b0 -= 0.00003; b1 += 0.00004;
                 }
-            }
-            if (nn_module_rsp_check(cmd_module, data, 0)) {
-                output_iters_done++;
-                HIGH_DEBUG(printf("[APP%d] Received rsp %d...\n", args->t_id, output_iters_done);)
-                __atomic_fetch_add(&(args->iters_done), 1, __ATOMIC_RELEASE);
-            }
-            #else
-            if (!drain_output && (get_counter() - start_cycles >= cmd_delay)) {
-                nn_module_run(cmd_module, data, data, 0, 0, false);
                 input_iters_done++;
                 output_iters_done++;
-                __atomic_fetch_add(&(args->iters_done), 1, __ATOMIC_RELEASE);
-                HIGH_DEBUG(printf("[APP%d] Ran request %d...\n", args->t_id, input_iters_done);)
-                start_cycles = get_counter();
+                if (output_iters_done % 4 == 0) {
+                    __atomic_fetch_add(&(args->iters_done), 1, __ATOMIC_RELEASE);
+                }
+            } else {
+            #endif
+                // Drain not pending and timer elapsed
+                #ifdef ENABLE_VAM
+                if (!drain_output && (get_counter() - start_cycles >= cmd_delay)) {
+                    // Input queue not full
+                    if (nn_module_req_check(cmd_module, data , 0)) {
+                        input_iters_done++;
+                        HIGH_DEBUG(printf("[APP%d] Sent req %d...\n", args->t_id, input_iters_done);)
+                        start_cycles = get_counter();
+                    }
+                }
+                if (nn_module_rsp_check(cmd_module, data, 0)) {
+                    output_iters_done++;
+                    HIGH_DEBUG(printf("[APP%d] Received rsp %d...\n", args->t_id, output_iters_done);)
+                    __atomic_fetch_add(&(args->iters_done), 1, __ATOMIC_RELEASE);
+                }
+                #else
+                if (!drain_output && (get_counter() - start_cycles >= cmd_delay)) {
+                    nn_module_run(cmd_module, data, data, 0, 0, false);
+                    input_iters_done++;
+                    output_iters_done++;
+                    __atomic_fetch_add(&(args->iters_done), 1, __ATOMIC_RELEASE);
+                    HIGH_DEBUG(printf("[APP%d] Ran request %d...\n", args->t_id, input_iters_done);)
+                    start_cycles = get_counter();
+                }
+                #endif
+            #ifdef ADD_CPU_THREAD            
             }
             #endif
         }
@@ -150,10 +186,15 @@ int main(int argc, char **argv) {
 
     // Create 4 models
     thread_args *head = NULL;
-    pthread_t req_threads[n_threads];
+    #ifdef ADD_CPU_THREAD
+    unsigned n_cpu_threads = 1;
+    #else
+    unsigned n_cpu_threads = 0;
+    #endif
+    pthread_t req_threads[n_threads + 1];
 
     // Create n_threads of models in a thread_args list
-    for (int i = 0; i < n_threads; i++) {
+    for (int i = 0; i < n_threads + n_cpu_threads; i++) {
         thread_args *args = (thread_args *) malloc (sizeof(thread_args));
         args->t_id = i+1;
         args->cmd_valid = false;
@@ -161,20 +202,25 @@ int main(int argc, char **argv) {
         args->next = NULL;
         args->cmd_delay = model_delay[i] * n_threads;
         args->iters_done = 0;
+        args->cpu_thread = (i == n_threads);
+        args->start_epoch = 0;
         #ifndef ENABLE_VAM
         args->active_cycles = 0;
         #endif
 
-        nn_module *cmd_module = (nn_module *) malloc (sizeof(nn_module));
-        cmd_module->id = i+1;
-        cmd_module->nprio = 1;
-        #ifndef ENABLE_SM
-        cmd_module->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
-        #else
-        cmd_module->cpu_invoke = false;
-        #endif
-        nn_module_load_and_register(cmd_module, model_list[i]);
-        args->cmd_module = cmd_module;
+        if (i < n_threads) {
+            nn_module *cmd_module = (nn_module *) malloc (sizeof(nn_module));
+            cmd_module->id = i+1;
+            cmd_module->nprio = 1;
+            #ifndef ENABLE_SM
+            cmd_module->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
+            #else
+            cmd_module->cpu_invoke = false;
+            #endif
+            nn_module_load_and_register(cmd_module, model_list[i]);
+            args->cmd_module = cmd_module;
+            args->start_epoch = (i * 2 > 8) ? 8 : i * 2;
+        }
         
         // Start a request thread for this model
         pthread_attr_t attr;
@@ -222,21 +268,25 @@ int main(int argc, char **argv) {
 
     // Variables for monitoring
     unsigned old_iters_done[MAX_THREADS] = {0};
+    #ifdef ADD_CPU_THREAD
+    unsigned old_cpu_iters_done = 0;
+    #endif
     unsigned total_done, old_done;
 
     // Wait for all threads to wake up
     sleep(1);
 
-    unsigned num_epochs_done = 10;
+    unsigned num_epochs = (n_threads * 2) + 2;
     unsigned sleep_seconds = 2;
     unsigned stall_counter = 0;
 
-    // STATIC ASSIGNMENT
-    while (num_epochs_done != 0) {
+    for (int epoch = 0; epoch < num_epochs; epoch++) {
         // Assign the next command to all thread
         thread_args *args = head;
-        for (unsigned i = 0; i < n_threads; i++) {
-            __atomic_store_n(&(args->cmd_valid), true, __ATOMIC_SEQ_CST);
+        for (unsigned i = 0; i < n_threads + n_cpu_threads; i++) {
+            if (epoch >= args->start_epoch) {
+                __atomic_store_n(&(args->cmd_valid), true, __ATOMIC_SEQ_CST);
+            }
             args = args->next;
         }
         // Sleep for the rest of the epoch
@@ -259,6 +309,15 @@ int main(int argc, char **argv) {
             #endif
             args = args->next;
         }
+        #ifdef ADD_CPU_THREAD
+        // Monitor CPU thread progress
+        {
+            unsigned new_iters_done = __atomic_load_n(&args->iters_done, __ATOMIC_ACQUIRE);
+            float ips = (float) (new_iters_done - old_cpu_iters_done) / sleep_seconds;
+            old_cpu_iters_done = new_iters_done;
+            printf("%0.2f", ips);
+        }
+        #endif
         if (total_done != 0 && total_done == old_done) {
             printf("STALL!!!");
             stall_counter++;
@@ -275,13 +334,12 @@ int main(int argc, char **argv) {
         // Write the current utilization to the log
         vam_log_utilization();
         #endif
-        num_epochs_done--;
     }
     printf("[MAIN] Completed all epochs, exiting...\n");
 
     // Wait for all request threads to finish
     thread_args *args = head;
-    for (int i = 0; i < n_threads; i++) {
+    for (int i = 0; i < n_threads + n_cpu_threads; i++) {
         args->kill_thread = true;
         __atomic_store_n(&(args->cmd_valid), true, __ATOMIC_SEQ_CST);
         pthread_join(req_threads[i], NULL);
@@ -292,8 +350,10 @@ int main(int argc, char **argv) {
     args = head;
     do {
         nn_module *cmd_module = args->cmd_module;
-        nn_module_release(cmd_module);
-        free(cmd_module);
+        if (!args->cpu_thread) {
+            nn_module_release(cmd_module);
+            free(cmd_module);
+        }
         thread_args *next = args->next;
         free(args);
         args = next;     
