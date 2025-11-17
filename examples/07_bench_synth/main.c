@@ -38,12 +38,6 @@ void *req_thread(void *a) {
     unsigned output_iters_done = 0;
     bool drain_output = false;
     uint64_t start_cycles = 0;
-    #ifndef DO_SCHED_RR
-    // Set niceness based on priority
-    pid_t tid = syscall(SYS_gettid);
-    setpriority(PRIO_PROCESS, tid, nice_table[1]);
-    #endif
-
     while (1) {
         // Is there a new command?
         bool valid_check = __atomic_load_n(&(args->cmd_valid), __ATOMIC_ACQUIRE);
@@ -52,10 +46,6 @@ void *req_thread(void *a) {
             if (input_iters_done == output_iters_done) {
                 // Clear valid
                 __atomic_store_n(&(args->cmd_valid), false, __ATOMIC_RELEASE);
-                // If a module is locked currently, free it
-                if (cmd_module) {
-                    __atomic_store_n(&(cmd_module->module_lock), false, __ATOMIC_SEQ_CST);
-                }
                 // Need to exit?
                 if (args->kill_thread) {
                     return NULL;
@@ -66,9 +56,12 @@ void *req_thread(void *a) {
                 input_iters_done = 0;
                 output_iters_done = 0;
                 drain_output = false;
-                // Wait for the module to be freed by the previous 
-                while (__atomic_load_n(&(cmd_module->module_lock), __ATOMIC_SEQ_CST) == true) { SCHED_YIELD; };
-                __atomic_store_n(&(cmd_module->module_lock), true, __ATOMIC_SEQ_CST);
+                #ifndef DO_SCHED_RR
+                // Set niceness based on priority
+                pid_t tid = syscall(SYS_gettid);
+                unsigned nprio = cmd_module->nprio;
+                setpriority(PRIO_PROCESS, tid, nice_table[nprio - 1]);
+                #endif
             } else {
                 // Pending outputs exist, so drain the outputs first.
                 drain_output = true;

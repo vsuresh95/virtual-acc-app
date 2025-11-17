@@ -36,7 +36,6 @@ typedef struct {
     unsigned nprio; // Priority: 1 (highest) - 10 (lowest)
     bool cpu_invoke; // Should we invoke accelerator through CPU?
     #ifndef VAM_ENABLE
-    bool module_lock; // Ensure two tenants do not use the module APIs at the same time.
     physical_accel_t *accel_list;
     uint64_t active_cycles;
     #endif

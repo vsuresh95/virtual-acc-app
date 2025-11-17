@@ -31,7 +31,6 @@ void nn_module_load(nn_module *m, const char *n) {
     #ifndef ENABLE_VAM
     m->accel_list = NULL;
     m->active_cycles = 0;
-    m->module_lock = false;
     #endif
 
 	char in_line_buf[256]; // Max 256 characters in one line
