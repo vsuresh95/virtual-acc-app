@@ -45,7 +45,8 @@ void *req_thread(void *a) {
     bool drain_output = false;
     uint64_t start_cycles = 0;
     #ifdef ENABLE_VAM
-    uint64_t iter_start[SM_QUEUE_SIZE];
+    const unsigned max_inflight = SM_QUEUE_SIZE * 7; // TODO: assumes max of 6 layers
+    uint64_t iter_start[max_inflight];
     #endif
     #ifndef DO_SCHED_RR
     if (cpu_thread) {
@@ -110,7 +111,7 @@ void *req_thread(void *a) {
                 if (!drain_output && (get_counter() - start_cycles >= cmd_delay)) {
                     // Input queue not full
                     if (nn_module_req_check(cmd_module, data , 0)) {
-                        iter_start[input_iters_done % SM_QUEUE_SIZE] = get_counter();
+                        iter_start[input_iters_done % max_inflight] = get_counter();
                         HIGH_DEBUG(printf("[APP%d] Sent req %d...\n", args->t_id, input_iters_done);)
                         start_cycles = get_counter();
                         input_iters_done++;
@@ -118,7 +119,7 @@ void *req_thread(void *a) {
                 }
                 if (nn_module_rsp_check(cmd_module, data, 0)) {
                     HIGH_DEBUG(printf("[APP%d] Received rsp %d...\n", args->t_id, output_iters_done);)
-                    __atomic_fetch_add(&(args->total_latency), get_counter() - iter_start[output_iters_done % SM_QUEUE_SIZE], __ATOMIC_RELEASE);
+                    __atomic_fetch_add(&(args->total_latency), get_counter() - iter_start[output_iters_done % max_inflight], __ATOMIC_RELEASE);
                     __atomic_fetch_add(&(args->iters_done), 1, __ATOMIC_RELEASE);
                     output_iters_done++;
                 }
@@ -307,7 +308,7 @@ int main(int argc, char **argv) {
         // Assign the next command to all thread
         thread_args *args = head;
         for (unsigned i = 0; i < n_threads + n_cpu_threads; i++) {
-            args->cmd_delay = n_threads * trace[epoch][i].delay;
+            args->cmd_delay = trace[epoch][i].delay;
             args->cmd_nprio = trace[epoch][i].nprio;
             __atomic_store_n(&(args->cmd_valid), trace[epoch][i].valid, __ATOMIC_SEQ_CST);
             args = args->next;
