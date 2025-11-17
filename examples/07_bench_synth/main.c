@@ -27,6 +27,7 @@ typedef struct thread_args {
 #ifndef ENABLE_VAM
     uint64_t active_cycles;
 #endif
+    uint64_t total_latency;
     struct thread_args *next;
 } thread_args;
 
@@ -42,6 +43,9 @@ void *req_thread(void *a) {
     unsigned output_iters_done = 0;
     bool drain_output = false;
     uint64_t start_cycles = 0;
+    #ifdef ENABLE_VAM
+    uint64_t iter_start[SM_QUEUE_SIZE];
+    #endif
     #ifndef DO_SCHED_RR
     if (cpu_thread) {
         pid_t tid = syscall(SYS_gettid);
@@ -65,6 +69,8 @@ void *req_thread(void *a) {
                 cmd_valid = true;
                 input_iters_done = 0;
                 output_iters_done = 0;
+                __atomic_store_n(&(args->iters_done), 0, __ATOMIC_RELEASE);
+                __atomic_store_n(&(args->total_latency), 0, __ATOMIC_RELEASE);
                 drain_output = false;
                 #ifndef DO_SCHED_RR
                 // Set niceness based on priority
@@ -95,11 +101,7 @@ void *req_thread(void *a) {
                     a0 += 0.00001; a1 -= 0.00002;
                     b0 -= 0.00003; b1 += 0.00004;
                 }
-                input_iters_done++;
-                output_iters_done++;
-                if (output_iters_done % 4 == 0) {
-                    __atomic_fetch_add(&(args->iters_done), 1, __ATOMIC_RELEASE);
-                }
+                __atomic_fetch_add(&(args->iters_done), 1, __ATOMIC_RELEASE);
             } else {
             #endif
                 // Drain not pending and timer elapsed
@@ -107,23 +109,25 @@ void *req_thread(void *a) {
                 if (!drain_output && (get_counter() - start_cycles >= cmd_delay)) {
                     // Input queue not full
                     if (nn_module_req_check(cmd_module, data , 0)) {
-                        input_iters_done++;
+                        iter_start[input_iters_done % SM_QUEUE_SIZE] = get_counter();
                         HIGH_DEBUG(printf("[APP%d] Sent req %d...\n", args->t_id, input_iters_done);)
                         start_cycles = get_counter();
+                        input_iters_done++;
                     }
                 }
                 if (nn_module_rsp_check(cmd_module, data, 0)) {
-                    output_iters_done++;
                     HIGH_DEBUG(printf("[APP%d] Received rsp %d...\n", args->t_id, output_iters_done);)
+                    __atomic_fetch_add(&(args->total_latency), get_counter() - iter_start[output_iters_done % SM_QUEUE_SIZE], __ATOMIC_RELEASE);
                     __atomic_fetch_add(&(args->iters_done), 1, __ATOMIC_RELEASE);
+                    output_iters_done++;
                 }
                 #else
                 if (!drain_output && (get_counter() - start_cycles >= cmd_delay)) {
+                    uint64_t i_start = get_counter();
                     nn_module_run(cmd_module, data, data, 0, 0, false);
-                    input_iters_done++;
-                    output_iters_done++;
+                    __atomic_fetch_add(&(args->total_latency), get_counter() - i_start, __ATOMIC_RELEASE);
                     __atomic_fetch_add(&(args->iters_done), 1, __ATOMIC_RELEASE);
-                    HIGH_DEBUG(printf("[APP%d] Ran request %d...\n", args->t_id, input_iters_done);)
+                    HIGH_DEBUG(printf("[APP%d] Ran request %d...\n", args->t_id, args->iters_done);)
                     start_cycles = get_counter();
                 }
                 #endif
@@ -267,10 +271,6 @@ int main(int argc, char **argv) {
     tail->next = head;
 
     // Variables for monitoring
-    unsigned old_iters_done[MAX_THREADS] = {0};
-    #ifdef ADD_CPU_THREAD
-    unsigned old_cpu_iters_done = 0;
-    #endif
     unsigned total_done, old_done;
 
     // Wait for all threads to wake up
@@ -296,16 +296,15 @@ int main(int argc, char **argv) {
         printf("[FILTER] ");
         for (unsigned i = 0; i < n_threads; i++) {
             unsigned new_iters_done = __atomic_load_n(&args->iters_done, __ATOMIC_ACQUIRE);
-            float ips = (float) (new_iters_done - old_iters_done[i]) / sleep_seconds;
-            old_iters_done[i] = new_iters_done;
+            uint64_t avg_latency = __atomic_load_n(&args->total_latency, __ATOMIC_ACQUIRE) / ((new_iters_done > 0) ? new_iters_done : UINT64_MAX);
             total_done += new_iters_done;
             #ifndef ENABLE_VAM
             uint64_t util_cycles = args->cmd_module->active_cycles - args->active_cycles;
             args->active_cycles = args->cmd_module->active_cycles;
             float util = (float) (util_cycles)/(sleep_seconds * 78125000);   
-            printf("%0.2f, %0.2f%%, ", ips, util * 100);
+            printf("%lu, %0.2f%%, ", avg_latency, util * 100);
             #else
-            printf("%0.2f, ", ips);
+            printf("%lu, ", avg_latency);
             #endif
             args = args->next;
         }
@@ -313,8 +312,7 @@ int main(int argc, char **argv) {
         // Monitor CPU thread progress
         {
             unsigned new_iters_done = __atomic_load_n(&args->iters_done, __ATOMIC_ACQUIRE);
-            float ips = (float) (new_iters_done - old_cpu_iters_done) / sleep_seconds;
-            old_cpu_iters_done = new_iters_done;
+            float ips = (float) (new_iters_done) / sleep_seconds;
             printf("%0.2f", ips);
         }
         #endif
