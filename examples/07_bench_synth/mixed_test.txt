@@ -1,6 +1,6 @@
-models/model_16_3.txt 15000
-models/model_32_3.txt 55000
-models/model_48_5.txt 170000
-models/model_64_3.txt 370000
-models/model_32_3.txt 55000
-models/model_64_3.txt 370000
+models/model_16_3.txt
+models/model_32_3.txt
+models/model_48_5.txt
+models/model_64_3.txt
+models/model_32_3.txt
+models/model_64_3.txt

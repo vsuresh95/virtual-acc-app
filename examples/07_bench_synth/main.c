@@ -12,6 +12,8 @@ static uint8_t core_affinity_ctr = 0;
 
 #define MAX_THREADS 6
 
+#include <trace.h>
+
 extern void vam_log_utilization();
 
 typedef struct thread_args {
@@ -21,9 +23,8 @@ typedef struct thread_args {
     bool cpu_thread;
     nn_module *cmd_module;
     unsigned cmd_delay;
+    unsigned cmd_nprio;
     unsigned iters_done;
-    unsigned start_epoch;
-    unsigned end_epoch;
 #ifndef ENABLE_VAM
     uint64_t active_cycles;
 #endif
@@ -142,11 +143,37 @@ void *req_thread(void *a) {
 // Example application for fully connected neural network (FCNN)
 int main(int argc, char **argv) {
     char model_list[MAX_THREADS][256];
-    unsigned model_delay[MAX_THREADS];
     unsigned n_threads = 4;
-    char *test_file = "test.txt";
+    unsigned test_type = 0;
     if (argc > 2) n_threads = atoi(argv[2]);
-    if (argc > 1) test_file = argv[1];
+    if (argc > 1) test_type = atoi(argv[1]);
+    char *test_file;
+    const trace_entry_t (*trace)[MAX_THREADS];
+    unsigned num_epochs = 0;
+    switch (test_type) {
+        case 0: {
+            // Light workload
+            test_file = "light_test.txt";
+            trace = light_trace;
+            num_epochs = sizeof(light_trace) / sizeof(light_trace[0]);
+            break;
+        }
+        case 1: {
+            // Heavy workload
+            test_file = "heavy_test.txt";
+            trace = heavy_trace;
+            num_epochs = sizeof(heavy_trace) / sizeof(heavy_trace[0]);
+            break;
+        }
+        case 2: {
+            // Mixed workload
+            test_file = "mixed_test.txt";
+            trace = mixed_trace;
+            num_epochs = sizeof(mixed_trace) / sizeof(mixed_trace[0]);
+            break;
+        }
+        default: break;
+    }
     FILE *test = fopen(test_file, "r");
 	if (!test) {
 		perror("Failed to read test description file");
@@ -159,8 +186,7 @@ int main(int argc, char **argv) {
             if ((strlen(in_line_buf) > 0) && (in_line_buf[strlen (in_line_buf) - 1] == '\n')) {
                 in_line_buf[strlen(in_line_buf) - 1] = '\0';
             }
-
-            sscanf(in_line_buf, "%s %d", model_list[i], &model_delay[i]);
+            sscanf(in_line_buf, "%s", model_list[i]);
         }
     }
     fclose(test);
@@ -204,10 +230,9 @@ int main(int argc, char **argv) {
         args->cmd_valid = false;
         args->kill_thread = false;
         args->next = NULL;
-        args->cmd_delay = model_delay[i] * n_threads;
+        args->cmd_delay = 0;
         args->iters_done = 0;
         args->cpu_thread = (i == n_threads);
-        args->start_epoch = 0;
         #ifndef ENABLE_VAM
         args->active_cycles = 0;
         #endif
@@ -223,7 +248,6 @@ int main(int argc, char **argv) {
             #endif
             nn_module_load_and_register(cmd_module, model_list[i]);
             args->cmd_module = cmd_module;
-            args->start_epoch = (i * 2 > 8) ? 8 : i * 2;
         }
         
         // Start a request thread for this model
@@ -276,7 +300,6 @@ int main(int argc, char **argv) {
     // Wait for all threads to wake up
     sleep(1);
 
-    unsigned num_epochs = (n_threads * 2) + 2;
     unsigned sleep_seconds = 2;
     unsigned stall_counter = 0;
 
@@ -284,9 +307,9 @@ int main(int argc, char **argv) {
         // Assign the next command to all thread
         thread_args *args = head;
         for (unsigned i = 0; i < n_threads + n_cpu_threads; i++) {
-            if (epoch >= args->start_epoch) {
-                __atomic_store_n(&(args->cmd_valid), true, __ATOMIC_SEQ_CST);
-            }
+            args->cmd_delay = n_threads * trace[epoch][i].delay;
+            args->cmd_nprio = trace[epoch][i].nprio;
+            __atomic_store_n(&(args->cmd_valid), trace[epoch][i].valid, __ATOMIC_SEQ_CST);
             args = args->next;
         }
         // Sleep for the rest of the epoch
