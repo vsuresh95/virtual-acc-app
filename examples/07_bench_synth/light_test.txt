@@ -1,4 +1,0 @@
-models/model_16_3.txt
-models/model_32_3.txt
-models/model_16_3.txt
-models/model_32_3.txt

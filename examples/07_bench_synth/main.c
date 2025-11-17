@@ -143,55 +143,38 @@ void *req_thread(void *a) {
 
 // Example application for fully connected neural network (FCNN)
 int main(int argc, char **argv) {
-    char model_list[MAX_THREADS][256];
+    const char (*model_list)[256];
     unsigned n_threads = 4;
     unsigned test_type = 0;
     if (argc > 2) n_threads = atoi(argv[2]);
     if (argc > 1) test_type = atoi(argv[1]);
-    char *test_file;
     const trace_entry_t (*trace)[MAX_THREADS];
     unsigned num_epochs = 0;
     switch (test_type) {
         case 0: {
             // Light workload
-            test_file = "light_test.txt";
+            model_list = light_models;
             trace = light_trace;
             num_epochs = sizeof(light_trace) / sizeof(light_trace[0]);
             break;
         }
         case 1: {
             // Heavy workload
-            test_file = "heavy_test.txt";
+            model_list = heavy_models;
             trace = heavy_trace;
             num_epochs = sizeof(heavy_trace) / sizeof(heavy_trace[0]);
             break;
         }
         case 2: {
             // Mixed workload
-            test_file = "mixed_test.txt";
+            model_list = mixed_models;
             trace = mixed_trace;
             num_epochs = sizeof(mixed_trace) / sizeof(mixed_trace[0]);
             break;
         }
         default: break;
     }
-    FILE *test = fopen(test_file, "r");
-	if (!test) {
-		perror("Failed to read test description file");
-		exit(1);
-	}
-	char in_line_buf[256];
-    for (int i = 0; i < n_threads; i++) {
-        // Read model info
-        if (fgets(in_line_buf, 100, test) != NULL) {
-            if ((strlen(in_line_buf) > 0) && (in_line_buf[strlen (in_line_buf) - 1] == '\n')) {
-                in_line_buf[strlen(in_line_buf) - 1] = '\0';
-            }
-            sscanf(in_line_buf, "%s", model_list[i]);
-        }
-    }
-    fclose(test);
-    printf("[FILTER] Starting app %s, %s for %d threads from %s!\n", sm_print, vam_print, n_threads, test_file);
+    printf("[FILTER] Starting app %s, %s for %d threads for test %d\n", sm_print, vam_print, n_threads, test_type);
 
     #ifdef DO_CPU_PIN
     // Run main thread on CPU 0 always.
@@ -301,7 +284,7 @@ int main(int argc, char **argv) {
     // Wait for all threads to wake up
     sleep(1);
 
-    unsigned sleep_seconds = 2;
+    unsigned sleep_seconds = 4;
     unsigned stall_counter = 0;
 
     for (int epoch = 0; epoch < num_epochs; epoch++) {

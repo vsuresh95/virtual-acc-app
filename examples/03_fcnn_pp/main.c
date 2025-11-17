@@ -51,14 +51,14 @@ int main(int argc, char **argv) {
             perror("pthread_setaffinity_np");
         }
     }
-    #endif
+    #endif // DO_CPU_PIN
     #ifdef DO_SCHED_RR
     // Set scheduling attributes
     struct sched_param sp = { .sched_priority = 1 };
     if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) != 0) {
         perror("pthread_setschedparam");
     }
-    #endif
+    #endif // DO_SCHED_RR
 
     // Load a model from a text file (and) register with NN frontend
     nn_module *m = (nn_module *) malloc (sizeof(nn_module));
@@ -76,6 +76,7 @@ int main(int argc, char **argv) {
     args->iterations = iterations;
 
     // Start response thread on CPU 1
+    #ifdef ENABLE_VAM
     #ifndef DO_CHAIN
     pthread_t rsp_th;
     // Create pthread attributes
@@ -93,7 +94,7 @@ int main(int argc, char **argv) {
             perror("pthread_attr_setaffinity_np");
         }
     }
-    #endif
+    #endif // DO_CPU_PIN
     #ifdef DO_SCHED_RR
     // Set SCHED_RR scheduling policy with priority 1
     if (pthread_attr_setschedpolicy(&attr, SCHED_FIFO) != 0) {
@@ -102,29 +103,35 @@ int main(int argc, char **argv) {
     if (pthread_attr_setschedparam(&attr, &sp) != 0) {
         perror("pthread_attr_setschedparam");
     }
-    #endif
+    #endif // DO_SCHED_RR
     if (pthread_create(&rsp_th, &attr, rsp_thread, (void *) args) != 0) {
         perror("pthread_create");
         exit(1);
     }
     pthread_attr_destroy(&attr);
-    #endif
+    #endif // DO_CHAIN
+    #endif // ENABLE_VAM
 
     // Warm up
     nn_token_t *input_data = (nn_token_t *) malloc (1);
     #ifdef DO_CHAIN
     nn_token_t *output_data = (nn_token_t *) malloc (1);
-    #endif
+    #endif // DO_CHAIN
     for (int i = 0; i < 5; i++) {
+        #ifdef ENABLE_VAM
         nn_module_req(m, input_data, 0, false);
         SCHED_YIELD;
         #ifdef DO_CHAIN
         nn_module_rsp(m, output_data, 0, false);
-        #endif
+        #endif // DO_CHAIN
+        #else // ENABLE_VAM
+        nn_module_run(m, input_data, input_data, 0, 0, false);
+        #endif // ENABLE_VAM
     }
 
     uint64_t t_start = get_counter();
     for (int i = 0; i < iterations; i++) {
+        #ifdef ENABLE_VAM
         nn_module_req(m, input_data, 0, false);
         SCHED_YIELD;
         #ifdef DO_CHAIN
@@ -133,15 +140,26 @@ int main(int argc, char **argv) {
             unsigned print_iterations = iterations / 5;
             if (i % print_iterations == 0) printf("[APP] Iter %d done!\n", i);
         )
-        #endif
+        #endif // DO_CHAIN
+        #else // ENABLE_VAM
+        nn_module_run(m, input_data, input_data, 0, 0, false);
+        LOW_DEBUG( 
+            unsigned print_iterations = iterations / 5;
+            if (i % print_iterations == 0) printf("[APP] Iter %d done!\n", i);
+        )
+        #endif // ENABLE_VAM
     }
     uint64_t t_loop = get_counter() - t_start;
 
+    #ifdef ENABLE_VAM
     #ifndef DO_CHAIN
     pthread_join(rsp_th, NULL);
-    #endif
+    #endif // DO_CHAIN
+    #endif // ENABLE_VAM
     nn_module_release(m);
     free(m);
+#ifdef ENABLE_VAM
     hpthread_report();
+#endif
     printf("[APP] Average time = %lu\n", t_loop/iterations);
 }
