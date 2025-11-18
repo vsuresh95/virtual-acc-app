@@ -327,6 +327,16 @@ void nn_module_release(nn_module *m) {
     nn_graph_delete(m->graph);
 }
 
+void nn_module_setprio(nn_module *m, unsigned nprio) {
+    m->nprio = nprio;
+    nn_hpthread_list *cur = m->th_list;
+    while(cur != NULL) {
+        nn_hpthread_list *next = cur->next;
+        hpthread_setpriority(cur->th, nprio);
+        cur = next;
+    }
+}
+
 void nn_module_add_hpthread(nn_module *m, hpthread_t *th) {
     nn_hpthread_list *item = (nn_hpthread_list *) malloc (sizeof(nn_hpthread_list));
     item->next = NULL;

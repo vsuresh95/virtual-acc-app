@@ -48,6 +48,7 @@ void nn_module_load(nn_module *m, const char *n);
 void nn_module_register(nn_module *m);
 void nn_module_load_and_register(nn_module *m, const char *n);
 void nn_module_release(nn_module *m);
+void nn_module_setprio(nn_module *m, unsigned nprio);
 void nn_module_create_hpthread(nn_module *m);
 void nn_module_create_descr(nn_module *m);
 static inline const char *nn_module_get_name(nn_module *m) { return m->graph->name; }

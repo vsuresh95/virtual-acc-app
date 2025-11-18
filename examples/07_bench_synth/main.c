@@ -19,6 +19,7 @@ extern void vam_log_utilization();
 typedef struct thread_args {
     unsigned t_id;
     bool cmd_valid;
+    bool cmd_run;
     bool kill_thread;
     bool cpu_thread;
     nn_module *cmd_module;
@@ -36,7 +37,7 @@ void *req_thread(void *a) {
     thread_args *args = (thread_args *) a;
     HIGH_DEBUG(printf("[APP] Starting request thread %d...\n", args->t_id);)
     nn_token_t *data = (nn_token_t *) malloc (1);
-    bool cmd_valid = false;
+    bool cmd_run = false;
     bool cpu_thread = args->cpu_thread;
     nn_module *cmd_module = NULL;
     unsigned cmd_delay;
@@ -66,29 +67,32 @@ void *req_thread(void *a) {
                 if (args->kill_thread) {
                     return NULL;
                 }
-                cmd_module = args->cmd_module;
-                cmd_delay = args->cmd_delay;
-                cmd_valid = true;
                 input_iters_done = 0;
                 output_iters_done = 0;
                 __atomic_store_n(&(args->iters_done), 0, __ATOMIC_RELEASE);
                 __atomic_store_n(&(args->total_latency), 0, __ATOMIC_RELEASE);
                 drain_output = false;
-                #ifndef DO_SCHED_RR
-                // Set niceness based on priority
-                if (!cpu_thread) {
-                    pid_t tid = syscall(SYS_gettid);
-                    unsigned nprio = cmd_module->nprio;
-                    setpriority(PRIO_PROCESS, tid, nice_table[nprio - 1]);
+                // Check if we can start
+                cmd_run = args->cmd_run;
+                if (cmd_run) {
+                    cmd_module = args->cmd_module;
+                    cmd_delay = args->cmd_delay;
+                    #ifndef DO_SCHED_RR
+                    // Set niceness based on priority
+                    if (!cpu_thread) {
+                        pid_t tid = syscall(SYS_gettid);
+                        unsigned nprio = args->cmd_nprio;
+                        setpriority(PRIO_PROCESS, tid, nice_table[nprio - 1]);
+                    }
+                    #endif
                 }
-                #endif
             } else {
                 // Pending outputs exist, so drain the outputs first.
                 drain_output = true;
             }
         }
 
-        if (cmd_valid) {
+        if (cmd_run) {
             #ifdef ADD_CPU_THREAD            
             if (cpu_thread) {
                 const unsigned inner_iters = 16;
@@ -210,10 +214,12 @@ int main(int argc, char **argv) {
     for (int i = 0; i < n_threads + n_cpu_threads; i++) {
         thread_args *args = (thread_args *) malloc (sizeof(thread_args));
         args->t_id = i+1;
+        args->cmd_run = false;
         args->cmd_valid = false;
         args->kill_thread = false;
         args->next = NULL;
         args->cmd_delay = 0;
+        args->cmd_nprio = 1;
         args->iters_done = 0;
         args->cpu_thread = (i == n_threads);
         #ifndef ENABLE_VAM
@@ -283,12 +289,31 @@ int main(int argc, char **argv) {
     unsigned sleep_seconds = 4;
 
     for (int epoch = 0; epoch < num_epochs; epoch++) {
-        // Assign the next command to all thread
+        // Synchronize all threads at the start of the epoch
         thread_args *args = head;
+        for (unsigned i = 0; i < n_threads + n_cpu_threads; i++) {
+            args->cmd_run = false;
+            __atomic_store_n(&(args->cmd_valid), true, __ATOMIC_SEQ_CST);
+            while (__atomic_load_n(&(args->cmd_valid), __ATOMIC_SEQ_CST) == true) {
+                SCHED_YIELD;
+            }
+            args = args->next;
+        }
+        // Assign the next command to all thread
+        args = head;
         for (unsigned i = 0; i < n_threads + n_cpu_threads; i++) {
             args->cmd_delay = trace[epoch][i].delay;
             args->cmd_nprio = trace[epoch][i].nprio;
-            __atomic_store_n(&(args->cmd_valid), trace[epoch][i].valid, __ATOMIC_SEQ_CST);
+            #ifdef ENABLE_VAM
+            nn_module_setprio(args->cmd_module, args->cmd_nprio);
+            #endif
+            args->cmd_run = trace[epoch][i].run;
+            args = args->next;
+        }
+        // Start all threads for this epoch
+        args = head;
+        for (unsigned i = 0; i < n_threads + n_cpu_threads; i++) {
+            __atomic_store_n(&(args->cmd_valid), true, __ATOMIC_SEQ_CST);
             args = args->next;
         }
         // Sleep for the rest of the epoch
