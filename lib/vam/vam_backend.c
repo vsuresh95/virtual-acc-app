@@ -172,7 +172,7 @@ void *vam_run_backend(void *arg) {
     vam_probe_accel();
     bool kill_vam = false;
 
-    unsigned lb_skipped_iters = 0;
+    unsigned vam_sleep = VAM_SLEEP_MIN;
     const float LB_RETRY = 0.4;
     const float LB_RETRY_RESET = 0.2;
     const unsigned MAX_LB_RETRY = 3;
@@ -187,21 +187,18 @@ void *vam_run_backend(void *arg) {
             case VAM_IDLE: {
                 // Examine the util across all accelerators in the system                
                 float load_imbalance = vam_check_load_balance();
+                bool increment_vam_sleep = true;
                 bool need_load_balance = false;
                     
                 if ((load_imbalance <= LB_RETRY_RESET)) {
                     NUM_LB_RETRY = MAX_LB_RETRY;
                     load_imbalance_reg = load_imbalance; // reset baseline
-                    lb_skipped_iters = 0;
                 } else if (load_imbalance > LB_RETRY && NUM_LB_RETRY > 0) {
                     need_load_balance = true;
-                    lb_skipped_iters = 0;
                 } else if (fabsf(load_imbalance - load_imbalance_reg) > LB_RETRY) {
+                    increment_vam_sleep = false;
                     NUM_LB_RETRY = MAX_LB_RETRY;
                     need_load_balance = true;
-                    lb_skipped_iters = 0;
-                } else {
-                    lb_skipped_iters++;
                 }
 
                 if (need_load_balance) {
@@ -213,8 +210,14 @@ void *vam_run_backend(void *arg) {
                     }
                 }
 
+                if (increment_vam_sleep) {
+                    if (vam_sleep < VAM_SLEEP_MAX) vam_sleep += VAM_SLEEP_MIN;
+                } else {
+                    vam_sleep = VAM_SLEEP_MIN;
+                }
+
                 // As a fallback, if LB was skipped more than 10 times, increment retry counter.
-                if (lb_skipped_iters >= 10 && NUM_LB_RETRY != MAX_LB_RETRY) NUM_LB_RETRY++;
+                if (vam_sleep >= VAM_SLEEP_MAX && NUM_LB_RETRY != MAX_LB_RETRY) NUM_LB_RETRY++;
                 break;
             }
             case VAM_CREATE: {
@@ -250,10 +253,11 @@ void *vam_run_backend(void *arg) {
         if (state > VAM_DONE) {
             // Set the interface state to DONE
             hpthread_intf_set(VAM_DONE);
-            HIGH_DEBUG(printf("[VAM] Completed the processing of request.\n");)
+            // Reset sleep delay after servicing a request
+            vam_sleep = VAM_SLEEP_MIN;
         }
         if (kill_vam) break;
-        usleep(VAM_SLEEP);
+        usleep(vam_sleep);
     }
     return NULL;
 }
