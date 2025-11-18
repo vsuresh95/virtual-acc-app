@@ -7,10 +7,10 @@ typedef struct {
     unsigned nprio;
 } trace_entry_t;
 
-#define TINY_LATENCY 90000 
-#define SMALL_LATENCY 210000
-#define MEDIUM_LATENCY 680000
-#define LARGE_LATENCY 1470000
+#define TINY_LATENCY 160000 
+#define SMALL_LATENCY 252000
+#define MEDIUM_LATENCY 770000
+#define LARGE_LATENCY 1550000
 
 const char light_models[MAX_THREADS][256] = {
     "models/model_16_3.txt",
@@ -45,7 +45,6 @@ const trace_entry_t light_trace[][MAX_THREADS] = {
     { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {false, 0, 0}, {false, 0, 0} },
     { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {true, TINY_LATENCY, 1}, {false, 0, 0} },
     { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {true, TINY_LATENCY, 1}, {false, 0, 0} },
-    { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1} },
     { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1} },
     { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1} },
     { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1} },

@@ -125,12 +125,11 @@ void *req_thread(void *a) {
                 }
                 #else
                 if (!drain_output && (get_counter() - start_cycles >= cmd_delay)) {
-                    uint64_t i_start = get_counter();
+                    start_cycles = get_counter();
                     nn_module_run(cmd_module, data, data, 0, 0, false);
-                    __atomic_fetch_add(&(args->total_latency), get_counter() - i_start, __ATOMIC_RELEASE);
+                    __atomic_fetch_add(&(args->total_latency), get_counter() - start_cycles, __ATOMIC_RELEASE);
                     __atomic_fetch_add(&(args->iters_done), 1, __ATOMIC_RELEASE);
                     HIGH_DEBUG(printf("[APP%d] Ran request %d...\n", args->t_id, args->iters_done);)
-                    start_cycles = get_counter();
                 }
                 #endif
             #ifdef ADD_CPU_THREAD            
@@ -278,14 +277,10 @@ int main(int argc, char **argv) {
     while (tail->next != NULL) tail = tail->next;
     tail->next = head;
 
-    // Variables for monitoring
-    unsigned total_done, old_done;
-
     // Wait for all threads to wake up
     sleep(1);
 
     unsigned sleep_seconds = 4;
-    unsigned stall_counter = 0;
 
     for (int epoch = 0; epoch < num_epochs; epoch++) {
         // Assign the next command to all thread
@@ -299,12 +294,10 @@ int main(int argc, char **argv) {
         // Sleep for the rest of the epoch
         sleep(sleep_seconds);
         // Monitor progress of threads
-        total_done = 0;
         printf("[FILTER] ");
         for (unsigned i = 0; i < n_threads; i++) {
             unsigned new_iters_done = __atomic_load_n(&args->iters_done, __ATOMIC_ACQUIRE);
             uint64_t avg_latency = __atomic_load_n(&args->total_latency, __ATOMIC_ACQUIRE) / ((new_iters_done > 0) ? new_iters_done : UINT64_MAX);
-            total_done += new_iters_done;
             #ifndef ENABLE_VAM
             uint64_t util_cycles = args->cmd_module->active_cycles - args->active_cycles;
             args->active_cycles = args->cmd_module->active_cycles;
@@ -323,17 +316,6 @@ int main(int argc, char **argv) {
             printf("%0.2f", ips);
         }
         #endif
-        if (total_done != 0 && total_done == old_done) {
-            printf("STALL!!!");
-            stall_counter++;
-            if (stall_counter >= 3) {
-                printf("\n[MAIN] Detected stall for 3 consecutive periods, exiting...\n");
-                goto exit;
-            }
-        } else {
-            old_done = total_done;
-            stall_counter = 0;
-        }
         printf("\n");
         #ifdef ENABLE_VAM
         // Write the current utilization to the log
@@ -363,7 +345,6 @@ int main(int argc, char **argv) {
         free(args);
         args = next;     
     } while (args != head);
-exit:
 #ifdef ENABLE_VAM
     hpthread_report();
 #else
