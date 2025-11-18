@@ -5,7 +5,7 @@
 
 #define SM_ENTRY_SIZE 2
 #define SM_COMMON_SIZE 6
-#define SM_QUEUE_SIZE 2
+#define SM_QUEUE_SIZE 4
 
 typedef struct {
     unsigned output_queue;

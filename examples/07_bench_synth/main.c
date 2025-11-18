@@ -147,8 +147,10 @@ void *req_thread(void *a) {
 // Example application for fully connected neural network (FCNN)
 int main(int argc, char **argv) {
     const char (*model_list)[256];
+    unsigned th_offset = 0;
     unsigned n_threads = 4;
     unsigned test_type = 0;
+    if (argc > 3) th_offset = atoi(argv[3]);
     if (argc > 2) n_threads = atoi(argv[2]);
     if (argc > 1) test_type = atoi(argv[1]);
     const trace_entry_t (*trace)[MAX_THREADS];
@@ -235,7 +237,7 @@ int main(int argc, char **argv) {
             #else
             cmd_module->cpu_invoke = false;
             #endif
-            nn_module_load_and_register(cmd_module, model_list[i]);
+            nn_module_load_and_register(cmd_module, model_list[i+th_offset]);
             args->cmd_module = cmd_module;
         }
         
@@ -302,12 +304,12 @@ int main(int argc, char **argv) {
         // Assign the next command to all thread
         args = head;
         for (unsigned i = 0; i < n_threads + n_cpu_threads; i++) {
-            args->cmd_delay = trace[epoch][i].delay;
-            args->cmd_nprio = trace[epoch][i].nprio;
+            args->cmd_delay = trace[epoch][i+th_offset].delay;
+            args->cmd_nprio = trace[epoch][i+th_offset].nprio;
             #ifdef ENABLE_VAM
             nn_module_setprio(args->cmd_module, args->cmd_nprio);
             #endif
-            args->cmd_run = trace[epoch][i].run;
+            args->cmd_run = trace[epoch][i+th_offset].run;
             args = args->next;
         }
         // Start all threads for this epoch
