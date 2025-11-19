@@ -44,7 +44,8 @@ void *req_thread(void *a) {
     unsigned input_iters_done = 0;
     unsigned output_iters_done = 0;
     bool drain_output = false;
-    uint64_t start_cycles = 0;
+    bool req_pending = false;
+    uint64_t next_iter_start = get_counter();
     #ifdef ENABLE_VAM
     const unsigned max_inflight = SM_QUEUE_SIZE * 7; // TODO: assumes max of 6 layers
     uint64_t iter_start[max_inflight];
@@ -77,6 +78,8 @@ void *req_thread(void *a) {
                 if (cmd_run) {
                     cmd_module = args->cmd_module;
                     cmd_delay = args->cmd_delay;
+                    req_pending = false;
+                    next_iter_start = get_counter() + cmd_delay;
                     #ifndef DO_SCHED_RR
                     // Set niceness based on priority
                     if (!cpu_thread) {
@@ -111,13 +114,22 @@ void *req_thread(void *a) {
             } else {
             #endif
                 // Drain not pending and timer elapsed
+                if (!req_pending && !drain_output) {
+                    if (get_counter() >= next_iter_start) {
+                        req_pending = true;
+                    }
+                }
                 #ifdef ENABLE_VAM
-                if (!drain_output && (get_counter() - start_cycles >= cmd_delay)) {
+                if (req_pending) {
+                    uint64_t latency_start = next_iter_start;
                     // Input queue not full
                     if (nn_module_req_check(cmd_module, data , 0)) {
-                        iter_start[input_iters_done % max_inflight] = get_counter();
+                        iter_start[input_iters_done % max_inflight] = latency_start;
                         HIGH_DEBUG(printf("[APP%d] Sent req %d...\n", args->t_id, input_iters_done);)
-                        start_cycles = get_counter();
+                        req_pending = false;
+                        uint64_t issue_time = get_counter();
+                        uint64_t expected_next_iter = latency_start + cmd_delay;
+                        next_iter_start = (expected_next_iter > issue_time) ? expected_next_iter : issue_time;
                         input_iters_done++;
                     }
                 }
@@ -128,11 +140,15 @@ void *req_thread(void *a) {
                     output_iters_done++;
                 }
                 #else
-                if (!drain_output && (get_counter() - start_cycles >= cmd_delay)) {
-                    start_cycles = get_counter();
+                if (req_pending) {
+                    uint64_t latency_start = next_iter_start;
                     nn_module_run(cmd_module, data, data, 0, 0, false);
-                    __atomic_fetch_add(&(args->total_latency), get_counter() - start_cycles, __ATOMIC_RELEASE);
+                    uint64_t latency_end = get_counter();
+                    __atomic_fetch_add(&(args->total_latency), latency_end - latency_start, __ATOMIC_RELEASE);
                     __atomic_fetch_add(&(args->iters_done), 1, __ATOMIC_RELEASE);
+                    req_pending = false;
+                    uint64_t expected_next_iter = latency_start + cmd_delay;
+                    next_iter_start = (expected_next_iter > latency_end) ? expected_next_iter : latency_end;
                     HIGH_DEBUG(printf("[APP%d] Ran request %d...\n", args->t_id, args->iters_done);)
                 }
                 #endif
@@ -150,6 +166,7 @@ int main(int argc, char **argv) {
     unsigned th_offset = 0;
     unsigned n_threads = 4;
     unsigned test_type = 0;
+    unsigned sleep_seconds = 4;
     if (argc > 3) th_offset = atoi(argv[3]);
     if (argc > 2) n_threads = atoi(argv[2]);
     if (argc > 1) test_type = atoi(argv[1]);
@@ -168,6 +185,7 @@ int main(int argc, char **argv) {
             model_list = heavy_models;
             trace = heavy_trace;
             num_epochs = sizeof(heavy_trace) / sizeof(heavy_trace[0]);
+            sleep_seconds = 12;
             break;
         }
         case 2: {
@@ -175,11 +193,12 @@ int main(int argc, char **argv) {
             model_list = mixed_models;
             trace = mixed_trace;
             num_epochs = sizeof(mixed_trace) / sizeof(mixed_trace[0]);
+            sleep_seconds = 8;
             break;
         }
         default: break;
     }
-    printf("[FILTER] Starting app %s, %s for %d threads for test %d\n", sm_print, vam_print, n_threads, test_type);
+    printf("[FILTER] Starting app %s, %s for %d threads (offset %d) for test %d\n", sm_print, vam_print, n_threads, th_offset, test_type);
 
     #ifdef DO_CPU_PIN
     // Run main thread on CPU 0 always.
@@ -287,8 +306,6 @@ int main(int argc, char **argv) {
 
     // Wait for all threads to wake up
     sleep(1);
-
-    unsigned sleep_seconds = 4;
 
     for (int epoch = 0; epoch < num_epochs; epoch++) {
         // Synchronize all threads at the start of the epoch
