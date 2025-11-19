@@ -9,8 +9,8 @@ typedef struct {
 
 #define TINY_LATENCY 111000 
 #define SMALL_LATENCY 173000
-#define MEDIUM_LATENCY 770000
-#define LARGE_LATENCY 1550000
+#define MEDIUM_LATENCY 341000
+#define LARGE_LATENCY 737000
 
 const char light_models[MAX_THREADS][256] = {
     "models/model_16_2.txt",
@@ -82,45 +82,46 @@ const trace_entry_t light_trace[][MAX_THREADS] = {
 
 const trace_entry_t heavy_trace[][MAX_THREADS] = {
     // Static FPS
-    { {true, MEDIUM_LATENCY, 1}, {false, 0, 5}, {false, 0, 5}, {false, 0, 5} },
-    { {true, MEDIUM_LATENCY, 1}, {false, 0, 5}, {false, 0, 5}, {false, 0, 5} },
-    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {false, 0, 1}, {false, 0, 1} },
-    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {false, 0, 1}, {false, 0, 1} },
-    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {false, 0, 1} },
-    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {false, 0, 1} },
-    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
+    { {true, MEDIUM_LATENCY, 1}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6} },
+    { {true, MEDIUM_LATENCY, 1}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6} },
+    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6} },
+    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6} },
+    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6} },
+    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6} },
+    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {false, 0, 6}, {false, 0, 6} },
+    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {false, 0, 6}, {false, 0, 6} },
+    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 1}, {false, 0, 6} },
+    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 1}, {false, 0, 6} },
+    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 1}, {true, 1.3 * LARGE_LATENCY, 1} },
+    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 1}, {true, 1.3 * LARGE_LATENCY, 1} },
     // Dynamic FPS
-    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 10 * LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 10 * LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 10 * LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 10 * LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 10 * LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 10 * LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
+    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 1.5 * LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 1}, {true, 1.3 * LARGE_LATENCY, 1} },
+    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 1.5 * LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 1}, {true, 1.3 * LARGE_LATENCY, 1} },
+    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 10 * LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 1}, {true, 1.3 * LARGE_LATENCY, 1} },
+    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 10 * LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 1}, {true, 1.3 * LARGE_LATENCY, 1} },
+    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 1.5 * LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 1}, {true, 1.3 * LARGE_LATENCY, 1} },
+    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 1.5 * LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 1}, {true, 1.3 * LARGE_LATENCY, 1} },
+    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 10 * LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 1}, {true, 1.3 * LARGE_LATENCY, 1} },
+    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 10 * LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 1}, {true, 1.3 * LARGE_LATENCY, 1} },
+    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 1.5 * LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 1}, {true, 1.3 * LARGE_LATENCY, 1} },
+    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 1.5 * LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 1}, {true, 1.3 * LARGE_LATENCY, 1} },
+    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 10 * LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 1}, {true, 1.3 * LARGE_LATENCY, 1} },
+    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 10 * LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 1}, {true, 1.3 * LARGE_LATENCY, 1} },
+    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 1.5 * LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 1}, {true, 1.3 * LARGE_LATENCY, 1} },
+    { {true, 0.7 * MEDIUM_LATENCY, 1}, {true, 1.5 * LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 1}, {true, 1.3 * LARGE_LATENCY, 1} },
     // Priority changes    
-    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 2}, {true, LARGE_LATENCY, 2} },
-    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 2}, {true, LARGE_LATENCY, 2} },
-    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, MEDIUM_LATENCY, 2}, {true, LARGE_LATENCY, 2} },
-    { {true, MEDIUM_LATENCY, 2}, {true, LARGE_LATENCY, 2}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, MEDIUM_LATENCY, 2}, {true, LARGE_LATENCY, 2}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, MEDIUM_LATENCY, 2}, {true, LARGE_LATENCY, 2}, {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
-    { {true, MEDIUM_LATENCY, 2}, {true, LARGE_LATENCY, 2}, {true, MEDIUM_LATENCY, 1}, {false, 0, 5} },
-    { {true, MEDIUM_LATENCY, 2}, {true, LARGE_LATENCY, 2}, {true, MEDIUM_LATENCY, 1}, {false, 0, 5} },
-    { {true, MEDIUM_LATENCY, 2}, {true, LARGE_LATENCY, 2}, {false, 0, 5}, {false, 0, 5} },
-    { {true, MEDIUM_LATENCY, 2}, {true, LARGE_LATENCY, 2}, {false, 0, 5}, {false, 0, 5} },
-    { {true, MEDIUM_LATENCY, 2}, {false, 0, 5}, {false, 0, 5}, {false, 0, 5} },
-    { {true, MEDIUM_LATENCY, 2}, {false, 0, 5}, {false, 0, 5}, {false, 0, 5} },
+    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 2}, {true, 1.1 * LARGE_LATENCY, 2}, {true, 1.3 * MEDIUM_LATENCY, 3}, {true, 1.3 * LARGE_LATENCY, 3} },
+    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 2}, {true, 1.1 * LARGE_LATENCY, 2}, {true, 1.3 * MEDIUM_LATENCY, 3}, {true, 1.3 * LARGE_LATENCY, 3} },
+    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 2}, {true, 1.1 * LARGE_LATENCY, 2}, {true, 1.3 * MEDIUM_LATENCY, 3}, {true, 1.3 * LARGE_LATENCY, 3} },
+    { {true, MEDIUM_LATENCY, 3}, {true, LARGE_LATENCY, 3}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 2}, {true, 1.3 * LARGE_LATENCY, 2} },
+    { {true, MEDIUM_LATENCY, 3}, {true, LARGE_LATENCY, 3}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 2}, {true, 1.3 * LARGE_LATENCY, 2} },
+    { {true, MEDIUM_LATENCY, 3}, {true, LARGE_LATENCY, 3}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {true, 1.3 * MEDIUM_LATENCY, 2}, {true, 1.3 * LARGE_LATENCY, 2} },
+    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {false, 0, 6}, {false, 0, 6} },
+    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {true, 1.1 * MEDIUM_LATENCY, 1}, {true, 1.1 * LARGE_LATENCY, 1}, {false, 0, 6}, {false, 0, 6} },
+    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6} },
+    { {true, MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6} },
+    { {true, MEDIUM_LATENCY, 1}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6} },
+    { {true, MEDIUM_LATENCY, 1}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6}, {false, 0, 6} },
 };
 
 const trace_entry_t mixed_trace[][MAX_THREADS] = {
