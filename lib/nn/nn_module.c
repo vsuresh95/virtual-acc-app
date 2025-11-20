@@ -3,7 +3,7 @@
 #include <gemm_node_args.h>
 #include <string.h>
 #include <libesp.h>
-#ifndef VAM_ENABLE
+#ifndef ENABLE_VAM
 #include <dirent.h>
 #include <fnmatch.h>
 #include <vam_physical_accel.h>
@@ -203,30 +203,46 @@ void nn_module_register(nn_module *m) {
                         HIGH_DEBUG(print_gemm_entry(descr_entry);)
                     }
 
+                    #ifdef ENABLE_VAM
+                    bool th_found = false;
+                    #endif
+                    #ifdef ENABLE_MOZART
+                    // Check if a hpthread has already been assigned for GEMM (in Mozart case)
+                    nn_hpthread_list *cur = m->th_list;
+                    while (cur != NULL) {
+                        if (cur->th->prim == PRIM_GEMM) th_found = true;
+                        cur = cur->next;
+                    }
+                    #endif
                     // if we are using VAM, request for hpthread
                     #ifdef ENABLE_VAM
-                    // Create a hpthread for this node
-                    hpthread_args_t *h_args = (hpthread_args_t *) malloc(sizeof(hpthread_args_t));
-                    // Set hpthread mem to model mem
-                    h_args->mem = m->mem;
-                    // Set queue pointer from edge arguments
-                    h_args->queue_ptr = in_args->queue_offset;
-                    // Declare hpthread and assign attributes
-                    hpthread_t *th = (hpthread_t *) malloc(sizeof(hpthread_t));
-                    th->cpu_invoke = m->cpu_invoke;
-                    hpthread_init(th, m->id);
-                    hpthread_setargs(th, h_args);
-                    char hpthread_name[50];
-                    snprintf(hpthread_name, 50, nn_node_get_name(current));
-                    hpthread_setname(th, hpthread_name);
-                    hpthread_setprimitive(th, PRIM_GEMM);
-                    hpthread_setpriority(th, m->nprio);
-                    HIGH_DEBUG(printf("[NN%d] queue ptr for %s = %d...\n", m->id, hpthread_name, h_args->queue_ptr););
-                    HIGH_DEBUG(printf("[NN%d] Before hpthread create for %s...\n", m->id, hpthread_name));
-                    // Create a hpthread
-                    hpthread_create(th);
-                    // Assign the thread to the model list
-                    nn_module_add_hpthread(m, th);
+                    // Create a hpthread for this node (if not already created for Mozart)
+                    if (!th_found) {
+                        hpthread_args_t *h_args = (hpthread_args_t *) malloc(sizeof(hpthread_args_t));
+                        // Set hpthread mem to model mem
+                        h_args->mem = m->mem;
+                        // Set queue pointer from edge arguments
+                        h_args->queue_ptr = in_args->queue_offset;
+                        // Declare hpthread and assign attributes
+                        hpthread_t *th = (hpthread_t *) malloc(sizeof(hpthread_t));
+                        th->cpu_invoke = m->cpu_invoke;
+                        hpthread_init(th, m->id);
+                        hpthread_setargs(th, h_args);
+                        char hpthread_name[50];
+                        snprintf(hpthread_name, 50, nn_node_get_name(current));
+                        hpthread_setname(th, hpthread_name);
+                        hpthread_setprimitive(th, PRIM_GEMM);
+                        hpthread_setpriority(th, m->nprio);
+                        #ifdef ENABLE_MOZART
+                        hpthread_setaffinity(th, m->id); // Prefer accelerator ID = model ID (not zero)
+                        #endif
+                        HIGH_DEBUG(printf("[NN%d] queue ptr for %s = %d...\n", m->id, hpthread_name, h_args->queue_ptr););
+                        HIGH_DEBUG(printf("[NN%d] Before hpthread create for %s...\n", m->id, hpthread_name));
+                        // Create a hpthread
+                        hpthread_create(th);
+                        // Assign the thread to the model list
+                        nn_module_add_hpthread(m, th);
+                    }
                     #else
                     // Check if an accelerator for GEMM has already been assigned
                     physical_accel_t *accel_list = m->accel_list;
@@ -359,14 +375,18 @@ void nn_module_setpriority(nn_module *m, unsigned nprio) {
     }
 }
 
-#ifndef ENABLE_VAM
 void nn_module_run(nn_module *m, nn_token_t *input_data, nn_token_t *output_data, unsigned input_len, unsigned output_len, bool real_data) {
-    HIGH_DEBUG(printf("[NN%d] Starting nn_module_req for %s\n", m->id, nn_module_get_name(m)));
+    HIGH_DEBUG(printf("[NN%d] Starting nn_module_run for %s\n", m->id, nn_module_get_name(m)));
     nn_task_descr *descr_list = m->descr_list;
+    #ifdef ENABLE_VAM
+    sm_queue_t *in_q = m->input_queue;
+    sm_queue_t *out_q;
+    #endif
     bool init_done = false;
     while (descr_list != NULL) {
         switch(descr_list->prim) {
             case PRIM_GEMM: {
+                #ifndef ENABLE_VAM
                 // Find the appropriate GEMM accelerator
                 bool accel_found = false;
                 physical_accel_t *accel = m->accel_list;
@@ -381,6 +401,7 @@ void nn_module_run(nn_module *m, nn_token_t *input_data, nn_token_t *output_data
                     printf("[NN%d] No GEMM accelerator found during run!\n", m->id);
                     exit(1);
                 }
+                #endif
                 gemm_task_descr *descr = (gemm_task_descr *) descr_list;
                 uint64_t descr_offset = descr->descr_offset[0];
                 gemm_queue_entry_t *descr_entry = (gemm_queue_entry_t *) ((unsigned *) (m->mem) + descr_offset);
@@ -392,8 +413,16 @@ void nn_module_run(nn_module *m, nn_token_t *input_data, nn_token_t *output_data
                     init_done = true;
                 }
                 HIGH_DEBUG(printf("[NN%d] Programming PRIM_GEMM descr at %lu for req %d...\n", m->id, descr_offset, m->req_cnt););
+                #ifndef ENABLE_VAM
                 gemm_run(accel, descr_entry);
                 m->active_cycles += accel->context_active_cycles[0];
+                #else
+                sm_queue_push(in_q, descr_offset);
+                // Get the output queue from the task descriptor and wait for completion
+                out_q = (sm_queue_t *) ((unsigned *) (m->mem) + descr_entry->common.output_queue);
+                while(sm_queue_empty(out_q)) { SCHED_YIELD; }
+                sm_queue_pop(out_q);
+                #endif
             }
             default: break;
         }
@@ -407,11 +436,9 @@ void nn_module_run(nn_module *m, nn_token_t *input_data, nn_token_t *output_data
             }
         }
         descr_list = descr_list->next;
-        SCHED_YIELD;
     }
     m->req_cnt++;
 }
-#endif
 
 void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len, bool real_data) {
     HIGH_DEBUG(printf("[NN%d] Starting nn_module_req for %s\n", m->id, nn_module_get_name(m)));
@@ -599,8 +626,7 @@ void print_hpthread_list(nn_module *m) {
         printf("\t[H%d] ID=%d\n", count, th->id);
         printf("\t[H%d] Prim=%s\n", count, hpthread_get_prim_name(hpthread_get_prim(th)));
         printf("\t[H%d] Name=%s\n", count, hpthread_get_name(th));
-        unsigned *mem = (unsigned *) th->args->mem;
-        printf("\t[H%d] Queue Ptr=%p\n", count, &(mem[th->args->queue_ptr]));
+        printf("\t[H%d] Queue Ptr=%d\n", count, th->args->queue_ptr);
         printf("\n");
         count++;
         th_list = th_list->next;

@@ -46,7 +46,7 @@ void *req_thread(void *a) {
     bool drain_output = false;
     bool req_pending = false;
     uint64_t next_iter_start = get_counter();
-    #ifdef ENABLE_VAM
+    #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
     const unsigned max_inflight = SM_QUEUE_SIZE * 7; // TODO: assumes max of 6 layers
     uint64_t iter_start[max_inflight];
     #endif
@@ -119,7 +119,7 @@ void *req_thread(void *a) {
                         req_pending = true;
                     }
                 }
-                #ifdef ENABLE_VAM
+                #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
                 if (req_pending) {
                     uint64_t latency_start = next_iter_start;
                     // Input queue not full
@@ -394,7 +394,5 @@ int main(int argc, char **argv) {
     } while (args != head);
 #ifdef ENABLE_VAM
     hpthread_report();
-#else
-    return 0;
 #endif
 }

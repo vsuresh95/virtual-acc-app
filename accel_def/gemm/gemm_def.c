@@ -305,7 +305,7 @@ void *gemm_invoke(void *a) {
     return NULL;
 }
 
-#ifndef VAM_ENABLE
+#ifndef ENABLE_VAM
 void gemm_init(physical_accel_t *accel, void *mem) {
     struct gemm_stratus_access *gemm_access_desc;
     gemm_access_desc = (struct gemm_stratus_access *) malloc (sizeof(struct gemm_stratus_access));

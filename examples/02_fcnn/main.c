@@ -57,20 +57,19 @@ int main(int argc, char **argv) {
 
         // Push a new input to the model queue
         t_start = get_counter();
-        nn_token_t *input_data = NULL, *output_data = NULL;
-        unsigned input_len = 0, output_len = 0;
-        LOW_DEBUG(
-            input_len = 4096;
-            output_len = 64;
-            input_data = (nn_token_t *) malloc (input_len * sizeof(nn_token_t));
-            initialize_data("input.txt", input_data, input_len);
-            output_data = (nn_token_t *) malloc (output_len * sizeof(nn_token_t));
-        )
+        unsigned input_len = 4096, output_len = 64;
+        nn_token_t *input_data = (nn_token_t *) malloc (input_len * sizeof(nn_token_t));
+        initialize_data("input.txt", input_data, input_len);
+        nn_token_t *output_data = (nn_token_t *) malloc (output_len * sizeof(nn_token_t));
+        #if defined(ENABLE_MOZART) || !defined(ENABLE_VAM)
+        nn_module_run(m, input_data, output_data, input_len * sizeof(nn_token_t), output_len * sizeof(nn_token_t), true);
+        #else
         nn_module_req(m, input_data, input_len * sizeof(nn_token_t), true);
         t_req += get_counter() - t_start;
         // Wait for the output to be ready
         t_start = get_counter();
         nn_module_rsp(m, output_data, output_len * sizeof(nn_token_t), true);
+        #endif
         t_rsp += get_counter() - t_start;
 
         LOW_DEBUG(

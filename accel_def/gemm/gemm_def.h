@@ -15,7 +15,7 @@ void gemm_sm_probe(physical_accel_t *accel);
 // GEMM accelerator invocation thread
 void *gemm_invoke(void *a);
 
-#ifndef VAM_ENABLE
+#ifndef ENABLE_VAM
 bool allocate_gemm_accel(unsigned accel_idx);
 
 void gemm_init(physical_accel_t *accel, void *mem);

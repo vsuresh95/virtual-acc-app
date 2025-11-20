@@ -74,11 +74,17 @@ void *req_thread(void *a) {
     uint64_t t_start = get_counter();
     unsigned iters_done = 0;
     while (iters_done < iterations) {
+        #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
         if (nn_module_req_check(m, input_data, 0)) {
             iters_done++;
         } else {
             SCHED_YIELD;
         }
+        #else 
+        nn_module_run(m, input_data, input_data, 0, 0, false);
+        iters_done++;
+        __atomic_fetch_sub(&args->iterations, 1, __ATOMIC_RELEASE);
+        #endif
     }
     uint64_t t_end = get_counter();
     args->average_time = (t_end - t_start) / iterations;
@@ -189,6 +195,7 @@ int main(int argc, char **argv) {
     tail->next = head;
     
     // Start a response thread for the thread_args list
+    #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
     pthread_t rsp_th;
     // Create pthread attributes
     pthread_attr_t attr;
@@ -217,6 +224,7 @@ int main(int argc, char **argv) {
         exit(1);
     }
     pthread_attr_destroy(&attr);
+    #endif // ENABLE_VAM
 
     unsigned old_iters_remaining[n_threads];
     unsigned total_remaining, old_remaining;
@@ -276,7 +284,9 @@ int main(int argc, char **argv) {
         th_args = th_args->next;
     }
     printf("overall: %lu\n", total_average/n_threads);
+    #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
     pthread_join(rsp_th, NULL);
+    #endif // ENABLE_VAM
 
     // Release all modules
     thread_args *args = head;
@@ -289,5 +299,9 @@ int main(int argc, char **argv) {
         args = next;     
     } while (args != head);
 exit:    
+#ifdef ENABLE_VAM
     hpthread_report();
+#else
+    return 0;
+#endif
 }

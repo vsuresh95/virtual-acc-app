@@ -76,7 +76,7 @@ int main(int argc, char **argv) {
     args->iterations = iterations;
 
     // Start response thread on CPU 1
-    #ifdef ENABLE_VAM
+    #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
     #ifndef DO_CHAIN
     pthread_t rsp_th;
     // Create pthread attributes
@@ -118,7 +118,7 @@ int main(int argc, char **argv) {
     nn_token_t *output_data = (nn_token_t *) malloc (1);
     #endif // DO_CHAIN
     for (int i = 0; i < 5; i++) {
-        #ifdef ENABLE_VAM
+        #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
         nn_module_req(m, input_data, 0, false);
         SCHED_YIELD;
         #ifdef DO_CHAIN
@@ -129,29 +129,24 @@ int main(int argc, char **argv) {
         #endif // ENABLE_VAM
     }
 
+    unsigned print_iterations = iterations / 5;
     uint64_t t_start = get_counter();
     for (int i = 0; i < iterations; i++) {
-        #ifdef ENABLE_VAM
+        #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
         nn_module_req(m, input_data, 0, false);
         SCHED_YIELD;
         #ifdef DO_CHAIN
         nn_module_rsp(m, output_data, 0, false);
-        LOW_DEBUG( 
-            unsigned print_iterations = iterations / 5;
-            if (i % print_iterations == 0) printf("[APP] Iter %d done!\n", i);
-        )
+        if (i % print_iterations == 0) printf("[APP] Iter %d done!\n", i);
         #endif // DO_CHAIN
         #else // ENABLE_VAM
         nn_module_run(m, input_data, input_data, 0, 0, false);
-        LOW_DEBUG( 
-            unsigned print_iterations = iterations / 5;
-            if (i % print_iterations == 0) printf("[APP] Iter %d done!\n", i);
-        )
+        if (i % print_iterations == 0) printf("[APP] Iter %d done!\n", i);
         #endif // ENABLE_VAM
     }
     uint64_t t_loop = get_counter() - t_start;
 
-    #ifdef ENABLE_VAM
+    #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
     #ifndef DO_CHAIN
     pthread_join(rsp_th, NULL);
     #endif // DO_CHAIN
