@@ -307,7 +307,8 @@ int main(int argc, char **argv) {
     // Wait for all threads to wake up
     sleep(1);
 
-    for (int epoch = 0; epoch < num_epochs; epoch++) {
+    int epoch = 0; int mini_epoch = 0;
+    while (epoch < num_epochs) {
         // Synchronize all threads at the start of the epoch
         thread_args *args = head;
         for (unsigned i = 0; i < n_threads + n_cpu_threads; i++) {
@@ -365,6 +366,8 @@ int main(int argc, char **argv) {
         // Write the current utilization to the log
         vam_log_utilization();
         #endif
+        mini_epoch++;
+        epoch = mini_epoch / 8; // Each epoch lasts 8 mini-epochs
     }
     printf("[MAIN] Completed all epochs, exiting...\n");
 

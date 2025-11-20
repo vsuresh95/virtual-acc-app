@@ -280,6 +280,20 @@ void vam_search_accel(hpthread_t *th) {
             printf("\n[VAM] Checking device %s.\n", physical_accel_get_name(cur_accel));
             physical_accel_dump(cur_accel);
         )
+        if (th->affinity != 0 && (th->affinity - 1) == cur_accel->accel_id) {
+            if (cur_accel->prim == th->prim && !bitset_all(cur_accel->valid_contexts)) {
+                candidate_accel = cur_accel;
+                candidate_util = cur_accel->effective_util;
+                candidate_contexts = cur_accel->valid_contexts;
+                accel_allocated = true;
+                HIGH_DEBUG(printf("[VAM] Device %s matches affinity and is a candidate!\n", physical_accel_get_name(cur_accel));)
+                break;
+            } else if (cur_accel->prim == th->prim) {
+                HIGH_DEBUG(printf("[VAM] Device %s matches affinity but is not available.\n", physical_accel_get_name(cur_accel));)
+            } else {
+                HIGH_DEBUG(printf("[VAM] Device %s does not match primitive.\n", physical_accel_get_name(cur_accel));)
+            }
+        }
         // If the thread or accel requires CPU invocation, the other must too
         if (th->cpu_invoke ^ cur_accel->cpu_invoke) {
 		    cur_accel = cur_accel->next;

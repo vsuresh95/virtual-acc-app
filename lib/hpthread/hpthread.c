@@ -15,6 +15,7 @@ static unsigned thread_count = 0;
 void hpthread_init(hpthread_t *th, unsigned user_id) {
 	th->is_active = false;
 	th->user_id = user_id;
+	th->affinity = 0; // No preference by default
 }
 
 void hpthread_create(hpthread_t *th) {
@@ -88,6 +89,10 @@ void hpthread_setpriority(hpthread_t *th, unsigned p) {
 		while (!hpthread_intf_swap(VAM_DONE, VAM_IDLE)) SCHED_YIELD;
 		HIGH_DEBUG(printf("[HPTHREAD] Change of priority to %d complete for hpthread %s.\n", p, th->name);)
 	}
+}
+
+void hpthread_setaffinity(hpthread_t *th, unsigned accel_id) {
+	th->affinity = accel_id;
 }
 
 hpthread_cand_t *hpthread_query() {

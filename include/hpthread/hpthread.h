@@ -28,6 +28,7 @@ typedef struct {
 	bool is_active; // Is the thread currently active?
     uint64_t th_last_move; // When was this thread last migrated?
     bool cpu_invoke; // Is the accelerator invoked by a CPU thread?
+    unsigned affinity; // Preferred accelerator ID (id + 1); 0 = no preference
     // Debug variables
     char name[100]; // Name
     unsigned user_id; // ID of user app
@@ -41,6 +42,7 @@ void hpthread_setargs(hpthread_t *th, hpthread_args_t *a);
 void hpthread_setname(hpthread_t *th, const char *n);
 void hpthread_setprimitive(hpthread_t *th, hpthread_prim_t p);
 void hpthread_setpriority(hpthread_t *th, unsigned p);
+void hpthread_setaffinity(hpthread_t *th, unsigned accel_id);
 hpthread_cand_t *hpthread_query();
 void hpthread_report();
 static inline hpthread_prim_t hpthread_get_prim(hpthread_t *th) { return th->prim; }
