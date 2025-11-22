@@ -12,9 +12,16 @@
 
 #ifdef ENABLE_SM
 const char *sm_print = "with SM";
+#ifdef ENABLE_MOZART
+const char *mozart_print = "with Mozart";
+#else
+const char *mozart_print = "without Mozart";
+#endif
 #else
 const char *sm_print = "without SM";
+const char *mozart_print = "";
 #endif
+
 #ifdef ENABLE_VAM
 const char *vam_print = "with VAM";
 #else

@@ -36,7 +36,7 @@
 // Look up table for nice values based on priority (0-4)
 // 5 is for idle low priority threads
 static const int nice_table[6] = {
-    -8, -4, -2, -1, 0, 10
+    -6, -3, -2, -1, 0, 10
 };
 
 #endif // __COMMON_DEFS_H__

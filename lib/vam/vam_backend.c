@@ -173,8 +173,8 @@ void *vam_run_backend(void *arg) {
     bool kill_vam = false;
 
     unsigned vam_sleep = VAM_SLEEP_MIN;
-    const float LB_RETRY = 0.4;
-    const float LB_RETRY_RESET = 0.2;
+    const float LB_TRIG = 0.75;
+    const float LB_RESET = 0.2;
     const unsigned MAX_LB_RETRY = 3;
     unsigned NUM_LB_RETRY = MAX_LB_RETRY;
 
@@ -190,12 +190,12 @@ void *vam_run_backend(void *arg) {
                 bool increment_vam_sleep = true;
                 bool need_load_balance = false;
                     
-                if ((load_imbalance <= LB_RETRY_RESET)) {
+                if ((load_imbalance <= LB_RESET)) {
                     NUM_LB_RETRY = MAX_LB_RETRY;
                     load_imbalance_reg = load_imbalance; // reset baseline
-                } else if (load_imbalance > LB_RETRY && NUM_LB_RETRY > 0) {
+                } else if (load_imbalance > LB_TRIG && NUM_LB_RETRY > 0) {
                     need_load_balance = true;
-                } else if (fabsf(load_imbalance - load_imbalance_reg) > LB_RETRY) {
+                } else if (fabsf(load_imbalance - load_imbalance_reg) > LB_TRIG) {
                     increment_vam_sleep = false;
                     NUM_LB_RETRY = MAX_LB_RETRY;
                     need_load_balance = true;
@@ -216,8 +216,11 @@ void *vam_run_backend(void *arg) {
                     vam_sleep = VAM_SLEEP_MIN;
                 }
 
-                // As a fallback, if LB was skipped more than 10 times, increment retry counter.
-                if (vam_sleep >= VAM_SLEEP_MAX && NUM_LB_RETRY != MAX_LB_RETRY) NUM_LB_RETRY++;
+                // As a fallback, if VAM sleep is at max, reset retry counter.
+                if (vam_sleep == VAM_SLEEP_MAX && NUM_LB_RETRY == 0) {
+                    vam_sleep = VAM_SLEEP_MIN;
+                    NUM_LB_RETRY = MAX_LB_RETRY;
+                }
                 break;
             }
             case VAM_CREATE: {
