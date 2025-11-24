@@ -24,10 +24,14 @@ typedef struct thread_args {
     nn_module *cmd_module;
     unsigned cmd_delay;
     unsigned cmd_period;
+    unsigned cmd_deadline;
     unsigned cmd_nprio;
     unsigned iters_done;
+    unsigned deadline_violations;
+    unsigned fps_violations;
 #ifndef ENABLE_VAM
     uint64_t active_cycles;
+    uint64_t prev_active_cycles;
 #endif
     uint64_t total_latency;
     struct thread_args *next;
@@ -41,9 +45,14 @@ void *req_thread(void *a) {
     nn_module *cmd_module = NULL;
     unsigned cmd_delay;
     unsigned cmd_period;
+    unsigned cmd_deadline;
     unsigned input_iters_done = 0;
     unsigned output_iters_done = 0;
+    unsigned total_latency = 0;
+    unsigned deadline_violations = 0;
+    unsigned fps_violations = 0;
     bool drain_output = false;
+    bool fps_violated = false;
     bool req_pending = false;
     uint64_t next_iter_start = get_counter();
     #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
@@ -55,43 +64,105 @@ void *req_thread(void *a) {
         // Is there a new command?
         bool valid_check = __atomic_load_n(&(args->cmd_valid), __ATOMIC_ACQUIRE);
         if (valid_check == true) {
-            // Clear valid
-            __atomic_store_n(&(args->cmd_valid), false, __ATOMIC_RELEASE);
-            // Need to exit?
-            if (args->kill_thread) {
-                return NULL;
+            // Are there any pending outputs?
+            if (input_iters_done == output_iters_done) {
+                args->iters_done = output_iters_done;
+                args->total_latency = total_latency;
+                args->deadline_violations = deadline_violations;
+                args->fps_violations = fps_violations;
+                // Clear valid
+                __atomic_store_n(&(args->cmd_valid), false, __ATOMIC_SEQ_CST);
+                // Need to exit?
+                if (args->kill_thread) {
+                    return NULL;
+                }
+                drain_output = false;
+                fps_violated = false;
+                input_iters_done = 0;
+                output_iters_done = 0;
+                total_latency = 0;
+                deadline_violations = 0;
+                fps_violations = 0;
+                // Check if we can start
+                cmd_run = args->cmd_run;
+                if (cmd_run) {
+                    cmd_module = args->cmd_module;
+                    cmd_delay = args->cmd_delay;
+                    cmd_period = args->cmd_period;
+                    cmd_deadline = args->cmd_deadline;
+                    req_pending = false;
+                    next_iter_start = get_counter() + cmd_period + cmd_delay;
+                }
+                #ifndef DO_SCHED_RR
+                // Set niceness based on priority
+                pid_t tid = syscall(SYS_gettid);
+                unsigned nprio = args->cmd_nprio;
+                setpriority(PRIO_PROCESS, tid, nice_table[nprio - 1]);
+                #endif
+            } else {
+                // Pending outputs exist, so drain the outputs first.
+                drain_output = true;
             }
-            __atomic_store_n(&(args->iters_done), 0, __ATOMIC_RELEASE);
-            __atomic_store_n(&(args->total_latency), 0, __ATOMIC_RELEASE);
-            // Check if we can start
-            cmd_run = args->cmd_run;
-            if (cmd_run) {
-                cmd_module = args->cmd_module;
-                cmd_delay = args->cmd_delay;
-                cmd_period = args->cmd_period;
-                req_pending = false;
-                next_iter_start = get_counter() + cmd_period + cmd_delay;
-            }
-            #ifndef DO_SCHED_RR
-            // Set niceness based on priority
-            pid_t tid = syscall(SYS_gettid);
-            unsigned nprio = args->cmd_nprio;
-            setpriority(PRIO_PROCESS, tid, nice_table[nprio - 1]);
-            #endif
         }
 
         if (cmd_run) {
-            if (get_counter() >= next_iter_start) {
+            // Drain not pending and timer elapsed
+            if (!req_pending && !drain_output) {
+                if (get_counter() >= next_iter_start) {
+                    req_pending = true;
+                }
+            }
+            #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
+            if (req_pending) {
+                // Input queue not full
+                if (nn_module_req_check(cmd_module, data , 0)) {
+                    uint64_t latency_start = get_counter();
+                    iter_start[input_iters_done % max_inflight] = latency_start;
+                    HIGH_DEBUG(printf("[APP%d] Sent req %d...\n", args->t_id, input_iters_done);)
+                    req_pending = false;
+                    if (fps_violated) {
+                        fps_violations++;
+                        next_iter_start = latency_start + cmd_period;
+                        fps_violated = false;
+                    } else {
+                        next_iter_start = next_iter_start + cmd_period;
+                    }
+                    input_iters_done++;
+                } else {
+                    fps_violated = true;
+                }
+            }
+            if (nn_module_rsp_check(cmd_module, data, 0)) {
+                HIGH_DEBUG(printf("[APP%d] Received rsp %d...\n", args->t_id, output_iters_done);)
+                uint64_t latency_start = iter_start[output_iters_done % max_inflight];
+                uint64_t latency_end = get_counter();
+                total_latency += latency_end - latency_start;
+                if (latency_end - latency_start > cmd_deadline) {
+                    deadline_violations++;
+                }
+                output_iters_done++;
+            }
+            #else
+            if (req_pending) {
                 uint64_t latency_start = get_counter();
                 nn_module_run(cmd_module, data, data, 0, 0, false);
                 uint64_t latency_end = get_counter();
-                __atomic_fetch_add(&(args->total_latency), latency_end - latency_start, __ATOMIC_RELEASE);
-                __atomic_fetch_add(&(args->iters_done), 1, __ATOMIC_RELEASE);
+                total_latency += latency_end - latency_start;
+                output_iters_done++;
                 req_pending = false;
-                uint64_t expected_next_iter = latency_start + cmd_period;
-                next_iter_start = (expected_next_iter > latency_end) ? expected_next_iter : latency_end;
+                uint64_t expected_next_iter = next_iter_start + cmd_period;
+                if (latency_end > expected_next_iter) {
+                    fps_violations++;
+                    next_iter_start = latency_end;
+                } else {
+                    next_iter_start = expected_next_iter;
+                }
+                if (latency_end - latency_start > cmd_deadline) {
+                    deadline_violations++;
+                }
                 HIGH_DEBUG(printf("[APP%d] Ran request %d...\n", args->t_id, args->iters_done);)
             }
+            #endif
         }
         SCHED_YIELD;
     }
@@ -100,7 +171,7 @@ void *req_thread(void *a) {
 // Example application for fully connected neural network (FCNN)
 int main(int argc, char **argv) {
     const char (*model_list)[256];
-    float delay_scale = 1.5;
+    float delay_scale = 1.0;
     unsigned th_offset = 0;
     unsigned n_threads = 4;
     unsigned test_type = 0;
@@ -110,12 +181,14 @@ int main(int argc, char **argv) {
     if (argc > 2) delay_scale = atof(argv[2]);
     if (argc > 1) test_type = atoi(argv[1]);
     const trace_entry_t (*trace)[MAX_THREADS];
+    unsigned *deadlines;
     unsigned num_epochs = 0;
     switch (test_type) {
         case 0: {
             // Light workload
             model_list = light_models;
             trace = light_trace;
+            deadlines = light_deadlines;
             num_epochs = sizeof(light_trace) / sizeof(light_trace[0]);
             break;
         }
@@ -123,6 +196,7 @@ int main(int argc, char **argv) {
             // Heavy workload
             model_list = heavy_models;
             trace = heavy_trace;
+            deadlines = heavy_deadlines;
             num_epochs = sizeof(heavy_trace) / sizeof(heavy_trace[0]);
             sleep_seconds = 4;
             break;
@@ -131,6 +205,7 @@ int main(int argc, char **argv) {
             // Mixed workload
             model_list = mixed_models;
             trace = mixed_trace;
+            deadlines = mixed_deadlines;
             num_epochs = sizeof(mixed_trace) / sizeof(mixed_trace[0]);
             sleep_seconds = 3;
             break;
@@ -175,8 +250,12 @@ int main(int argc, char **argv) {
         args->next = NULL;
         args->cmd_delay = 0;
         args->cmd_period = 0;
+        args->cmd_deadline = 0;
         args->cmd_nprio = 1;
         args->iters_done = 0;
+        args->deadline_violations = 0;
+        args->fps_violations = 0;
+        args->total_latency = 0;
         #ifndef ENABLE_VAM
         args->active_cycles = 0;
         #endif
@@ -241,26 +320,13 @@ int main(int argc, char **argv) {
 
     int epoch = 0; int mini_epoch = 0;
     while (epoch < num_epochs) {
-        // Synchronize all threads at the start of the epoch
+        // Assign the next command to all thread
         thread_args *args = head;
         for (unsigned i = 0; i < n_threads; i++) {
-            args->cmd_run = false;
-            __atomic_store_n(&(args->cmd_valid), true, __ATOMIC_SEQ_CST);
-            args = args->next;
-        }
-        args = head;
-        for (unsigned i = 0; i < n_threads; i++) {
-            while (__atomic_load_n(&(args->cmd_valid), __ATOMIC_SEQ_CST) == true) {
-                SCHED_YIELD;
-            }
-            args = args->next;
-        }
-        // Assign the next command to all thread
-        args = head;
-        for (unsigned i = 0; i < n_threads; i++) {
-            args->cmd_period = (unsigned) ((float) delay_scale * trace[epoch][i+th_offset].period);
+            args->cmd_period = trace[epoch][i+th_offset].period;
+            args->cmd_deadline = (unsigned) ((float) delay_scale * deadlines[i+th_offset]);
             args->cmd_nprio = trace[epoch][i+th_offset].nprio;
-            args->cmd_delay = (unsigned) ((float) (args->cmd_period / n_threads) * i);
+            args->cmd_delay = (unsigned) ((float) (args->cmd_deadline / n_threads) * i);
             #ifdef ENABLE_VAM
             nn_module_setprio(args->cmd_module, args->cmd_nprio);
             #endif
@@ -273,28 +339,52 @@ int main(int argc, char **argv) {
             __atomic_store_n(&(args->cmd_valid), true, __ATOMIC_SEQ_CST);
             args = args->next;
         }
+
         // Sleep for the rest of the epoch
         sleep(sleep_seconds);
+
+        #ifdef ENABLE_VAM
+        // Write the current utilization to the log
+        vam_log_utilization();
+        #else
+        for (unsigned i = 0; i < n_threads; i++) {
+            uint64_t new_active_cycles = args->cmd_module->active_cycles;
+            args->active_cycles = new_active_cycles - args->prev_active_cycles;
+            args->prev_active_cycles = new_active_cycles;
+            args = args->next;
+        }
+        #endif
+
+        // Synchronize all threads at the end of the epoch
+        args = head;
+        for (unsigned i = 0; i < n_threads; i++) {
+            args->cmd_run = false;
+            __atomic_store_n(&(args->cmd_valid), true, __ATOMIC_SEQ_CST);
+            args = args->next;
+        }
+        args = head;
+        for (unsigned i = 0; i < n_threads; i++) {
+            while (__atomic_load_n(&(args->cmd_valid), __ATOMIC_SEQ_CST) == true) {
+                SCHED_YIELD;
+            }
+            args = args->next;
+        }
         // Monitor progress of threads
         printf("[FILTER] ");
         for (unsigned i = 0; i < n_threads; i++) {
-            unsigned new_iters_done = __atomic_load_n(&args->iters_done, __ATOMIC_ACQUIRE);
-            uint64_t avg_latency = __atomic_load_n(&args->total_latency, __ATOMIC_ACQUIRE) / ((new_iters_done > 0) ? new_iters_done : UINT64_MAX);
+            unsigned iters_done = args->iters_done;
+            uint64_t avg_latency = args->total_latency / ((iters_done > 0) ? iters_done : UINT64_MAX);
+            unsigned deadline_violations = args->deadline_violations;
+            unsigned fps_violations = args->fps_violations;
             #ifndef ENABLE_VAM
-            uint64_t util_cycles = args->cmd_module->active_cycles - args->active_cycles;
-            args->active_cycles = args->cmd_module->active_cycles;
-            float util = (float) (util_cycles)/(sleep_seconds * 78125000);   
-            printf("%lu, %0.2f%%, ", avg_latency, util * 100);
+            float util = (float) (args->active_cycles)/(sleep_seconds * 78125000);   
+            printf("%lu(%d/%d,%d/%d), %0.2f%%, ", avg_latency, deadline_violations, iters_done, fps_violations, iters_done, util * 100);
             #else
-            printf("%lu, ", avg_latency);
+            printf("%lu(%d/%d,%d/%d), ", avg_latency, deadline_violations, iters_done, fps_violations, iters_done);
             #endif
             args = args->next;
         }
         printf("\n");
-        #ifdef ENABLE_VAM
-        // Write the current utilization to the log
-        vam_log_utilization();
-        #endif
         mini_epoch++;
         epoch = mini_epoch / 8; // Each epoch lasts 8 mini-epochs
     }

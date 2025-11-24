@@ -172,10 +172,11 @@ void *vam_run_backend(void *arg) {
     vam_probe_accel();
     bool kill_vam = false;
 
+    const float LB_RESET = 0.10;
     const float LB_TRIG = 0.25;
     const unsigned MAX_LB_RETRY = 3;
     unsigned NUM_LB_RETRY = MAX_LB_RETRY;
-    unsigned UNCOND_BALANCE_COUNTER = 10;
+    unsigned RESET_COUNTER = 10;
 
     // Run loop will run forever
     while (1) {
@@ -191,11 +192,14 @@ void *vam_run_backend(void *arg) {
                 if (load_imbalance > LB_TRIG && NUM_LB_RETRY > 0) {
                     need_load_balance = true;
                 } else {
-                    UNCOND_BALANCE_COUNTER--;
-                    if (UNCOND_BALANCE_COUNTER == 0) {
+                    RESET_COUNTER--;
+                }
+
+                if (RESET_COUNTER == 0) {
+                    RESET_COUNTER = 10;
+                    NUM_LB_RETRY = MAX_LB_RETRY;
+                    if (load_imbalance > LB_RESET) {
                         need_load_balance = true;
-                        UNCOND_BALANCE_COUNTER = 10;
-                        NUM_LB_RETRY = MAX_LB_RETRY;
                     }
                 }
 
@@ -663,7 +667,7 @@ float vam_check_load_balance() {
         cur_accel = cur_accel->next;
     }
     // If none of the accelerators have more than one valid context, there's no need for load balancing
-    if (skip_load_balance) return false;
+    if (skip_load_balance) return 0.0;
 
     HIGH_DEBUG(printf("[VAM] Max util = %0.2f, min util = %0.2f\n", local_max_util, local_min_util);)
     max_util_accel = tmp_max; min_util_accel = tmp_min;

@@ -233,9 +233,7 @@ void nn_module_register(nn_module *m) {
                         hpthread_setname(th, hpthread_name);
                         hpthread_setprimitive(th, PRIM_GEMM);
                         hpthread_setpriority(th, m->nprio);
-                        #ifdef ENABLE_MOZART
                         hpthread_setaffinity(th, m->id); // Prefer accelerator ID = model ID (not zero)
-                        #endif
                         HIGH_DEBUG(printf("[NN%d] queue ptr for %s = %d...\n", m->id, hpthread_name, h_args->queue_ptr););
                         HIGH_DEBUG(printf("[NN%d] Before hpthread create for %s...\n", m->id, hpthread_name));
                         // Create a hpthread
