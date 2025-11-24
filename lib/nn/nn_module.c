@@ -377,6 +377,42 @@ void nn_module_setpriority(nn_module *m, unsigned nprio) {
 
 void nn_module_run(nn_module *m, nn_token_t *input_data, nn_token_t *output_data, unsigned input_len, unsigned output_len, bool real_data) {
     HIGH_DEBUG(printf("[NN%d] Starting nn_module_run for %s\n", m->id, nn_module_get_name(m)));
+    #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
+    nn_task_descr *descr_list = m->descr_list;
+    uint64_t descr_offset;
+    sm_queue_t *in_q = m->input_queue;
+    sm_queue_t *out_q = m->output_queue;
+    switch(descr_list->prim) {
+        case PRIM_GEMM: {
+            gemm_task_descr *descr = (gemm_task_descr *) descr_list;
+            descr_offset = descr->descr_offset[0];
+        }    
+        default: break;
+    }
+    HIGH_DEBUG(printf("[NN%d] Programming PRIM_GEMM descr at %lu for req %d...\n", m->id, descr_offset, m->req_cnt););
+    if (real_data) {
+        nn_token_t *input_addr;
+        // TODO: assumes it is a GEMM task
+        gemm_queue_entry_t *descr = (gemm_queue_entry_t *) ((unsigned *) (m->mem) + descr_offset);
+        input_addr = (nn_token_t *) ((unsigned *) (m->mem) + descr->gemm_params.input_base);
+        memcpy(input_addr, input_data, input_len);
+    }
+    sm_queue_push(in_q, descr_offset);
+    while(sm_queue_empty(out_q)) { SCHED_YIELD; }
+    sm_queue_pop(out_q);
+    if (real_data) {
+        nn_token_t *output_addr;
+        uint64_t tail = out_q->tail;
+        descr_offset = out_q->entry[tail % SM_QUEUE_SIZE];
+        // TODO: assumes it is a GEMM task
+        gemm_queue_entry_t *descr = (gemm_queue_entry_t *) ((unsigned *) (m->mem) + descr_offset);
+        output_addr = (nn_token_t *) ((unsigned *) (m->mem) + descr->gemm_params.input_base);
+        HIGH_DEBUG(printf("[NN%d] Output data to be read at %d for descr at %lu.\n", m->id, descr->gemm_params.input_base, descr_offset));
+        memcpy(output_data, output_addr, output_len);
+    }
+    HIGH_DEBUG(printf("[NN%d] Dequeued descr at %lu for module %s.\n", m->id, descr_offset, nn_module_get_name(m)));
+    m->req_cnt++;
+    #else
     nn_task_descr *descr_list = m->descr_list;
     #ifdef ENABLE_VAM
     sm_queue_t *in_q = m->input_queue;
@@ -438,6 +474,7 @@ void nn_module_run(nn_module *m, nn_token_t *input_data, nn_token_t *output_data
         descr_list = descr_list->next;
     }
     m->req_cnt++;
+    #endif
 }
 
 void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len, bool real_data) {

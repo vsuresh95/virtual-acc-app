@@ -23,6 +23,7 @@ typedef struct thread_args {
     bool kill_thread;
     nn_module *cmd_module;
     unsigned cmd_delay;
+    unsigned cmd_period;
     unsigned cmd_nprio;
     unsigned iters_done;
 #ifndef ENABLE_VAM
@@ -39,92 +40,58 @@ void *req_thread(void *a) {
     bool cmd_run = false;
     nn_module *cmd_module = NULL;
     unsigned cmd_delay;
+    unsigned cmd_period;
     unsigned input_iters_done = 0;
     unsigned output_iters_done = 0;
     bool drain_output = false;
     bool req_pending = false;
     uint64_t next_iter_start = get_counter();
     #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
-    const unsigned max_inflight = SM_QUEUE_SIZE * 7; // TODO: assumes max of 6 layers
+    const unsigned max_inflight = SM_QUEUE_SIZE * 4; // TODO: assumes max of 3 layers
     uint64_t iter_start[max_inflight];
     #endif
+
     while (1) {
         // Is there a new command?
         bool valid_check = __atomic_load_n(&(args->cmd_valid), __ATOMIC_ACQUIRE);
         if (valid_check == true) {
-            // Are there any pending outputs?
-            if (input_iters_done == output_iters_done) {
-                // Clear valid
-                __atomic_store_n(&(args->cmd_valid), false, __ATOMIC_RELEASE);
-                // Need to exit?
-                if (args->kill_thread) {
-                    return NULL;
-                }
-                input_iters_done = 0;
-                output_iters_done = 0;
-                __atomic_store_n(&(args->iters_done), 0, __ATOMIC_RELEASE);
-                __atomic_store_n(&(args->total_latency), 0, __ATOMIC_RELEASE);
-                drain_output = false;
-                // Check if we can start
-                cmd_run = args->cmd_run;
-                if (cmd_run) {
-                    cmd_module = args->cmd_module;
-                    cmd_delay = args->cmd_delay;
-                    req_pending = false;
-                    next_iter_start = get_counter() + cmd_delay;
-                }
-                #ifndef DO_SCHED_RR
-                // Set niceness based on priority
-                pid_t tid = syscall(SYS_gettid);
-                unsigned nprio = args->cmd_nprio;
-                setpriority(PRIO_PROCESS, tid, nice_table[nprio - 1]);
-                #endif
-            } else {
-                // Pending outputs exist, so drain the outputs first.
-                drain_output = true;
+            // Clear valid
+            __atomic_store_n(&(args->cmd_valid), false, __ATOMIC_RELEASE);
+            // Need to exit?
+            if (args->kill_thread) {
+                return NULL;
             }
+            __atomic_store_n(&(args->iters_done), 0, __ATOMIC_RELEASE);
+            __atomic_store_n(&(args->total_latency), 0, __ATOMIC_RELEASE);
+            // Check if we can start
+            cmd_run = args->cmd_run;
+            if (cmd_run) {
+                cmd_module = args->cmd_module;
+                cmd_delay = args->cmd_delay;
+                cmd_period = args->cmd_period;
+                req_pending = false;
+                next_iter_start = get_counter() + cmd_period + cmd_delay;
+            }
+            #ifndef DO_SCHED_RR
+            // Set niceness based on priority
+            pid_t tid = syscall(SYS_gettid);
+            unsigned nprio = args->cmd_nprio;
+            setpriority(PRIO_PROCESS, tid, nice_table[nprio - 1]);
+            #endif
         }
 
         if (cmd_run) {
-            // Drain not pending and timer elapsed
-            if (!req_pending && !drain_output) {
-                if (get_counter() >= next_iter_start) {
-                    req_pending = true;
-                }
-            }
-            #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
-            if (req_pending) {
-                uint64_t latency_start = next_iter_start;
-                // Input queue not full
-                if (nn_module_req_check(cmd_module, data , 0)) {
-                    iter_start[input_iters_done % max_inflight] = latency_start;
-                    HIGH_DEBUG(printf("[APP%d] Sent req %d...\n", args->t_id, input_iters_done);)
-                    req_pending = false;
-                    uint64_t issue_time = get_counter();
-                    uint64_t expected_next_iter = latency_start + cmd_delay;
-                    next_iter_start = (expected_next_iter > issue_time) ? expected_next_iter : issue_time;
-                    input_iters_done++;
-                }
-            }
-            if (nn_module_rsp_check(cmd_module, data, 0)) {
-                HIGH_DEBUG(printf("[APP%d] Received rsp %d...\n", args->t_id, output_iters_done);)
-                __atomic_fetch_add(&(args->total_latency), get_counter() - iter_start[output_iters_done % max_inflight], __ATOMIC_RELEASE);
-                __atomic_fetch_add(&(args->iters_done), 1, __ATOMIC_RELEASE);
-                output_iters_done++;
-            }
-            #else
-            if (req_pending) {
-                uint64_t latency_start = next_iter_start;
+            if (get_counter() >= next_iter_start) {
+                uint64_t latency_start = get_counter();
                 nn_module_run(cmd_module, data, data, 0, 0, false);
                 uint64_t latency_end = get_counter();
                 __atomic_fetch_add(&(args->total_latency), latency_end - latency_start, __ATOMIC_RELEASE);
                 __atomic_fetch_add(&(args->iters_done), 1, __ATOMIC_RELEASE);
                 req_pending = false;
-                uint64_t expected_next_iter = latency_start + cmd_delay;
+                uint64_t expected_next_iter = latency_start + cmd_period;
                 next_iter_start = (expected_next_iter > latency_end) ? expected_next_iter : latency_end;
                 HIGH_DEBUG(printf("[APP%d] Ran request %d...\n", args->t_id, args->iters_done);)
             }
-            #endif
         }
         SCHED_YIELD;
     }
@@ -133,12 +100,14 @@ void *req_thread(void *a) {
 // Example application for fully connected neural network (FCNN)
 int main(int argc, char **argv) {
     const char (*model_list)[256];
+    float delay_scale = 1.5;
     unsigned th_offset = 0;
     unsigned n_threads = 4;
     unsigned test_type = 0;
-    unsigned sleep_seconds = 4;
-    if (argc > 3) th_offset = atoi(argv[3]);
-    if (argc > 2) n_threads = atoi(argv[2]);
+    unsigned sleep_seconds = 2;
+    if (argc > 4) th_offset = atoi(argv[4]);
+    if (argc > 3) n_threads = atoi(argv[3]);
+    if (argc > 2) delay_scale = atof(argv[2]);
     if (argc > 1) test_type = atoi(argv[1]);
     const trace_entry_t (*trace)[MAX_THREADS];
     unsigned num_epochs = 0;
@@ -155,7 +124,7 @@ int main(int argc, char **argv) {
             model_list = heavy_models;
             trace = heavy_trace;
             num_epochs = sizeof(heavy_trace) / sizeof(heavy_trace[0]);
-            sleep_seconds = 12;
+            sleep_seconds = 4;
             break;
         }
         case 2: {
@@ -163,12 +132,12 @@ int main(int argc, char **argv) {
             model_list = mixed_models;
             trace = mixed_trace;
             num_epochs = sizeof(mixed_trace) / sizeof(mixed_trace[0]);
-            sleep_seconds = 8;
+            sleep_seconds = 3;
             break;
         }
         default: break;
     }
-    printf("[FILTER] Starting app %s %s, %s for %d threads (offset %d) for test %d\n", sm_print, mozart_print, vam_print, n_threads, th_offset, test_type);
+    printf("[FILTER] Starting app %s %s, %s for %d threads (offset %d) for test %d (delay %0.2f)\n", sm_print, mozart_print, vam_print, n_threads, th_offset, test_type, delay_scale);
 
     #ifdef DO_CPU_PIN
     // Run main thread on CPU 0 always.
@@ -205,6 +174,7 @@ int main(int argc, char **argv) {
         args->kill_thread = false;
         args->next = NULL;
         args->cmd_delay = 0;
+        args->cmd_period = 0;
         args->cmd_nprio = 1;
         args->iters_done = 0;
         #ifndef ENABLE_VAM
@@ -276,6 +246,10 @@ int main(int argc, char **argv) {
         for (unsigned i = 0; i < n_threads; i++) {
             args->cmd_run = false;
             __atomic_store_n(&(args->cmd_valid), true, __ATOMIC_SEQ_CST);
+            args = args->next;
+        }
+        args = head;
+        for (unsigned i = 0; i < n_threads; i++) {
             while (__atomic_load_n(&(args->cmd_valid), __ATOMIC_SEQ_CST) == true) {
                 SCHED_YIELD;
             }
@@ -284,8 +258,9 @@ int main(int argc, char **argv) {
         // Assign the next command to all thread
         args = head;
         for (unsigned i = 0; i < n_threads; i++) {
-            args->cmd_delay = trace[epoch][i+th_offset].delay;
+            args->cmd_period = (unsigned) ((float) delay_scale * trace[epoch][i+th_offset].period);
             args->cmd_nprio = trace[epoch][i+th_offset].nprio;
+            args->cmd_delay = (unsigned) ((float) (args->cmd_period / n_threads) * i);
             #ifdef ENABLE_VAM
             nn_module_setprio(args->cmd_module, args->cmd_nprio);
             #endif
