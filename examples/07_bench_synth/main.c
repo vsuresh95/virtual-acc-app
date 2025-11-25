@@ -27,13 +27,12 @@ typedef struct thread_args {
     unsigned cmd_deadline;
     unsigned cmd_nprio;
     unsigned iters_done;
-    unsigned deadline_violations;
-    unsigned fps_violations;
+    uint64_t total_latency;
+    unsigned violations;
 #ifndef ENABLE_VAM
     uint64_t active_cycles;
     uint64_t prev_active_cycles;
 #endif
-    uint64_t total_latency;
     struct thread_args *next;
 } thread_args;
 
@@ -46,123 +45,59 @@ void *req_thread(void *a) {
     unsigned cmd_delay;
     unsigned cmd_period;
     unsigned cmd_deadline;
-    unsigned input_iters_done = 0;
-    unsigned output_iters_done = 0;
-    unsigned total_latency = 0;
-    unsigned deadline_violations = 0;
-    unsigned fps_violations = 0;
-    bool drain_output = false;
-    bool fps_violated = false;
-    bool req_pending = false;
+    unsigned iters_done = 0;
+    uint64_t total_latency = 0;
+    unsigned violations = 0;
     uint64_t next_iter_start = get_counter();
-    #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
-    const unsigned max_inflight = SM_QUEUE_SIZE * 4; // TODO: assumes max of 3 layers
-    uint64_t iter_start[max_inflight];
-    #endif
 
     while (1) {
         // Is there a new command?
         bool valid_check = __atomic_load_n(&(args->cmd_valid), __ATOMIC_ACQUIRE);
         if (valid_check == true) {
-            // Are there any pending outputs?
-            if (input_iters_done == output_iters_done) {
-                args->iters_done = output_iters_done;
-                args->total_latency = total_latency;
-                args->deadline_violations = deadline_violations;
-                args->fps_violations = fps_violations;
-                // Clear valid
-                __atomic_store_n(&(args->cmd_valid), false, __ATOMIC_SEQ_CST);
-                // Need to exit?
-                if (args->kill_thread) {
-                    return NULL;
-                }
-                drain_output = false;
-                fps_violated = false;
-                input_iters_done = 0;
-                output_iters_done = 0;
-                total_latency = 0;
-                deadline_violations = 0;
-                fps_violations = 0;
-                // Check if we can start
-                cmd_run = args->cmd_run;
-                if (cmd_run) {
-                    cmd_module = args->cmd_module;
-                    cmd_delay = args->cmd_delay;
-                    cmd_period = args->cmd_period;
-                    cmd_deadline = args->cmd_deadline;
-                    req_pending = false;
-                    next_iter_start = get_counter() + cmd_period + cmd_delay;
-                }
-                #ifndef DO_SCHED_RR
-                // Set niceness based on priority
-                pid_t tid = syscall(SYS_gettid);
-                unsigned nprio = args->cmd_nprio;
-                setpriority(PRIO_PROCESS, tid, nice_table[nprio - 1]);
-                #endif
-            } else {
-                // Pending outputs exist, so drain the outputs first.
-                drain_output = true;
+            args->iters_done = iters_done;
+            args->total_latency = total_latency;
+            args->violations = violations;
+            // Clear valid
+            __atomic_store_n(&(args->cmd_valid), false, __ATOMIC_RELEASE);
+            // Need to exit?
+            if (args->kill_thread) {
+                return NULL;
             }
+            iters_done = 0;
+            total_latency = 0;
+            violations = 0;
+            // Check if we can start
+            cmd_run = args->cmd_run;
+            if (cmd_run) {
+                cmd_module = args->cmd_module;
+                cmd_delay = args->cmd_delay;
+                cmd_period = args->cmd_period;
+                cmd_deadline = args->cmd_deadline;
+                next_iter_start = get_counter() + cmd_period + cmd_delay;
+            }
+            #ifndef DO_SCHED_RR
+            // Set niceness based on priority
+            pid_t tid = syscall(SYS_gettid);
+            unsigned nprio = args->cmd_nprio;
+            setpriority(PRIO_PROCESS, tid, nice_table[nprio - 1]);
+            #endif
         }
 
         if (cmd_run) {
-            // Drain not pending and timer elapsed
-            if (!req_pending && !drain_output) {
-                if (get_counter() >= next_iter_start) {
-                    req_pending = true;
-                }
-            }
-            #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
-            if (req_pending) {
-                // Input queue not full
-                if (nn_module_req_check(cmd_module, data , 0)) {
-                    uint64_t latency_start = get_counter();
-                    iter_start[input_iters_done % max_inflight] = latency_start;
-                    HIGH_DEBUG(printf("[APP%d] Sent req %d...\n", args->t_id, input_iters_done);)
-                    req_pending = false;
-                    if (fps_violated) {
-                        fps_violations++;
-                        next_iter_start = latency_start + cmd_period;
-                        fps_violated = false;
-                    } else {
-                        next_iter_start = next_iter_start + cmd_period;
-                    }
-                    input_iters_done++;
-                } else {
-                    fps_violated = true;
-                }
-            }
-            if (nn_module_rsp_check(cmd_module, data, 0)) {
-                HIGH_DEBUG(printf("[APP%d] Received rsp %d...\n", args->t_id, output_iters_done);)
-                uint64_t latency_start = iter_start[output_iters_done % max_inflight];
-                uint64_t latency_end = get_counter();
-                total_latency += latency_end - latency_start;
-                if (latency_end - latency_start > cmd_deadline) {
-                    deadline_violations++;
-                }
-                output_iters_done++;
-            }
-            #else
-            if (req_pending) {
-                uint64_t latency_start = get_counter();
+            uint64_t latency_start = get_counter();
+            if (latency_start >= next_iter_start) {
                 nn_module_run(cmd_module, data, data, 0, 0, false);
                 uint64_t latency_end = get_counter();
-                total_latency += latency_end - latency_start;
-                output_iters_done++;
-                req_pending = false;
-                uint64_t expected_next_iter = next_iter_start + cmd_period;
-                if (latency_end > expected_next_iter) {
-                    fps_violations++;
-                    next_iter_start = latency_end;
-                } else {
-                    next_iter_start = expected_next_iter;
-                }
-                if (latency_end - latency_start > cmd_deadline) {
-                    deadline_violations++;
+                uint64_t time_taken = latency_end - latency_start;
+                total_latency += time_taken;
+                iters_done++;
+                uint64_t expected_next_iter = latency_start + cmd_period;
+                next_iter_start = (latency_end > expected_next_iter) ? latency_end : expected_next_iter;
+                if (time_taken > cmd_deadline) {
+                    violations++;
                 }
                 HIGH_DEBUG(printf("[APP%d] Ran request %d...\n", args->t_id, args->iters_done);)
             }
-            #endif
         }
         SCHED_YIELD;
     }
@@ -253,11 +188,11 @@ int main(int argc, char **argv) {
         args->cmd_deadline = 0;
         args->cmd_nprio = 1;
         args->iters_done = 0;
-        args->deadline_violations = 0;
-        args->fps_violations = 0;
+        args->violations = 0;
         args->total_latency = 0;
         #ifndef ENABLE_VAM
         args->active_cycles = 0;
+        args->prev_active_cycles = 0;
         #endif
 
         nn_module *cmd_module = (nn_module *) malloc (sizeof(nn_module));
@@ -373,14 +308,13 @@ int main(int argc, char **argv) {
         printf("[FILTER] ");
         for (unsigned i = 0; i < n_threads; i++) {
             unsigned iters_done = args->iters_done;
-            uint64_t avg_latency = args->total_latency / ((iters_done > 0) ? iters_done : UINT64_MAX);
-            unsigned deadline_violations = args->deadline_violations;
-            unsigned fps_violations = args->fps_violations;
+            uint64_t avg_latency = (iters_done > 0) ? (args->total_latency / iters_done) : 0;
+            float violation_rate = (iters_done > 0) ? (float) args->violations / iters_done * 100 : 0;
             #ifndef ENABLE_VAM
             float util = (float) (args->active_cycles)/(sleep_seconds * 78125000);   
-            printf("%lu(%d/%d,%d/%d), %0.2f%%, ", avg_latency, deadline_violations, iters_done, fps_violations, iters_done, util * 100);
+            printf("%lu(%0.2f%%), %0.2f%%, ", avg_latency, violation_rate, util * 100);
             #else
-            printf("%lu(%d/%d,%d/%d), ", avg_latency, deadline_violations, iters_done, fps_violations, iters_done);
+            printf("%lu(%0.2f%%), ", avg_latency, violation_rate);
             #endif
             args = args->next;
         }
