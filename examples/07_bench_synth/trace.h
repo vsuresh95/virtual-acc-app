@@ -86,6 +86,24 @@ unsigned mixed_deadlines[MAX_THREADS] = {
 };
 
 const trace_entry_t mixed_trace[][MAX_THREADS] = {
+    { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {false, 0, 6}, {true, LARGE_LATENCY, 1} },
+    { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {false, 0, 6}, {true, LARGE_LATENCY, 1} },
+    { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {true, 3 * MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
+    { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {true, 3 * MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
+    { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {false, 0, 6}, {true, LARGE_LATENCY, 1} },
+    { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {false, 0, 6}, {true, LARGE_LATENCY, 1} },
+    { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {true, 3 * MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
+    { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {true, 2 * MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
+    { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {true, 1 * MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
+    { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {true, 1 * MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
+    { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {true, 2 * MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
+    { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {true, 3 * MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
+    { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {false, 0, 6}, {true, LARGE_LATENCY, 1} },
+    { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {false, 0, 6}, {true, LARGE_LATENCY, 1} },
+    { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {true, 1 * MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
+    { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {true, 1 * MEDIUM_LATENCY, 1}, {true, LARGE_LATENCY, 1} },
+    { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {false, 0, 6}, {true, LARGE_LATENCY, 1} },
+    { {true, TINY_LATENCY, 1}, {true, SMALL_LATENCY, 1}, {false, 0, 6}, {true, LARGE_LATENCY, 1} },
 };
 
 #endif // TRACE_H
