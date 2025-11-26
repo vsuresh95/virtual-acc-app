@@ -187,8 +187,9 @@ void *vam_run_backend(void *arg) {
             case VAM_IDLE: {
                 // Examine the util across all accelerators in the system                
                 float load_imbalance = vam_check_load_balance();
-                bool need_load_balance = false;
                     
+                #ifndef DISABLE_LB
+                bool need_load_balance = false;
                 if (load_imbalance > LB_TRIG && NUM_LB_RETRY > 0) {
                     need_load_balance = true;
                 } else {
@@ -214,6 +215,7 @@ void *vam_run_backend(void *arg) {
                     }
                     load_imbalance_reg = load_imbalance;
                 }
+                #endif
                 break;
             }
             case VAM_CREATE: {
