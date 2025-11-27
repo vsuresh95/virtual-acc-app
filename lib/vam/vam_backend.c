@@ -847,20 +847,17 @@ void vam_log_utilization() {
 
 void vam_print_report() {
 #ifdef LITE_REPORT
-    printf("-------------------------------------------------------------------------------------------------------\n");
-    printf("  Accel\t\t\tC0\tC1\tC2\tC3\tTotal\n");
-    printf("-------------------------------------------------------------------------------------------------------\n");
     physical_accel_t *cur_accel = accel_list;
+    printf("[FILTER] ");
     while (cur_accel != NULL) {
-        printf("  %s\t", physical_accel_get_name(cur_accel));
         util_entry_t *entry = cur_accel->util_entry_list;
         // Calculate average utilization for each accelerator
         float total_util = 0.0;
         for (int j = 0; j < MAX_CONTEXTS; j++) {
-            printf("%05.2f%%\t", (entry->util[j]*100)/entry->util_epoch_count);
+            printf("%05.2f%%, ", (entry->util[j]*100)/entry->util_epoch_count);
             total_util += entry->util[j];
         }
-        printf("%05.2f%%\n", (total_util*100)/entry->util_epoch_count);
+        printf("total: %05.2f%%\n", (total_util*100)/entry->util_epoch_count);
         cur_accel = cur_accel->next;
     }
 #elif MED_REPORT  
