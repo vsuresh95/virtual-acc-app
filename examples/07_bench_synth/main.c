@@ -253,7 +253,7 @@ int main(int argc, char **argv) {
     // Wait for all threads to wake up
     sleep(1);
 
-    int epoch = 0; int mini_epoch = 0;
+    int epoch = 0;
     while (epoch < num_epochs) {
         // Assign the next command to all thread
         thread_args *args = head;
@@ -319,8 +319,7 @@ int main(int argc, char **argv) {
             args = args->next;
         }
         printf("\n");
-        mini_epoch++;
-        epoch = mini_epoch / 8; // Each epoch lasts 8 mini-epochs
+        epoch++;
     }
     printf("[MAIN] Completed all epochs, exiting...\n");
 

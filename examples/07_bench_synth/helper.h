@@ -14,8 +14,10 @@
 const char *sm_print = "with SM";
 #ifdef ENABLE_MOZART
 const char *mozart_print = "with Mozart";
+#elif defined(DISABLE_LB)
+const char *mozart_print = "with Virtuoso (with affinity)";
 #else
-const char *mozart_print = "without Mozart";
+const char *mozart_print = "with Virtuoso";
 #endif
 #else
 const char *sm_print = "without SM";
