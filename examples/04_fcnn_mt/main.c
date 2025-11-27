@@ -19,44 +19,6 @@ typedef struct thread_args {
     struct thread_args *next;
 } thread_args;
 
-void *rsp_thread(void *a) {
-    HIGH_DEBUG(printf("[APP] Starting response thread...\n");)
-    thread_args *args = (thread_args *) a;
-    nn_token_t *output_data = (nn_token_t *) malloc (1);
-    bool *start = args->start;
-    #ifndef DO_SCHED_RR
-    // Set niceness based on priority
-    pid_t tid = syscall(SYS_gettid);
-    setpriority(PRIO_PROCESS, tid, nice_table[2]);
-    #endif
-    while(!(*start)) { SCHED_YIELD; } // Wait for signal to start
-    // Iterate through all thread_args and accumulate iterations
-    thread_args *head = args;
-    unsigned total_iterations = 0;
-    do {
-        total_iterations += args->iterations;
-        args = args->next;        
-    } while (args != head);
-
-    while (total_iterations > 0) {
-        if (args->iterations == 0) {
-            // If no remaining iterations for current thread, skip
-            args = args->next;
-            continue;
-        }
-        // Else, check if module_rsp is available
-        HIGH_DEBUG(printf("[APP] Rsp thread checking module %d, remaining iters %d...\n", args->m->id, args->iterations);)
-        if (nn_module_rsp_check(args->m, output_data, 0)) {
-            __atomic_fetch_sub(&args->iterations, 1, __ATOMIC_RELEASE);
-            total_iterations--;
-        }
-        // Iterate to next thread_args
-        args = args->next;
-        SCHED_YIELD;
-    }
-    return NULL;
-}
-
 void *req_thread(void *a) {
     thread_args *args = (thread_args *) a;
     nn_module *m = args->m;
@@ -72,20 +34,33 @@ void *req_thread(void *a) {
     while(!(*start)) { SCHED_YIELD; } // Wait for signal to start
 
     uint64_t t_start = get_counter();
-    unsigned iters_done = 0;
-    while (iters_done < iterations) {
-        #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
-        if (nn_module_req_check(m, input_data, 0)) {
-            iters_done++;
-        } else {
-            SCHED_YIELD;
+    #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
+    unsigned input_iters_remaining = iterations;
+    unsigned output_iters_remaining = iterations;
+
+    while (input_iters_remaining > 0 || output_iters_remaining > 0) {
+        if (input_iters_remaining > 0) {
+            if (nn_module_req_check(m, input_data, 0)) {
+                input_iters_remaining--;
+                HIGH_DEBUG(printf("[APP%d] Sent req %d...\n", m->id, iterations - input_iters_remaining);)
+            }
         }
-        #else 
+        if (output_iters_remaining > 0) {
+            if (nn_module_rsp_check(m, input_data, 0)) {
+                __atomic_fetch_sub(&args->iterations, 1, __ATOMIC_RELEASE);
+                output_iters_remaining--;
+                HIGH_DEBUG(printf("[APP%d] Received rsp %d...\n", m->id, iterations - output_iters_remaining);)
+            }
+        }
+    }
+    #else
+    unsigned iters_done = 0;
+    while (iters_done < iterations) { 
         nn_module_run(m, input_data, input_data, 0, 0, false);
         iters_done++;
         __atomic_fetch_sub(&args->iterations, 1, __ATOMIC_RELEASE);
-        #endif
     }
+    #endif
     uint64_t t_end = get_counter();
     args->average_time = (t_end - t_start) / iterations;
     return NULL;
@@ -194,38 +169,6 @@ int main(int argc, char **argv) {
     while (tail->next != NULL) tail = tail->next;
     tail->next = head;
     
-    // Start a response thread for the thread_args list
-    #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
-    pthread_t rsp_th;
-    // Create pthread attributes
-    pthread_attr_t attr;
-    if (pthread_attr_init(&attr) != 0) {
-        perror("attr_init");
-    }
-    #ifdef DO_CPU_PIN
-    // Set CPU affinity
-    CPU_ZERO(&set);
-    CPU_SET((core_affinity_ctr++) % cpu_online, &set);
-    if (pthread_attr_setaffinity_np(&attr, sizeof(set), &set) != 0) {
-        perror("pthread_attr_setaffinity_np");
-    }
-    #endif
-    #ifdef DO_SCHED_RR
-    // Set SCHED_RR scheduling policy with priority 1
-    if (pthread_attr_setschedpolicy(&attr, SCHED_FIFO) != 0) {
-        perror("pthread_attr_setschedpolicy");
-    }
-    if (pthread_attr_setschedparam(&attr, &sp) != 0) {
-        perror("pthread_attr_setschedparam");
-    }
-    #endif
-    if (pthread_create(&rsp_th, &attr, rsp_thread, (void *) head) != 0) {
-        perror("pthread_create");
-        exit(1);
-    }
-    pthread_attr_destroy(&attr);
-    #endif // ENABLE_VAM
-
     unsigned old_iters_remaining[n_threads];
     unsigned total_remaining, old_remaining;
     thread_args *th_args = head;
@@ -284,9 +227,6 @@ int main(int argc, char **argv) {
         th_args = th_args->next;
     }
     printf("overall: %lu\n", total_average/n_threads);
-    #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
-    pthread_join(rsp_th, NULL);
-    #endif // ENABLE_VAM
 
     // Release all modules
     thread_args *args = head;
