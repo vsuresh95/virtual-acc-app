@@ -52,6 +52,7 @@ void *req_thread(void *a) {
                 HIGH_DEBUG(printf("[APP%d] Received rsp %d...\n", m->id, iterations - output_iters_remaining);)
             }
         }
+        SCHED_YIELD;
     }
     #else
     unsigned iters_done = 0;
