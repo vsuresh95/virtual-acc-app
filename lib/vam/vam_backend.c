@@ -848,8 +848,8 @@ void vam_log_utilization() {
 void vam_print_report() {
 #ifdef LITE_REPORT
     physical_accel_t *cur_accel = accel_list;
-    printf("[FILTER] ");
     while (cur_accel != NULL) {
+        printf("[FILTER] ");
         util_entry_t *entry = cur_accel->util_entry_list;
         // Calculate average utilization for each accelerator
         float total_util = 0.0;
