@@ -64,6 +64,7 @@ int main(int argc, char **argv) {
     nn_module *m = (nn_module *) malloc (sizeof(nn_module));
     m->id = 0;
     m->nprio = 1;
+    m->n_threads = 0;
     #ifndef ENABLE_SM
     m->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
     #else

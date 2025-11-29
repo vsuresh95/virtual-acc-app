@@ -36,7 +36,7 @@ typedef struct {
     unsigned nprio; // Priority: 1 (highest) - 10 (lowest)
     unsigned n_threads; // Default 0: as many as number of layers; for Mozart, allow user to set
     unsigned loop_around; // Number of times to loop around the queues
-    unsigned loop_cnt; // Current loop count for rsp_check
+    unsigned pending_requeues; // Number of pending requeues
     bool cpu_invoke; // Should we invoke accelerator through CPU?
     #ifndef ENABLE_VAM
     physical_accel_t *accel_list;

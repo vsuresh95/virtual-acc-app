@@ -94,9 +94,12 @@ void vam_probe_accel() {
     }
     // Search for all stratus accelerators and fill into accel_list
     HIGH_DEBUG(printf("[VAM] Performing device probe.\n");)
-    struct dirent *entry;
+    struct dirent **list = NULL;
+    int n = scandir("/dev", &list, NULL, alphasort); // alphasort is ascending
+    if (n < 0) perror("scandir");
     unsigned device_id = 0;
-    while ((entry = readdir(dir)) != NULL) {
+    for (int i = 0; i < n; i++) {
+        struct dirent *entry = list[i];
         if (fnmatch("*_stratus.*", entry->d_name, FNM_NOESCAPE) == 0) {
             physical_accel_t *accel_temp = (physical_accel_t *) malloc(sizeof(physical_accel_t));
             hpthread_cand_t *cand_temp = (hpthread_cand_t *) malloc(sizeof(hpthread_cand_t));
@@ -112,6 +115,7 @@ void vam_probe_accel() {
             strcpy(accel_temp->devname, entry->d_name);
             accel_temp->init_done = false;
             accel_temp->effective_util = 0.0;
+            accel_temp->util_entry_list = NULL;
             __atomic_store_n(&accel_temp->accel_lock, 0, __ATOMIC_RELEASE);
             // Print out debug message
             HIGH_DEBUG(printf("[VAM] Discovered device %d: %s\n", device_id, accel_temp->devname);)
@@ -156,7 +160,9 @@ void vam_probe_accel() {
             insert_physical_accel(accel_temp);
             insert_hpthread_cand(cand_temp);
         }
+        free(list[i]);
     }
+    free(list);
 
     closedir(dir);
 }
@@ -259,7 +265,7 @@ void *vam_run_backend(void *arg) {
 }
 
 void vam_search_accel(hpthread_t *th) {
-    HIGH_DEBUG(printf("[VAM] Searching accelerator for hpthread %s with affinity to %d\n", hpthread_get_name(th), th->affinity);)
+    HIGH_DEBUG(printf("[VAM] Searching accelerator for hpthread %s with affinity to ID %d\n", hpthread_get_name(th), th->affinity);)
     // First, update the active utilization of each accelerator
     vam_check_utilization();
 
@@ -587,8 +593,14 @@ void vam_setprio_accel(hpthread_t *th) {
 }
 
 void insert_physical_accel(physical_accel_t *accel) {
-	accel->next = accel_list;
-	accel_list = accel;
+    accel->next = NULL;
+    if (!accel_list) {
+        accel_list = accel;
+        return;
+    }
+    physical_accel_t *p = accel_list;
+    while (p->next) p = p->next;
+    p->next = accel;
 }
 
 void insert_hpthread_cand(hpthread_cand_t *cand) {
@@ -631,7 +643,6 @@ void vam_check_utilization() {
                 uint64_t elapsed_cycles = get_counter() - cur_accel->context_start_cycles[i];
                 uint64_t util_cycles = mon_extended[i] - cur_accel->context_active_cycles[i];
                 float util = (float) util_cycles/elapsed_cycles;
-                if (util_cycles > elapsed_cycles) util = 0.01;
                 // Set the cycles for the next period
                 cur_accel->context_start_cycles[i] = get_counter();
                 cur_accel->context_active_cycles[i] = mon_extended[i];
@@ -877,7 +888,11 @@ void vam_print_report() {
             for (int j = 0; j < MAX_CONTEXTS; j++) {
                 total_util += entry->util[j];
             }
+            #if !defined(ENABLE_VAM) || defined(ENABLE_MOZART)
+            printf("%05.2f%%(%d), ", total_util*100, entry->id[0]);
+            #else
             printf("%05.2f%%, ", total_util*100);
+            #endif
             // Delete the oldest entry after printing
             if (prev != NULL) {
                 prev->next = NULL;

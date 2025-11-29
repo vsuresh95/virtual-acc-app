@@ -10,22 +10,9 @@
 static uint8_t core_affinity_ctr = 0;
 #endif
 
-#define MAX_THREADS 6
-
 #include <trace.h>
 
 extern void vam_log_utilization();
-
-const char model_list[4][256] = {
-    "models/model_16_4.txt",
-    "models/model_32_3.txt",
-    "models/model_48_4.txt",
-    "models/model_64_3.txt",
-};
-
-unsigned model_period[4] = {
-    100000, 240000, 750000, 1200000
-};
 
 typedef struct thread_args {
     unsigned t_id;
@@ -84,22 +71,25 @@ void *req_thread(void *a) {
                 setpriority(PRIO_PROCESS, tid, nice_table[nprio - 1]);
                 #endif
             } else {
-                // Wait to drain output
                 drain_output = true;
             }
         }
 
         if (cmd_run) {
-            #if defined(ENABLE_VAM) && !defined(ENABLE_MOZART)
-            if (!drain_output) {
+            #ifdef ENABLE_VAM
+            // Drain not pending and timer elapsed
+            uint64_t current_time = get_counter();
+            if (current_time >= next_iter_start && !drain_output) {
+                // Input queue not full
                 if (nn_module_req_check(cmd_module, data , 0)) {
-                    input_iters_done++;
                     HIGH_DEBUG(printf("[APP%d] Sent req %d...\n", args->t_id, input_iters_done);)
+                    next_iter_start = current_time + cmd_period;
+                    input_iters_done++;
                 }
             }
             if (nn_module_rsp_check(cmd_module, data, 0)) {
-                output_iters_done++;
                 HIGH_DEBUG(printf("[APP%d] Received rsp %d...\n", args->t_id, output_iters_done);)
+                output_iters_done++;
             }
             #else
             uint64_t latency_start = get_counter();
@@ -110,7 +100,7 @@ void *req_thread(void *a) {
                 output_iters_done++;
                 uint64_t expected_next_iter = latency_start + cmd_period;
                 next_iter_start = (latency_end > expected_next_iter) ? latency_end : expected_next_iter;
-                HIGH_DEBUG(printf("[APP%d] Ran request %d...\n", args->t_id, output_iters_done);)
+                HIGH_DEBUG(printf("[APP%d] Ran request %d...\n", args->t_id, args->iters_done);)
             }
             #endif
         }
@@ -120,26 +110,15 @@ void *req_thread(void *a) {
 
 // Example application for fully connected neural network (FCNN)
 int main(int argc, char **argv) {
-    unsigned model_id[MAX_THREADS] = {0, 1, 2};
-    unsigned num_epochs = sizeof(trace) / sizeof(trace[0]);
-    printf("[FILTER] Starting app %s %s, %s for ", sm_print, mozart_print, vam_print);
-    unsigned n_threads = 0;
-    if (argc > 3) {
-        model_id[2] = atoi(argv[3]);
-        printf("model[2]=%s, ", model_list[model_id[2]]);
-        n_threads++;
-    }
-    if (argc > 2) {
-        model_id[1] = atoi(argv[2]);
-        printf("model[1]=%s, ", model_list[model_id[1]]);
-        n_threads++;
-    }
+    unsigned sleep_seconds = 2;
+    unsigned model_threads = 0;
+    #if !defined(ENABLE_SM) || defined(ENABLE_MOZART)
+    model_threads = 1; // Mozart: 1 thread per model
     if (argc > 1) {
-        model_id[0] = atoi(argv[1]);
-        printf("model[0]=%s", model_list[model_id[0]]);
-        n_threads++;
+        model_threads = atoi(argv[1]);
     }
-    printf("\n");
+    #endif
+    printf("[FILTER] Starting motivational app %s %s, %s with %d threads per model\n", sm_print, mozart_print, vam_print, model_threads);
 
     #ifdef DO_CPU_PIN
     // Run main thread on CPU 0 always.
@@ -165,10 +144,10 @@ int main(int argc, char **argv) {
 
     // Create 4 models
     thread_args *head = NULL;
-    pthread_t req_threads[n_threads];
+    pthread_t req_threads[N_THREADS];
 
-    // Create n_threads of models in a thread_args list
-    for (int i = 0; i < n_threads; i++) {
+    // Create N_THREADS of models in a thread_args list
+    for (int i = 0; i < N_THREADS; i++) {
         thread_args *args = (thread_args *) malloc (sizeof(thread_args));
         args->t_id = i+1;
         args->cmd_run = false;
@@ -186,13 +165,13 @@ int main(int argc, char **argv) {
         nn_module *cmd_module = (nn_module *) malloc (sizeof(nn_module));
         cmd_module->id = i+1;
         cmd_module->nprio = 1;
-        cmd_module->n_threads = 0;
+        cmd_module->n_threads = model_threads;
         #ifndef ENABLE_SM
         cmd_module->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
         #else
         cmd_module->cpu_invoke = false;
         #endif
-        nn_module_load_and_register(cmd_module, model_list[model_id[i]]);
+        nn_module_load_and_register(cmd_module, model_list[i]);
         args->cmd_module = cmd_module;
         
         // Start a request thread for this model
@@ -241,16 +220,15 @@ int main(int argc, char **argv) {
 
     // Wait for all threads to wake up
     sleep(1);
-    
-    unsigned sleep_seconds = 4;
-    int epoch = 0;
-    while (epoch < num_epochs) {
+
+    unsigned num_epochs = sizeof(trace) / sizeof(trace[0]);
+    for (unsigned epoch = 0; epoch < num_epochs; epoch++) {
         // Assign the next command to all thread
         thread_args *args = head;
-        for (unsigned i = 0; i < n_threads; i++) {
-            args->cmd_period = trace[epoch][i].delay * model_period[model_id[i]];
+        for (unsigned i = 0; i < N_THREADS; i++) {
+            args->cmd_period = trace[epoch][i].period;
             args->cmd_nprio = trace[epoch][i].nprio;
-            #ifdef ENABLE_VAM
+            #if defined(ENABLE_SM) && !defined(ENABLE_MOZART)
             nn_module_setprio(args->cmd_module, args->cmd_nprio);
             #endif
             args->cmd_run = trace[epoch][i].run;
@@ -258,7 +236,7 @@ int main(int argc, char **argv) {
         }
         // Start all threads for this epoch
         args = head;
-        for (unsigned i = 0; i < n_threads; i++) {
+        for (unsigned i = 0; i < N_THREADS; i++) {
             __atomic_store_n(&(args->cmd_valid), true, __ATOMIC_SEQ_CST);
             args = args->next;
         }
@@ -270,7 +248,7 @@ int main(int argc, char **argv) {
         // Write the current utilization to the log
         vam_log_utilization();
         #else
-        for (unsigned i = 0; i < n_threads; i++) {
+        for (unsigned i = 0; i < N_THREADS; i++) {
             uint64_t new_active_cycles = args->cmd_module->active_cycles;
             args->active_cycles = new_active_cycles - args->prev_active_cycles;
             args->prev_active_cycles = new_active_cycles;
@@ -280,13 +258,13 @@ int main(int argc, char **argv) {
 
         // Synchronize all threads at the end of the epoch
         args = head;
-        for (unsigned i = 0; i < n_threads; i++) {
+        for (unsigned i = 0; i < N_THREADS; i++) {
             args->cmd_run = false;
             __atomic_store_n(&(args->cmd_valid), true, __ATOMIC_SEQ_CST);
             args = args->next;
         }
         args = head;
-        for (unsigned i = 0; i < n_threads; i++) {
+        for (unsigned i = 0; i < N_THREADS; i++) {
             while (__atomic_load_n(&(args->cmd_valid), __ATOMIC_SEQ_CST) == true) {
                 SCHED_YIELD;
             }
@@ -294,7 +272,7 @@ int main(int argc, char **argv) {
         }
         // Monitor progress of threads
         printf("[FILTER] ");
-        for (unsigned i = 0; i < n_threads; i++) {
+        for (unsigned i = 0; i < N_THREADS; i++) {
             unsigned iters_done = args->iters_done;
             float throughput = (float) iters_done / (float) sleep_seconds;
             #ifndef ENABLE_VAM
@@ -306,13 +284,12 @@ int main(int argc, char **argv) {
             args = args->next;
         }
         printf("\n");
-        epoch++;
     }
     printf("[MAIN] Completed all epochs, exiting...\n");
 
     // Wait for all request threads to finish
     thread_args *args = head;
-    for (int i = 0; i < n_threads; i++) {
+    for (int i = 0; i < N_THREADS; i++) {
         args->kill_thread = true;
         __atomic_store_n(&(args->cmd_valid), true, __ATOMIC_SEQ_CST);
         pthread_join(req_threads[i], NULL);

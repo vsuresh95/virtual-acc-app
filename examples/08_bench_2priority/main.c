@@ -202,6 +202,7 @@ int main(int argc, char **argv) {
     nn_module *bg_module = (nn_module *) malloc (sizeof(nn_module));
     bg_module->id = 1;
     bg_module->nprio = 1;
+    bg_module->n_threads = 0;
     #ifndef ENABLE_SM
     bg_module->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
     #else
@@ -233,6 +234,7 @@ int main(int argc, char **argv) {
     nn_module *fg_module = (nn_module *) malloc (sizeof(nn_module));
     fg_module->id = 2;
     fg_module->nprio = 1;
+    fg_module->n_threads = 0;
     #ifndef ENABLE_SM
     fg_module->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
     #else

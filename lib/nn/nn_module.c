@@ -29,7 +29,7 @@ void nn_module_load(nn_module *m, const char *n) {
     m->th_list = NULL;
     m->descr_list = NULL;
     m->loop_around = 1;
-    m->loop_cnt = 0;
+    m->pending_requeues = 0;
     #ifndef ENABLE_VAM
     m->accel_list = NULL;
     m->active_cycles = 0;
@@ -254,10 +254,10 @@ void nn_module_register(nn_module *m) {
                         hpthread_setname(th, hpthread_name);
                         hpthread_setprimitive(th, PRIM_GEMM);
                         hpthread_setpriority(th, m->nprio);
-                        #ifdef ENABLE_MOZART
+                        #if !defined(ENABLE_SM) || defined(ENABLE_MOZART)
                         hpthread_setaffinity(th, ((m->id - 1) * m->n_threads) + thread_count + 1); // Assign to different accelerators with m->n_threads
                         #else
-                        hpthread_setaffinity(th, m->id); // Try to assign to same accelerator as module ID
+                        hpthread_setaffinity(th, (m->id * 3) + (thread_count % 3) + 1); // Try to assign to same accelerator as module ID
                         #endif
                         HIGH_DEBUG(printf("[NN%d] queue ptr for %s = %d...\n", m->id, hpthread_name, h_args->queue_ptr););
                         HIGH_DEBUG(printf("[NN%d] Before hpthread create for %s...\n", m->id, hpthread_name));
@@ -265,7 +265,7 @@ void nn_module_register(nn_module *m) {
                         hpthread_create(th);
                         // Assign the thread to the model list
                         nn_module_add_hpthread(m, th);
-                        if (limit_threads) thread_count++;
+                        thread_count++;
                     }
                     #else
                     // Check if an accelerator for GEMM has already been assigned
@@ -313,6 +313,8 @@ void nn_module_register(nn_module *m) {
         gemm_queue_entry_t *descr_entry = (gemm_queue_entry_t *) ((unsigned *) (m->mem) + descr->descr_offset[i]);
         gemm_params_t *descr_params = &(descr_entry->gemm_params);
         descr_params->input_base = in_args->data_offset + i * (in_args->len);
+        sm_queue_entry_t *descr_common = &(descr_entry->common);
+        descr_common->output_queue = 42424242; // MAGIC number for last stage
         HIGH_DEBUG(print_gemm_entry(descr_entry);)
     }
     nn_module_add_task_descr(m, (nn_task_descr *) descr);
@@ -522,9 +524,15 @@ void nn_module_req(nn_module *m, nn_token_t *input_data, unsigned data_len, bool
 }
 
 bool nn_module_req_check(nn_module *m, nn_token_t *input_data, unsigned data_len) {
-    HIGH_DEBUG(printf("[NN%d] Starting nn_module_req for %s\n", m->id, nn_module_get_name(m)));
+    HIGH_DEBUG(printf("[NN%d] Starting nn_module_req_check for %s\n", m->id, nn_module_get_name(m)));
     sm_queue_t *in_q = m->input_queue;
-    if (sm_queue_full(in_q)) return false;
+    if (m->loop_around > 1) {
+        unsigned level = sm_queue_level(in_q);
+        HIGH_DEBUG(printf("[NN%d] Current input queue level = %d, pending requeues = %d\n", m->id, level, m->pending_requeues););
+        if (level + m->pending_requeues >= SM_QUEUE_SIZE) return false; // backpressure
+    } else if (sm_queue_full(in_q)) {
+        return false;
+    }
     // Try to enqueue the first descriptor (for req_cnt_in) to the input_queue
     nn_task_descr *descr_list = m->descr_list;
     uint64_t descr_offset;
@@ -537,6 +545,10 @@ bool nn_module_req_check(nn_module *m, nn_token_t *input_data, unsigned data_len
         default: break;
     }
     HIGH_DEBUG(printf("[NN%d] Programming PRIM_GEMM descr at %lu for req %d...\n", m->id, descr_offset, req););
+    if (m->loop_around > 1) {
+        m->pending_requeues += (m->loop_around - 1); // reserve slots for requeues
+        HIGH_DEBUG(printf("[NN%d] Reserved %d slots for module %s.\n", m->id, m->pending_requeues, nn_module_get_name(m)));
+    }
     sm_queue_push(in_q, descr_offset);
     HIGH_DEBUG(printf("[NN%d] Enqueued descr to module %s.\n", m->id, nn_module_get_name(m)));
     return true;
@@ -562,19 +574,23 @@ void nn_module_rsp(nn_module *m, nn_token_t *output_data, unsigned data_len, boo
 }
 
 bool nn_module_rsp_check(nn_module *m, nn_token_t *output_data, unsigned data_len) {
+    HIGH_DEBUG(printf("[NN%d] Starting nn_module_rsp_check for %s\n", m->id, nn_module_get_name(m)));
     sm_queue_t *out_q = m->output_queue;
-    HIGH_DEBUG(printf("[NN%d] Dequeueing descr for module %s.\n", m->id, nn_module_get_name(m)));
     if (sm_queue_empty(out_q)) return false;
     uint64_t descr_offset = sm_queue_pop(out_q);
     HIGH_DEBUG(printf("[NN%d] Dequeued descr for module %s.\n", m->id, nn_module_get_name(m)));
-    m->loop_cnt++;
-    if (m->loop_cnt == m->loop_around) {
-        m->loop_cnt = 0;
+    gemm_queue_entry_t *descr = (gemm_queue_entry_t *) ((unsigned *) (m->mem) + descr_offset);
+    if (descr->common.output_queue == 42424242) { // MAGIC number for last stage
+        HIGH_DEBUG(printf("[NN%d] Found 42424242 for module %s.\n", m->id, nn_module_get_name(m)));
         return true;
     } else {
         sm_queue_t *in_q = m->input_queue;
         while(sm_queue_full(in_q)) { SCHED_YIELD; }
         sm_queue_push(in_q, descr_offset);
+        if (m->pending_requeues != 0) {
+            m->pending_requeues--;
+            HIGH_DEBUG(printf("[NN%d] Released 1 reserved slot for module %s. Remaining = %d\n", m->id, nn_module_get_name(m), m->pending_requeues);)
+        }
         return false;
     }
 }

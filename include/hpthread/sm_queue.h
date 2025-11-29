@@ -58,4 +58,10 @@ static inline bool sm_queue_full(sm_queue_t *q) {
     return (head - tail) >= SM_QUEUE_SIZE;
 }
 
+static inline unsigned sm_queue_level(sm_queue_t *q) {
+    uint64_t head = __atomic_load_n(&q->head, __ATOMIC_ACQUIRE);
+    uint64_t tail = __atomic_load_n(&q->tail, __ATOMIC_ACQUIRE);
+    return (unsigned)(head - tail);
+}
+
 #endif // __SM_QUEUE_H__
