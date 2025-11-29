@@ -13,8 +13,7 @@ int main(int argc, char **argv) {
     unsigned errors = 0;
     uint64_t t_load = 0;
     uint64_t t_register = 0;
-    uint64_t t_req = 0;
-    uint64_t t_rsp = 0;
+    uint64_t t_fcnn = 0;
     uint64_t t_release = 0;
     uint64_t t_start = 0;
 
@@ -42,8 +41,9 @@ int main(int argc, char **argv) {
         // Load a model from a text file (and) register with NN frontend
         t_start = get_counter();
         nn_module *m = (nn_module *) malloc (sizeof(nn_module));
-        m->id = 0;
+        m->id = 1;
         m->nprio = 1;
+        m->n_threads = 0; // No specific requirement on number of threads
         #ifndef ENABLE_SM
         m->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
         #else
@@ -56,36 +56,31 @@ int main(int argc, char **argv) {
         t_register += get_counter() - t_start;
 
         // Push a new input to the model queue
-        t_start = get_counter();
         unsigned input_len = 4096, output_len = 64;
         nn_token_t *input_data = (nn_token_t *) malloc (input_len * sizeof(nn_token_t));
         initialize_data("input.txt", input_data, input_len);
         nn_token_t *output_data = (nn_token_t *) malloc (output_len * sizeof(nn_token_t));
-        #if defined(ENABLE_MOZART) || !defined(ENABLE_VAM)
-        nn_module_run(m, input_data, output_data, input_len * sizeof(nn_token_t), output_len * sizeof(nn_token_t), true);
-        #else
-        nn_module_req(m, input_data, input_len * sizeof(nn_token_t), true);
-        t_req += get_counter() - t_start;
-        // Wait for the output to be ready
         t_start = get_counter();
-        nn_module_rsp(m, output_data, output_len * sizeof(nn_token_t), true);
-        #endif
-        t_rsp += get_counter() - t_start;
+        nn_module_run(m, input_data, output_data, input_len * sizeof(nn_token_t), output_len * sizeof(nn_token_t), true);
+        t_fcnn += get_counter() - t_start;
 
-        LOW_DEBUG(
-            // Load reference output
-            nn_token_t *gold_data = (nn_token_t *) malloc (output_len * sizeof(nn_token_t));
-            initialize_data("output.txt", gold_data, output_len);
+        // Load reference output
+        nn_token_t *gold_data = (nn_token_t *) malloc (output_len * sizeof(nn_token_t));
+        initialize_data("output.txt", gold_data, output_len);
 
-            // Compare with actual output
-            for (unsigned j = 0; j < output_len; j++) {
-                if ((fabs(nn_token_to_float(nn_token_sub(gold_data[j], output_data[j]))) / fabs(nn_token_to_float(gold_data[j]))) > ERR_TH) {
-                    if (errors < 2) { HIGH_DEBUG(printf("\tGOLD[%u] = %f vs %f = out[%u]\n", j, nn_token_to_float(gold_data[j]), nn_token_to_float(output_data[j]), j);) }
-                    errors++;
-                }
+        // Compare with actual output
+        for (unsigned j = 0; j < output_len; j++) {
+            if ((fabs(nn_token_to_float(nn_token_sub(gold_data[j], output_data[j]))) / fabs(nn_token_to_float(gold_data[j]))) > ERR_TH) {
+                if (errors < 2) { HIGH_DEBUG(printf("\tGOLD[%u] = %f vs %f = out[%u]\n", j, nn_token_to_float(gold_data[j]), nn_token_to_float(output_data[j]), j);) }
+                errors++;
             }
-            printf("[APP] Relative error > %.02f for %d values out of %d\n", ERR_TH, errors, output_len);
-        )
+        }
+        printf("[APP] Relative error > %.02f for %d values out of %d\n", ERR_TH, errors, output_len);
+
+        #ifdef ENABLE_VAM
+        // Write the current utilization to the log
+        vam_log_utilization();
+        #endif
 
         t_start = get_counter();
         nn_module_release(m);
@@ -99,7 +94,8 @@ int main(int argc, char **argv) {
     printf("Errors = %d\n", errors);
     printf("Load = %lu\n", t_load/iterations);
     printf("Register = %lu\n", t_register/iterations);
-    printf("Request = %lu\n", t_req/iterations);
-    printf("Response = %lu\n", t_rsp/iterations);
+    printf("FCNN = %lu\n", t_fcnn/iterations);
     printf("Release = %lu\n", t_release/iterations);
+
+    hpthread_report();
 }

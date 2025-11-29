@@ -38,6 +38,8 @@ struct nn_node_t {
     unsigned nn_op; // what NN operand does this node map to?
     nn_edge_list *in_edges; // inbound edge list
     nn_edge_list *out_edges; // outbound edge list
+    bool is_entry; // is this the entry node?
+    bool is_exit; // is this the exit node?
     hpthread_t *th; // hpthread allocated for this node
     void *args; // arguments for this node
     char name[100]; // For debug purposes

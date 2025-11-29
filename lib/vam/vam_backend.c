@@ -259,7 +259,7 @@ void *vam_run_backend(void *arg) {
 }
 
 void vam_search_accel(hpthread_t *th) {
-    HIGH_DEBUG(printf("[VAM] Searching accelerator for hpthread %s\n", hpthread_get_name(th));)
+    HIGH_DEBUG(printf("[VAM] Searching accelerator for hpthread %s with affinity to %d\n", hpthread_get_name(th), th->affinity);)
     // First, update the active utilization of each accelerator
     vam_check_utilization();
 

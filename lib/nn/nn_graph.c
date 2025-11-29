@@ -5,9 +5,11 @@ void nn_graph_create(nn_graph_t *g) {
     g->nodes = NULL;
     g->entry = (nn_node_t *) malloc (sizeof(nn_node_t));
     nn_node_create(g->entry, 0, NN_OP_NONE);
+    g->entry->is_entry = true;
     nn_graph_add_nn_node(g, g->entry);
     g->exit = (nn_node_t *) malloc (sizeof(nn_node_t));
     nn_node_create(g->exit, -1, NN_OP_NONE);
+    g->exit->is_exit = true;
     nn_graph_add_nn_node(g, g->exit);
 }
 
@@ -54,6 +56,8 @@ void nn_node_create(nn_node_t *n, int i, unsigned op) {
     n->nn_op = op;
     n->in_edges = NULL;
     n->out_edges = NULL;
+    n->is_entry = false;
+    n->is_exit = false;
     n->th = NULL;
 }
 
