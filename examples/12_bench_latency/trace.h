@@ -9,10 +9,10 @@ typedef struct {
 
 #define TINY_PERIOD 100000 
 #define SMALL1_PERIOD 240000
-#define SMALL2_PERIOD 500000
-#define MEDIUM1_PERIOD 400000
-#define MEDIUM2_PERIOD 750000
-#define LARGE_PERIOD 1200000
+#define SMALL2_PERIOD 300000
+#define MEDIUM1_PERIOD 640000
+#define MEDIUM2_PERIOD 960000
+#define LARGE_PERIOD 1600000
 
 const char light_models[MAX_THREADS][256] = {
     "models/model_16_4.txt",
@@ -47,7 +47,7 @@ unsigned mixed_deadlines[MAX_THREADS] = {
     TINY_PERIOD, SMALL2_PERIOD, MEDIUM2_PERIOD, LARGE_PERIOD
 };
 
-unsigned n_threads[MAX_THREADS] = {
+unsigned model_threads[MAX_THREADS] = {
     1, 2, 2, 1
 };
 

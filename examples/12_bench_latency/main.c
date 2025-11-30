@@ -4,13 +4,15 @@
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <string.h>
+#include <stdlib.h>
+#include <time.h>
 
 // Counter for core affinity
 #ifdef DO_CPU_PIN
 static uint8_t core_affinity_ctr = 0;
 #endif
 
-#define MAX_THREADS 6
+#define MAX_THREADS 4
 
 #include <trace.h>
 
@@ -25,7 +27,6 @@ typedef struct thread_args {
     unsigned cmd_delay;
     unsigned cmd_period;
     unsigned cmd_deadline;
-    unsigned cmd_nprio;
     unsigned iters_done;
     uint64_t total_latency;
     unsigned violations;
@@ -78,8 +79,7 @@ void *req_thread(void *a) {
             #ifndef DO_SCHED_RR
             // Set niceness based on priority
             pid_t tid = syscall(SYS_gettid);
-            unsigned nprio = args->cmd_nprio;
-            setpriority(PRIO_PROCESS, tid, nice_table[nprio - 1]);
+            setpriority(PRIO_PROCESS, tid, nice_table[0]);
             #endif
         }
 
@@ -106,48 +106,34 @@ void *req_thread(void *a) {
 // Example application for fully connected neural network (FCNN)
 int main(int argc, char **argv) {
     const char (*model_list)[256];
-    float delay_scale = 1.0;
-    unsigned th_offset = 0;
-    unsigned n_threads = 4;
     unsigned test_type = 0;
-    unsigned sleep_seconds = 2;
-    if (argc > 4) th_offset = atoi(argv[4]);
-    if (argc > 3) n_threads = atoi(argv[3]);
-    if (argc > 2) delay_scale = atof(argv[2]);
+    unsigned sleep_seconds = 4;
     if (argc > 1) test_type = atoi(argv[1]);
-    const trace_entry_t (*trace)[MAX_THREADS];
     unsigned *deadlines;
-    unsigned num_epochs = 0;
     switch (test_type) {
         case 0: {
             // Light workload
             model_list = light_models;
-            trace = light_trace;
             deadlines = light_deadlines;
-            num_epochs = sizeof(light_trace) / sizeof(light_trace[0]);
             break;
         }
         case 1: {
             // Heavy workload
             model_list = heavy_models;
-            trace = heavy_trace;
             deadlines = heavy_deadlines;
-            num_epochs = sizeof(heavy_trace) / sizeof(heavy_trace[0]);
-            sleep_seconds = 4;
+            sleep_seconds = 8;
             break;
         }
         case 2: {
             // Mixed workload
             model_list = mixed_models;
-            trace = mixed_trace;
             deadlines = mixed_deadlines;
-            num_epochs = sizeof(mixed_trace) / sizeof(mixed_trace[0]);
-            sleep_seconds = 3;
+            sleep_seconds = 6;
             break;
         }
         default: break;
     }
-    printf("[FILTER] Starting app %s %s, %s for %d threads (offset %d) for test %d (delay %0.2f)\n", sm_print, mozart_print, vam_print, n_threads, th_offset, test_type, delay_scale);
+    printf("[FILTER] Starting app %s %s, %s for test %d\n", sm_print, mozart_print, vam_print, test_type);
 
     #ifdef DO_CPU_PIN
     // Run main thread on CPU 0 always.
@@ -173,10 +159,10 @@ int main(int argc, char **argv) {
 
     // Create 4 models
     thread_args *head = NULL;
-    pthread_t req_threads[n_threads];
+    pthread_t req_threads[MAX_THREADS];
 
     // Create n_threads of models in a thread_args list
-    for (int i = 0; i < n_threads; i++) {
+    for (int i = 0; i < MAX_THREADS; i++) {
         thread_args *args = (thread_args *) malloc (sizeof(thread_args));
         args->t_id = i+1;
         args->cmd_run = false;
@@ -186,7 +172,6 @@ int main(int argc, char **argv) {
         args->cmd_delay = 0;
         args->cmd_period = 0;
         args->cmd_deadline = 0;
-        args->cmd_nprio = 1;
         args->iters_done = 0;
         args->violations = 0;
         args->total_latency = 0;
@@ -198,13 +183,17 @@ int main(int argc, char **argv) {
         nn_module *cmd_module = (nn_module *) malloc (sizeof(nn_module));
         cmd_module->id = i+1;
         cmd_module->nprio = 1;
+        #if !defined(ENABLE_SM) || defined(ENABLE_MOZART)
+        cmd_module->n_threads = model_threads[i];
+        #else
         cmd_module->n_threads = 0;
+        #endif
         #ifndef ENABLE_SM
         cmd_module->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
         #else
         cmd_module->cpu_invoke = false;
         #endif
-        nn_module_load_and_register(cmd_module, model_list[i+th_offset]);
+        nn_module_load_and_register(cmd_module, model_list[i]);
         args->cmd_module = cmd_module;
         
         // Start a request thread for this model
@@ -252,26 +241,32 @@ int main(int argc, char **argv) {
     tail->next = head;
 
     // Wait for all threads to wake up
+    srand(time(NULL));
     sleep(1);
 
-    int epoch = 0;
-    while (epoch < num_epochs) {
+    unsigned cur_period[MAX_THREADS] = {0};
+    for (unsigned i = 0; i < MAX_THREADS; i++) {
+        cur_period[i] = deadlines[i];
+    }
+
+    unsigned num_epochs = 100;
+    const float scale_min = 1.0f, scale_max = 4.0f;
+    for (unsigned epoch = 0; epoch < num_epochs; epoch++) {
+        // Random scaling factor for one thread
+        float scale_factor = scale_min + (scale_max - scale_min) * ((float)rand() / (float)RAND_MAX);
+        cur_period[epoch % MAX_THREADS] = (unsigned) (scale_factor * (float) deadlines[epoch % MAX_THREADS]);
         // Assign the next command to all thread
         thread_args *args = head;
-        for (unsigned i = 0; i < n_threads; i++) {
-            args->cmd_period = trace[epoch][i+th_offset].period;
-            args->cmd_deadline = (unsigned) ((float) delay_scale * deadlines[i+th_offset]);
-            args->cmd_nprio = trace[epoch][i+th_offset].nprio;
-            args->cmd_delay = (unsigned) ((float) (args->cmd_deadline / n_threads) * i);
-            #ifdef ENABLE_VAM
-            nn_module_setprio(args->cmd_module, args->cmd_nprio);
-            #endif
-            args->cmd_run = trace[epoch][i+th_offset].run;
+        for (unsigned i = 0; i < MAX_THREADS; i++) {
+            args->cmd_period = cur_period[i];
+            args->cmd_deadline = deadlines[i];
+            args->cmd_delay = (unsigned) ((float) (args->cmd_deadline / MAX_THREADS) * i);
+            args->cmd_run = true;
             args = args->next;
         }
         // Start all threads for this epoch
         args = head;
-        for (unsigned i = 0; i < n_threads; i++) {
+        for (unsigned i = 0; i < MAX_THREADS; i++) {
             __atomic_store_n(&(args->cmd_valid), true, __ATOMIC_SEQ_CST);
             args = args->next;
         }
@@ -283,7 +278,7 @@ int main(int argc, char **argv) {
         // Write the current utilization to the log
         vam_log_utilization();
         #else
-        for (unsigned i = 0; i < n_threads; i++) {
+        for (unsigned i = 0; i < MAX_THREADS; i++) {
             uint64_t new_active_cycles = args->cmd_module->active_cycles;
             args->active_cycles = new_active_cycles - args->prev_active_cycles;
             args->prev_active_cycles = new_active_cycles;
@@ -293,13 +288,13 @@ int main(int argc, char **argv) {
 
         // Synchronize all threads at the end of the epoch
         args = head;
-        for (unsigned i = 0; i < n_threads; i++) {
+        for (unsigned i = 0; i < MAX_THREADS; i++) {
             args->cmd_run = false;
             __atomic_store_n(&(args->cmd_valid), true, __ATOMIC_SEQ_CST);
             args = args->next;
         }
         args = head;
-        for (unsigned i = 0; i < n_threads; i++) {
+        for (unsigned i = 0; i < MAX_THREADS; i++) {
             while (__atomic_load_n(&(args->cmd_valid), __ATOMIC_SEQ_CST) == true) {
                 SCHED_YIELD;
             }
@@ -307,7 +302,7 @@ int main(int argc, char **argv) {
         }
         // Monitor progress of threads
         printf("[FILTER] ");
-        for (unsigned i = 0; i < n_threads; i++) {
+        for (unsigned i = 0; i < MAX_THREADS; i++) {
             unsigned iters_done = args->iters_done;
             uint64_t avg_latency = (iters_done > 0) ? (args->total_latency / iters_done) : 0;
             float violation_rate = (iters_done > 0) ? (float) args->violations / iters_done * 100 : 0;
@@ -320,13 +315,12 @@ int main(int argc, char **argv) {
             args = args->next;
         }
         printf("\n");
-        epoch++;
     }
     printf("[MAIN] Completed all epochs, exiting...\n");
 
     // Wait for all request threads to finish
     thread_args *args = head;
-    for (int i = 0; i < n_threads; i++) {
+    for (int i = 0; i < MAX_THREADS; i++) {
         args->kill_thread = true;
         __atomic_store_n(&(args->cmd_valid), true, __ATOMIC_SEQ_CST);
         pthread_join(req_threads[i], NULL);

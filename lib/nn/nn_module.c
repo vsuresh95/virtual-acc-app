@@ -10,6 +10,10 @@
 #include <gemm_def.h>
 #endif
 
+#if !defined(ENABLE_SM) || defined(ENABLE_MOZART)
+static unsigned th_affinity_ctr = 1;
+#endif
+
 // Load a model using a description in a txt model_def
 void nn_module_load(nn_module *m, const char *n) {
     // Check if the model description file exists
@@ -255,9 +259,7 @@ void nn_module_register(nn_module *m) {
                         hpthread_setprimitive(th, PRIM_GEMM);
                         hpthread_setpriority(th, m->nprio);
                         #if !defined(ENABLE_SM) || defined(ENABLE_MOZART)
-                        hpthread_setaffinity(th, ((m->id - 1) * m->n_threads) + thread_count + 1); // Assign to different accelerators with m->n_threads
-                        #else
-                        hpthread_setaffinity(th, (m->id * 3) + (thread_count % 3) + 1); // Try to assign to same accelerator as module ID
+                        hpthread_setaffinity(th, th_affinity_ctr++); // Assign to different accelerators with m->n_threads
                         #endif
                         HIGH_DEBUG(printf("[NN%d] queue ptr for %s = %d...\n", m->id, hpthread_name, h_args->queue_ptr););
                         HIGH_DEBUG(printf("[NN%d] Before hpthread create for %s...\n", m->id, hpthread_name));
