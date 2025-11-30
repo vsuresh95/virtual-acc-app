@@ -108,6 +108,9 @@ int main(int argc, char **argv) {
     const char (*model_list)[256];
     unsigned test_type = 0;
     unsigned sleep_seconds = 4;
+    float deadline_scale = 1.0;
+    unsigned num_epochs = 100;
+    if (argc > 2) deadline_scale = atof(argv[2]);
     if (argc > 1) test_type = atoi(argv[1]);
     unsigned *deadlines;
     switch (test_type) {
@@ -122,6 +125,7 @@ int main(int argc, char **argv) {
             model_list = heavy_models;
             deadlines = heavy_deadlines;
             sleep_seconds = 8;
+            num_epochs = 50;
             break;
         }
         case 2: {
@@ -129,6 +133,7 @@ int main(int argc, char **argv) {
             model_list = mixed_models;
             deadlines = mixed_deadlines;
             sleep_seconds = 6;
+            num_epochs = 75;
             break;
         }
         default: break;
@@ -183,11 +188,7 @@ int main(int argc, char **argv) {
         nn_module *cmd_module = (nn_module *) malloc (sizeof(nn_module));
         cmd_module->id = i+1;
         cmd_module->nprio = 1;
-        #if !defined(ENABLE_SM) || defined(ENABLE_MOZART)
         cmd_module->n_threads = model_threads[i];
-        #else
-        cmd_module->n_threads = 0;
-        #endif
         #ifndef ENABLE_SM
         cmd_module->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
         #else
@@ -249,7 +250,6 @@ int main(int argc, char **argv) {
         cur_period[i] = deadlines[i];
     }
 
-    unsigned num_epochs = 100;
     const float scale_min = 1.0f, scale_max = 4.0f;
     for (unsigned epoch = 0; epoch < num_epochs; epoch++) {
         // Random scaling factor for one thread
@@ -259,7 +259,7 @@ int main(int argc, char **argv) {
         thread_args *args = head;
         for (unsigned i = 0; i < MAX_THREADS; i++) {
             args->cmd_period = cur_period[i];
-            args->cmd_deadline = deadlines[i];
+            args->cmd_deadline = deadline_scale * deadlines[i];
             args->cmd_delay = (unsigned) ((float) (args->cmd_deadline / MAX_THREADS) * i);
             args->cmd_run = true;
             args = args->next;

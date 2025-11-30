@@ -7,12 +7,12 @@ typedef struct {
     unsigned nprio;
 } trace_entry_t;
 
-#define TINY_PERIOD 100000 
-#define SMALL1_PERIOD 240000
-#define SMALL2_PERIOD 300000
+#define TINY_PERIOD 140000
+#define SMALL1_PERIOD 260000
+#define SMALL2_PERIOD 380000
 #define MEDIUM1_PERIOD 640000
 #define MEDIUM2_PERIOD 960000
-#define LARGE_PERIOD 1600000
+#define LARGE_PERIOD 1500000
 
 const char light_models[MAX_THREADS][256] = {
     "models/model_16_4.txt",
@@ -48,7 +48,11 @@ unsigned mixed_deadlines[MAX_THREADS] = {
 };
 
 unsigned model_threads[MAX_THREADS] = {
-    1, 2, 2, 1
+    #if !defined(ENABLE_SM) || defined(ENABLE_MOZART)
+    1, 1, 1, 1
+    #else
+    0, 0, 0, 0
+    #endif
 };
 
 #endif // TRACE_H
