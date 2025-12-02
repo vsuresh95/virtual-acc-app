@@ -1,29 +1,20 @@
 #define _GNU_SOURCE
 #include <helper.h>
-#include <sw_gemm.h>
+#include <nn_module.h>
 
-////////////////////////////////////
-// Example application using GEMM
-// accelerator with the hpthread interface
+bool test_active = false;
 
-#define GEMM_QUEUE_WORDS (sizeof(sm_queue_t) / sizeof(nn_token_t))
-
-unsigned dim_m = 32;
-unsigned dim_n = 32;
-unsigned dim_k = 32;
-unsigned iterations = 100;
-
+// Example application for fully connected neural network (FCNN)
 int main(int argc, char **argv) {
-    if (argc > 1) {
-        dim_m = atoi(argv[1]);
-        dim_n = atoi(argv[2]);
-        dim_k = atoi(argv[3]);
-    }
-    if (argc > 4) {
-        iterations = atoi(argv[4]);
+    unsigned iterations = 100;
+    const char *model_file = "models/model_16_1.txt";
+    if (argc > 2) {
+        model_file = argv[2];
 	}
-
-    printf("[APP] Starting app: GEMM single threaded %d %d %d %d!\n", dim_m, dim_n, dim_k, iterations);
+    if (argc > 1) {
+        iterations = atoi(argv[1]);
+	}
+    printf("[APP] Starting app: FCNN Pipelined, %d iters from %s!\n", iterations, model_file);
 
     #ifdef DO_CPU_PIN
     // Run main thread on CPU 0 always.
@@ -36,116 +27,59 @@ int main(int argc, char **argv) {
             perror("pthread_setaffinity_np");
         }
     }
-    #endif
+    #endif // DO_CPU_PIN
     #ifdef DO_SCHED_RR
     // Set scheduling attributes
     struct sched_param sp = { .sched_priority = 1 };
     if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) != 0) {
         perror("pthread_setschedparam");
     }
-    #endif
+    #endif // DO_SCHED_RR
 
-    // Matrix lengths
-    unsigned mat_a_len = dim_m * dim_k;
-    unsigned mat_b_len = dim_n * dim_k;
-    unsigned mat_c_len = dim_m * dim_n;
-    // Sync flag and data offsets
-    unsigned mat_a_offset = 0;
-    unsigned mat_b_offset = mat_a_offset + mat_a_len;
-    unsigned mat_c_offset = mat_b_offset + mat_b_len;
-    unsigned input_queue_offset = mat_c_offset + mat_c_len;
-    unsigned output_queue_offset = input_queue_offset + GEMM_QUEUE_WORDS;
-    unsigned descriptor_offset = output_queue_offset + GEMM_QUEUE_WORDS;
-
-    // Allocate sufficient memory for this hpthread
-    unsigned mem_size = (descriptor_offset + GEMM_ENTRY_SIZE) * sizeof(nn_token_t);
-    nn_token_t *mem = (nn_token_t *) esp_alloc(mem_size);
-
-    HIGH_DEBUG(printf("[APP] Memory allocated for size %d\n", mem_size));
-
-    // Reference output for comparison
-    nn_token_t *gold = (nn_token_t *) malloc((mat_c_offset + mat_c_len) * sizeof(nn_token_t));
-
-    // Input task queue
-    sm_queue_t *in_q = (sm_queue_t *) &mem[input_queue_offset];
-    sm_queue_init(in_q);
-    // Output task queue
-    sm_queue_t *out_q = (sm_queue_t *) &mem[output_queue_offset];
-    sm_queue_init(out_q);
-
-    // Create GEMM queue entry
-    gemm_queue_entry_t *e = (gemm_queue_entry_t *) &mem[descriptor_offset];
-    e->common = (sm_queue_entry_t) { 
-        .output_queue = output_queue_offset,
-        .output_entry = 0
-    };
-    e->gemm_params = (gemm_params_t) {
-        .dim_m = dim_m,
-        .dim_n = dim_n,
-        .dim_k = dim_k,
-        .weight_base = mat_b_offset,
-        .input_base = mat_a_offset,
-        .output_base = mat_c_offset
-    };
-    HIGH_DEBUG( printf("[APP] Printing GEMM queue entry...\n"); print_gemm_entry(e); )
-
-    // Declare hpthread and assign attributes
-    hpthread_t *th = (hpthread_t *) malloc(sizeof(hpthread_t));
-    hpthread_args_t *args = (hpthread_args_t *) malloc(sizeof(hpthread_args_t));
-    args->mem = mem; args->queue_ptr = input_queue_offset;
+    // Load a model from a text file (and) register with NN frontend
+    nn_module *m = (nn_module *) malloc (sizeof(nn_module));
+    m->id = 0;
+    m->nprio = 1;
+    m->n_threads = 0;
     #ifndef ENABLE_SM
-    th->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
+    m->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
     #else
-    th->cpu_invoke = false;
+    m->cpu_invoke = false;
     #endif
-    hpthread_setargs(th, args);
-    hpthread_setname(th, "gemm");
-    hpthread_setprimitive(th, PRIM_GEMM);
-    hpthread_setpriority(th, 1);
+    nn_module_load_and_register(m, model_file);
 
-    HIGH_DEBUG(printf("[APP] Before hpthread create request...\n"));
+    unsigned print_iterations = iterations / 2;
+    unsigned input_iters_remaining = iterations;
+    unsigned output_iters_remaining = iterations;
+    nn_token_t *data = (nn_token_t *) malloc (1);
 
-    // Create a hpthread
-    hpthread_create(th);
-     
-    unsigned outputs_remaining = iterations;
-    unsigned inputs_remaining = iterations;
+    test_active = true;
 
-    uint64_t t_start = get_counter();
-    bool need_yield = false;
-    while (inputs_remaining != 0 || outputs_remaining != 0) {
-        if (inputs_remaining != 0) {
-            // Check if input queue is full
-            if (!sm_queue_full(in_q)) {
-                HIGH_DEBUG(printf("[APP] Enqueueing new input %d\n", iterations - inputs_remaining));
-                sm_queue_push(in_q, descriptor_offset);
-                inputs_remaining--;
-            } else {
-                need_yield = true;
+    uint64_t t_tput_start = get_counter();
+    while (input_iters_remaining > 0 || output_iters_remaining > 0) {
+        if (input_iters_remaining > 0) {
+            if (nn_module_req_check(m, data, 0)) {
+                input_iters_remaining--;
+                HIGH_DEBUG(printf("[APP] Sent req %d...\n", iterations - input_iters_remaining);)
             }
         }
-        if (outputs_remaining != 0) {
-            if (!sm_queue_empty(out_q)) {
-                HIGH_DEBUG(printf("[APP] Dequeueing new output %d\n", iterations - outputs_remaining));
-                sm_queue_pop(out_q);
-                outputs_remaining--;
-                LOW_DEBUG( if (outputs_remaining % 1000 == 0) printf("[APP] Iter %d done!\n", iterations - outputs_remaining); )
-            } else {
-                need_yield = true;
+        if (output_iters_remaining > 0) {
+            if (nn_module_rsp_check(m, data, 0)) {
+                output_iters_remaining--;
+                HIGH_DEBUG(printf("[APP] Received rsp %d...\n", iterations - output_iters_remaining);)
+                if (output_iters_remaining % print_iterations == 0) {
+                    printf("%d\n", iterations - output_iters_remaining);
+                }
             }
         }
-        if (need_yield) {
-            SCHED_YIELD;
-            need_yield = false;
-        }
+        SCHED_YIELD;
     }
-    uint64_t t_loop = get_counter() - t_start;
-	printf("[APP] Avg time = %lu\n", t_loop/iterations);
-    hpthread_join(th);
+    uint64_t t_tput_end = get_counter();
+
+    test_active = false;
+
+    nn_module_release(m);
+    free(m);
     hpthread_report();
-
-    free(gold);
-    esp_free(mem);
-
-    return 0;
+    printf("[APP] Average throughput = %lu\n", (t_tput_end - t_tput_start)/iterations);
 }

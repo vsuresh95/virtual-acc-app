@@ -36,5 +36,5 @@ for m in 1 2 4 8 16; do
 done
 
 make clean
-SLEEP_TIME=7812500 make
+SLEEP_TIME=19531250 make
 cp "$OUTDIR/opt.exe" "$OUTDIR/default_opt.exe"

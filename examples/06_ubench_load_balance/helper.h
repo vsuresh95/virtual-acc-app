@@ -6,11 +6,9 @@
 #include <stdlib.h>
 #include <time.h>
 #include <sched.h>
-#include <common_helper.h>
-#include <hpthread.h>
-#include <gemm_queue.h>
+#include <unistd.h>
 #include <nn_token.h>
-#include <libesp.h>
+#include <pthread.h>
 
 const float ERR_TH = 0.05;
 

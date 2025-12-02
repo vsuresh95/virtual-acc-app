@@ -15,7 +15,6 @@ typedef struct thread_args {
     nn_module *m;
     unsigned iterations;
     bool *start;
-    uint64_t average_latency;
     float average_throughput;
     struct thread_args *next;
 } thread_args;
@@ -25,7 +24,6 @@ void *req_thread(void *a) {
     nn_module *m = args->m;
     HIGH_DEBUG(printf("[APP] Starting request thread %d...\n", m->id);)
     unsigned iterations = args->iterations;
-    uint64_t total_latency = 0;
     nn_token_t *input_data = (nn_token_t *) malloc (1);
     bool *start = args->start;
     #ifndef DO_SCHED_RR
@@ -36,19 +34,28 @@ void *req_thread(void *a) {
     while(!(*start)) { SCHED_YIELD; } // Wait for signal to start
 
     uint64_t t_tput_start = get_counter();
-    unsigned iters_done = 0;
-    while (iters_done < iterations) { 
-        uint64_t t_start = get_counter();
-        nn_module_run(m, input_data, input_data, 0, 0, false);
-        uint64_t t_end = get_counter();
-        total_latency += (t_end - t_start);
-        iters_done++;
-        __atomic_fetch_sub(&args->iterations, 1, __ATOMIC_RELEASE);
+    unsigned input_iters_remaining = iterations;
+    unsigned output_iters_remaining = iterations;
+
+    while (input_iters_remaining > 0 || output_iters_remaining > 0) {
+        if (input_iters_remaining > 0) {
+            if (nn_module_req_check(m, input_data, 0)) {
+                input_iters_remaining--;
+                HIGH_DEBUG(printf("[APP%d] Sent req %d...\n", m->id, iterations - input_iters_remaining);)
+            }
+        }
+        if (output_iters_remaining > 0) {
+            if (nn_module_rsp_check(m, input_data, 0)) {
+                __atomic_fetch_sub(&args->iterations, 1, __ATOMIC_RELEASE);
+                output_iters_remaining--;
+                HIGH_DEBUG(printf("[APP%d] Received rsp %d...\n", m->id, iterations - output_iters_remaining);)
+            }
+        }
+        SCHED_YIELD;
     }
     uint64_t t_tput_end = get_counter();
     float seconds_taken = (float)(t_tput_end - t_tput_start) / 78125000.0;
     args->average_throughput = (float) (iterations) / seconds_taken;
-    args->average_latency = total_latency / iterations;
     return NULL;
 }
 
@@ -177,8 +184,6 @@ int main(int argc, char **argv) {
     while (total_remaining != 0) {
         thread_args *args = head;
         sleep(sleep_seconds);
-        // Write the current utilization to the log
-        vam_log_utilization();
         printf("[MAIN] IPS = ");
         total_remaining = 0;
         for (unsigned i = 0; i < n_threads; i++) {
@@ -200,22 +205,19 @@ int main(int argc, char **argv) {
             old_remaining = total_remaining;
         }
         printf("\n");
-        while(sleep_seconds <= 5) sleep_seconds++;
     }
 
     // Wait for all request threads to finish
-    printf("[FILTER] Average time: ");
-    uint64_t average_latency = 0;
+    printf("[FILTER] Average throughput: ");
     float average_throughput = 0.0;
     th_args = head;
     for (int i = 0; i < n_threads; i++) {
         pthread_join(req_threads[i], NULL);
-        printf("(%lu, %0.2f), ", th_args->average_latency, th_args->average_throughput);
-        average_latency += th_args->average_latency;
+        printf("%0.2f, ", th_args->average_throughput);
         average_throughput += th_args->average_throughput;
         th_args = th_args->next;
     }
-    printf("overall: (%lu, %0.2f)\n", average_latency/n_threads, average_throughput);
+    printf("overall: %0.2f\n", average_throughput);
 
     // Release all modules
     thread_args *args = head;
@@ -228,9 +230,5 @@ int main(int argc, char **argv) {
         args = next;     
     } while (args != head);
 exit:    
-#ifdef ENABLE_VAM
     hpthread_report();
-#else
-    return 0;
-#endif
 }
