@@ -158,7 +158,7 @@ int main(int argc, char **argv) {
         cmd_module->id = i+1;
         cmd_module->nprio = 1;
         #ifdef ENABLE_MOZART
-        cmd_module->n_threads = 1; // Mozart: 1 thread per model
+        cmd_module->n_threads = (n_threads == 1) ? 4 : 1; // Mozart: 1 thread per model
         #else
         cmd_module->n_threads = 0;
         #endif
