@@ -3,6 +3,7 @@
 #include <nn_module.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
+#include <string.h>
 
 // Counter for core affinity
 #ifdef DO_CPU_PIN
@@ -12,51 +13,68 @@ static uint8_t core_affinity_ctr = 0;
 extern void vam_log_utilization();
 
 typedef struct thread_args {
-    nn_module *m;
-    unsigned iterations;
-    bool *start;
-    float average_throughput;
+    unsigned t_id;
+    bool cmd_valid;
+    bool cmd_run;
+    bool kill_thread;
+    nn_module *cmd_module;
+    unsigned iters_done;
     struct thread_args *next;
 } thread_args;
 
 void *req_thread(void *a) {
     thread_args *args = (thread_args *) a;
-    nn_module *m = args->m;
-    HIGH_DEBUG(printf("[APP] Starting request thread %d...\n", m->id);)
-    unsigned iterations = args->iterations;
-    nn_token_t *input_data = (nn_token_t *) malloc (1);
-    bool *start = args->start;
-    #ifndef DO_SCHED_RR
-    // Set niceness based on priority
-    pid_t tid = syscall(SYS_gettid);
-    setpriority(PRIO_PROCESS, tid, nice_table[2]);
-    #endif
-    while(!(*start)) { SCHED_YIELD; } // Wait for signal to start
+    HIGH_DEBUG(printf("[APP] Starting request thread %d...\n", args->t_id);)
+    nn_token_t *data = (nn_token_t *) malloc (1);
+    bool cmd_run = false;
+    nn_module *cmd_module = NULL;
+    unsigned input_iters_done = 0;
+    unsigned output_iters_done = 0;
+    bool drain_output = false;
 
-    uint64_t t_tput_start = get_counter();
-    unsigned input_iters_remaining = iterations;
-    unsigned output_iters_remaining = iterations;
-
-    while (input_iters_remaining > 0 || output_iters_remaining > 0) {
-        if (input_iters_remaining > 0) {
-            if (nn_module_req_check(m, input_data, 0)) {
-                input_iters_remaining--;
-                HIGH_DEBUG(printf("[APP%d] Sent req %d...\n", m->id, iterations - input_iters_remaining);)
+    while (1) {
+        // Is there a new command?
+        bool valid_check = __atomic_load_n(&(args->cmd_valid), __ATOMIC_ACQUIRE);
+        if (valid_check == true) {
+            if (input_iters_done == output_iters_done) {
+                args->iters_done = output_iters_done;
+                // Clear valid
+                __atomic_store_n(&(args->cmd_valid), false, __ATOMIC_RELEASE);
+                // Need to exit?
+                if (args->kill_thread) {
+                    return NULL;
+                }
+                input_iters_done = 0;
+                output_iters_done = 0;
+                drain_output = false;
+                // Check if we can start
+                cmd_run = args->cmd_run;
+                cmd_module = args->cmd_module;
+                #ifndef DO_SCHED_RR
+                // Set niceness based on priority
+                pid_t tid = syscall(SYS_gettid);
+                setpriority(PRIO_PROCESS, tid, nice_table[0]);
+                #endif
+            } else {
+                drain_output = true;
             }
         }
-        if (output_iters_remaining > 0) {
-            if (nn_module_rsp_check(m, input_data, 0)) {
-                __atomic_fetch_sub(&args->iterations, 1, __ATOMIC_RELEASE);
-                output_iters_remaining--;
-                HIGH_DEBUG(printf("[APP%d] Received rsp %d...\n", m->id, iterations - output_iters_remaining);)
+
+        if (cmd_run) {
+            // Drain not pending and timer elapsed
+            if (!drain_output) {
+                if (nn_module_req_check(cmd_module, data , 0)) {
+                    input_iters_done++;
+                    HIGH_DEBUG(printf("[APP%d] Sent req %d...\n", args->t_id, input_iters_done);)
+                }
+            }
+            if (nn_module_rsp_check(cmd_module, data, 0)) {
+                output_iters_done++;
+                HIGH_DEBUG(printf("[APP%d] Received rsp %d...\n", args->t_id, output_iters_done);)
             }
         }
         SCHED_YIELD;
     }
-    uint64_t t_tput_end = get_counter();
-    float seconds_taken = (float)(t_tput_end - t_tput_start) / 78125000.0;
-    args->average_throughput = (float) (iterations) / seconds_taken;
-    return NULL;
 }
 
 // Example application for fully connected neural network (FCNN)
@@ -73,7 +91,7 @@ int main(int argc, char **argv) {
     if (argc > 1) {
         iterations = atoi(argv[1]);
 	}
-    printf("[MAIN] Starting app: FCNN multithreaded, %d iters on %d threads from %s!\n", iterations, n_threads, model_file);
+    printf("[MAIN] Starting app: Cost of multitenancy, %d iters on %d threads from %s!\n", iterations, n_threads, model_file);
 
     #ifdef DO_CPU_PIN
     // Run main thread on CPU 0 always.
@@ -100,24 +118,27 @@ int main(int argc, char **argv) {
     // Create n_threads of models in a thread_args list
     thread_args *head = NULL;
     pthread_t req_threads[n_threads];
-    bool *start = (bool *) malloc (sizeof(bool)); *start = false;
+
     for (int i = 0; i < n_threads; i++) {
         thread_args *args = (thread_args *) malloc (sizeof(thread_args));
-        args->iterations = iterations;
-        args->start = start;
+        args->t_id = i+1;
+        args->cmd_run = false;
+        args->cmd_valid = false;
+        args->kill_thread = false;
         args->next = NULL;
+        args->iters_done = 0;
 
-        nn_module *m = (nn_module *) malloc (sizeof(nn_module));
-        m->id = i+1;
-        m->nprio = 1; // Higher priority for lower thread ID
-        m->n_threads = 0;
+        nn_module *cmd_module = (nn_module *) malloc (sizeof(nn_module));
+        cmd_module->id = i+1;
+        cmd_module->nprio = 1;
+        cmd_module->n_threads = 0;
         #ifndef ENABLE_SM
-        m->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
+        cmd_module->cpu_invoke = true; // Create a CPU thread to invoke the accelerator
         #else
-        m->cpu_invoke = false;
+        cmd_module->cpu_invoke = false;
         #endif
-        nn_module_load_and_register(m, model_file);
-        args->m = m;
+        nn_module_load_and_register(cmd_module, model_file);
+        args->cmd_module = cmd_module;
         
         // Start a request thread for this model
         pthread_attr_t attr;
@@ -162,73 +183,81 @@ int main(int argc, char **argv) {
     thread_args *tail = head;
     while (tail->next != NULL) tail = tail->next;
     tail->next = head;
-    
-    unsigned old_iters_remaining[n_threads];
-    unsigned total_remaining, old_remaining;
-    thread_args *th_args = head;
-    for (unsigned i = 0; i < n_threads; i++) {
-        old_iters_remaining[i] = th_args->iterations;
-        total_remaining += old_iters_remaining[i];
-        old_remaining += old_iters_remaining[i];
-        th_args = th_args->next;
-    }
 
     // Wait for all threads to wake up
     sleep(1);
-    // Signal all threads to start
-    *start = true;
 
-    // Periodically monitor number of iterations executed by workers
     unsigned sleep_seconds = 2;
-    unsigned stall_counter = 0;
-    while (total_remaining != 0) {
+    unsigned total_iters[n_threads];
+    memset(total_iters, 0, sizeof(unsigned) * n_threads);
+    for (unsigned epoch = 0; epoch < 5; epoch++) {
+        // Start all threads for this epoch
         thread_args *args = head;
-        sleep(sleep_seconds);
-        printf("[MAIN] IPS = ");
-        total_remaining = 0;
         for (unsigned i = 0; i < n_threads; i++) {
-            unsigned new_iters_remaining = __atomic_load_n(&args->iterations, __ATOMIC_ACQUIRE);
-            float ips = (float) (old_iters_remaining[i] - new_iters_remaining) / sleep_seconds;
-            old_iters_remaining[i] = new_iters_remaining;
-            total_remaining += new_iters_remaining;
-            printf("T%d:%0.2f(%d), ", i, ips, new_iters_remaining);
+            args->cmd_run = true;
+            __atomic_store_n(&(args->cmd_valid), true, __ATOMIC_SEQ_CST);
             args = args->next;
         }
-        if (total_remaining != 0 && total_remaining == old_remaining) {
-            printf("STALL!!!");
-            stall_counter++;
-            if (stall_counter >= 3) {
-                printf("\n[MAIN] Detected stall for 3 consecutive periods, exiting...\n");
-                goto exit;
+
+        // Sleep for the rest of the epoch
+        sleep(sleep_seconds);
+        vam_log_utilization();
+
+        // Pause all threads
+        args = head;
+        for (unsigned i = 0; i < n_threads; i++) {
+            args->cmd_run = false;
+            __atomic_store_n(&(args->cmd_valid), true, __ATOMIC_SEQ_CST);
+            args = args->next;
+        }
+        args = head;
+        for (unsigned i = 0; i < n_threads; i++) {
+            while (__atomic_load_n(&(args->cmd_valid), __ATOMIC_SEQ_CST) == true) {
+                SCHED_YIELD;
             }
-        } else {
-            old_remaining = total_remaining;
+            args = args->next;
+        }
+
+        // Monitor progress of threads
+        printf("[MAIN] ");
+        for (unsigned i = 0; i < n_threads; i++) {
+            unsigned iters_done = args->iters_done;
+            total_iters[i] += iters_done;
+            float throughput = (float) iters_done / (float) sleep_seconds;
+            printf("%0.2f, ", throughput);
+            args = args->next;
         }
         printf("\n");
+    }
+    printf("[MAIN] Completed all epochs, exiting...\n");
+
+    // Wait for all request threads to finish
+    thread_args *args = head;
+    for (int i = 0; i < n_threads; i++) {
+        args->kill_thread = true;
+        __atomic_store_n(&(args->cmd_valid), true, __ATOMIC_SEQ_CST);
+        pthread_join(req_threads[i], NULL);
+        args = args->next;
     }
 
     // Wait for all request threads to finish
     printf("[FILTER] Average throughput: ");
     float average_throughput = 0.0;
-    th_args = head;
     for (int i = 0; i < n_threads; i++) {
-        pthread_join(req_threads[i], NULL);
-        printf("%0.2f, ", th_args->average_throughput);
-        average_throughput += th_args->average_throughput;
-        th_args = th_args->next;
+        float throughput = (float) total_iters[i] / (float) (sleep_seconds * 5);
+        printf("%0.2f, ", throughput);
+        average_throughput += throughput;
     }
     printf("overall: %0.2f\n", average_throughput);
-
     // Release all modules
-    thread_args *args = head;
+    args = head;
     do {
-        nn_module *m = args->m;
-        nn_module_release(m);
-        free(m);
+        nn_module *cmd_module = args->cmd_module;
+        nn_module_release(cmd_module);
+        free(cmd_module);
         thread_args *next = args->next;
         free(args);
         args = next;     
     } while (args != head);
-exit:    
     hpthread_report();
 }
