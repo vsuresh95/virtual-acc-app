@@ -228,9 +228,6 @@ int main(int argc, char **argv) {
         for (unsigned i = 0; i < N_THREADS; i++) {
             args->cmd_period = trace[epoch][i].period;
             args->cmd_nprio = trace[epoch][i].nprio;
-            #if defined(ENABLE_SM) && !defined(ENABLE_MOZART)
-            nn_module_setprio(args->cmd_module, args->cmd_nprio);
-            #endif
             args->cmd_run = trace[epoch][i].run;
             args = args->next;
         }
