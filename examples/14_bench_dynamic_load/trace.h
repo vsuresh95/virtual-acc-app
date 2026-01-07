@@ -14,22 +14,22 @@ typedef struct {
 
 const char light_models[MAX_THREADS][256] = {
     "models/model_16_4.txt",
-    "models/model_32_4.txt",
-    "models/model_32_4.txt",
+    "models/model_32_6.txt",
+    "models/model_32_6.txt",
     "models/model_48_4.txt",
 };
 
 const char heavy_models[MAX_THREADS][256] = {
     "models/model_32_4.txt",
-    "models/model_48_4.txt",
-    "models/model_48_4.txt",
+    "models/model_48_6.txt",
+    "models/model_48_6.txt",
     "models/model_64_4.txt",
 };
 
 const char mixed_models[MAX_THREADS][256] = {
     "models/model_16_4.txt",
-    "models/model_32_4.txt",
-    "models/model_48_4.txt",
+    "models/model_32_6.txt",
+    "models/model_48_6.txt",
     "models/model_64_4.txt",
 };
 

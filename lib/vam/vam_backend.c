@@ -906,15 +906,10 @@ void vam_print_report() {
     }
 #else    
     // Print out the total utilization
-    printf("-------------------------------------------------------------------------------------------------------\n");
-    printf("  #\tAccel\t\t\tC0\t\tC1\t\tC2\t\tC3\t\tTotal\n");
-    printf("-------------------------------------------------------------------------------------------------------\n");
     for (int i = 0; i < util_epoch_count; i++) {
-        printf("  %d", i);
         physical_accel_t *cur_accel = accel_list;
         while (cur_accel != NULL) {
-            printf("\t%s\t\t", physical_accel_get_name(cur_accel));
-            float total_util = 0.0;
+            printf("%s ", physical_accel_get_name(cur_accel));
             util_entry_t *entry = cur_accel->util_entry_list;
             util_entry_t *prev = NULL;
             // Traverse to the end of the list to get the oldest entry
@@ -923,10 +918,9 @@ void vam_print_report() {
                 entry = entry->next;
             }
             for (int j = 0; j < MAX_CONTEXTS; j++) {
-                total_util += entry->util[j];
-                printf("%05.2f%%(%d)\t", entry->util[j]*100, entry->id[j]);
+                printf("%05.2f%%(%d) ", entry->util[j]*100, entry->id[j]);
             }
-            printf("%05.2f%%\n", total_util*100);
+            printf("\n");
             // Delete the oldest entry after printing
             if (prev != NULL) {
                 prev->next = NULL;

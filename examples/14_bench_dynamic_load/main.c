@@ -117,6 +117,9 @@ int main(int argc, char **argv) {
     unsigned num_epochs = 80;
     unsigned n_threads = MAX_THREADS;
     unsigned th_offset = 0;
+    unsigned epoch_offset = 0;
+    if (argc > 5) epoch_offset = atoi(argv[5]);
+    if (argc > 4) num_epochs = atoi(argv[4]);
     if (argc > 3) th_offset = atoi(argv[3]);
     if (argc > 2) n_threads = atoi(argv[2]);
     if (argc > 1) test_type = atoi(argv[1]);
@@ -134,7 +137,7 @@ int main(int argc, char **argv) {
             model_list = heavy_models;
             periods = heavy_period;
             sleep_seconds = n_threads == 1 ? 2 : 4;
-            num_epochs = 40;
+            // num_epochs = 40;
             break;
         }
         case 2: {
@@ -193,9 +196,13 @@ int main(int argc, char **argv) {
         nn_module *cmd_module = (nn_module *) malloc (sizeof(nn_module));
         cmd_module->id = i+1;
         cmd_module->nprio = 1;
-        #ifdef ENABLE_MOZART
-        // TODO assumes number of layers is equal to MAX_THREADS
-        cmd_module->n_threads = MAX_THREADS / n_threads;
+        #ifdef DISABLE_LB
+        // For 4 layer model, 1 thread; for 6 layer model, 2 threads
+        if (i+th_offset == 1 || i+th_offset == 2) {
+            cmd_module->n_threads = n_threads == 1 ? 6 : 2;
+        } else {
+            cmd_module->n_threads = n_threads == 1 ? 4 : 1;
+        }
         #else
         cmd_module->n_threads = 0;
         #endif
@@ -255,7 +262,7 @@ int main(int argc, char **argv) {
     srand(time(NULL));
     sleep(1);
 
-    for (unsigned epoch = 0; epoch < num_epochs; epoch++) {
+    for (unsigned epoch = epoch_offset; epoch < num_epochs; epoch++) {
         // Assign the next command to all thread
         thread_args *args = head;
         for (unsigned i = 0; i < n_threads; i++) {

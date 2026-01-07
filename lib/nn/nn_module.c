@@ -260,6 +260,8 @@ void nn_module_register(nn_module *m) {
                         hpthread_setpriority(th, m->nprio);
                         #if !defined(ENABLE_SM) || defined(ENABLE_MOZART)
                         hpthread_setaffinity(th, th_affinity_ctr++); // Assign to different accelerators with m->n_threads
+                        #else
+                        // hpthread_setaffinity(th, (m->id * 1) + (thread_count % 1)); // All on same accelerator
                         #endif
                         HIGH_DEBUG(printf("[NN%d] queue ptr for %s = %d...\n", m->id, hpthread_name, h_args->queue_ptr););
                         HIGH_DEBUG(printf("[NN%d] Before hpthread create for %s...\n", m->id, hpthread_name));
